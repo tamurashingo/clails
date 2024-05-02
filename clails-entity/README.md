@@ -41,15 +41,42 @@ in REPL
 
 ```lisp
 (clails-entity:mod-entity todo :type :add-column
-  ((created-at :type datetime)
-   (updated-at :type datetime)))
+  ((done-at :type datetime)))
 ```
 
 generate migration file.
 
 ```lisp
 (add-column todo
-  ((created-at :type datetime)
-   (updated-at :type datetime)))
+  ((done-at :type datetime)))
 ```
+
+
+## query
+
+```lisp
+(select 'todo')
+=> "SELECT ID, CREATED_AT, UPDATED_AT, TITLE, DONE_AT FROM TODO"
+#()
+
+(select 'todo :where '(= id 1))
+=> "SELECT ID, CREATED_AT, UPDATED_AT, TITLE, DONE_AT FROM TODO WHERE (ID = ?)"
+#(1)
+
+(setq begin "2024/04/01 00:00:00")
+(setq end "2024/04/30 23:59:59")
+(select 'todo :where `(and (= done true)
+                           (>= done-at ,begin)
+                           (<= done-at ,end)))
+=> "SELECT ID, CREATED_AT, UPDATED_AT, TITLE, DONE_AT FROM TODO WHERE (DONE = TRUE AND DONE_AT >= ? AND DONE_AT <= ?)"
+#("2024/04/01 00:00:00" "2024/04/30 23:59:59")
+```
+
+## update
+
+...
+
+## transaction
+
+...
 
