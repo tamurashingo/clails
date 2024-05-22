@@ -1,30 +1,51 @@
-(defclass (<template>) ()
+(in-package #:cl-user)
+(defpackage #:clails-cli/template
+  (:use #:cl)
+  (:export :<template>
+           :path
+           :prefix
+           :postfix
+           :template))
+(in-package #:clails-cli/template)
+
+(defclass <template> ()
   ((path
     :initarg :path
     :reader path
     :type string
     :documentation "Relative path from the project directory where this file is located")
+   (prefix
+    :initarg :prefix
+    :initform ""
+    :reader prefix
+    :type string)
+   (postfix
+    :initarg :postfix
+    :initform ""
+    :reader postfix
+    :type string)
    (template
     :initarg :template
     :reader template
     :type string)))
 
 
-(defparameter *asd-template*
+
+(defparameter asd-template
   (make-instance '<template>
                  :path "/"
                  :template   "(in-package #:cl-user)
-(defpackage #:<%= project-name %>-system
+(defpackage #:<%= (@ project-name ) %>-system
   (:use #:asdf #:cl))
-(in-package #:<%= project-name %>-system)
+(in-package #:<%= (@ project-name ) %>-system)
 
-(defsystem <%= project-name %>
+(defsystem <%= (@ project-name) %>
   :description \"\"
   :version \"0.0.1\"
   :author \"\"
   :license \"\"
   :depends-on (\"clails-cli\"
-               \"clails-entity\")
+               \"clails-model\")
   :components ((:module \"app\"
                 :components ((:file \"packages\")))
                (:module \"config\"
@@ -34,41 +55,68 @@
 
 "))
 
-
-(defparameter *controller-package-template*
-  "(in-package #:cl-user)
-(defpackage #:<%= project-name %>-controller
+(defparameter controller-package-template
+  (make-instance '<template>
+                 :path "/app/controllers"
+                 :template "(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>-controller
   (:use #:cl))
-(in-package #:<%= project-name %>-controller)
-")
+(in-package #:<%= (@ project-name ) %>-controller)
+"))
 
-(defparameter *entity-package-template*
-  "(in-package #:cl-user)
-(defpackage #:<%= project-name %>-entity
+
+(defparameter model-package-template
+  (make-instance '<template>
+                 :path "/app/models"
+                 :template "(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>-model
   (:use #:cl
-        #:clails-entity))
-(in-package #:<%= project-name %>-entity)
-")
+        #:clails-model))
+(in-package #:<%= (@ project-name ) %>-model)
+"))
 
-(defparameter *view-package-template*
-  "(in-package #:cl-user)
-(defpackage #:<%= project-name %>-view
+(defparameter view-package-template
+  (make-instance '<template>
+                 :path "/app/views"
+                 :template "(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>-view
   (:use #:cl))
-(in-package #:<%= project-name %>-view)
-")
+(in-package #:<%= (@ project-name ) %>-view)
+"))
+
+(defparameter model-migration-create-template
+  (make-instance '<template>
+                 :path "/db/migrate"
+                 :prefix "create"
+                 :template "(create-table <%= (@ model-name ) %>
+(
+<% (loop for col in (@ body) do %><%= (format NIL \"  ~S~%\" col) %><% ) %>))
+"))
+
+(defparameter model-migration-addcolumn-template
+  (make-instance '<template>
+                 :path "/db/migrate"
+                 :prefix "add-column"
+                 :template "(add-column <%= (@ model-name ) %>
+(
+<% (loop for col in (@ body) do %><%= (format NIL \"  ~S~%\" col) %><% ) %>))
+"))
+
+
+(defparameter model-template
+  (make-instance '<template>
+                 :path "/app/models"
+                 :template "(in-package #:<%= (@ project-name ) %>-model)
+
+(defclass <%= (@ model ) %> (<base-model>) ())
+"))
 
 
 
-(defparameter *controller-template*
+(defparameter controller-template
   "")
 
-(defparameter *entity-template*
-  "")
-
-(defparameter *migration-template*
-  "")
-
-(defparameter *view-template*
+(defparameter view-template
   "")
 
 

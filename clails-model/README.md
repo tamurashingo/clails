@@ -1,12 +1,12 @@
-# clails-entity
+# clails-model
 
 
-## create entity class and migration file
+## create model class and migration file
 
 in REPL
 
 ```lisp
-(clails-entity:generate-entity todo
+(clails-model:generate-model todo
   ((title :type string
           :not-null T
           :primary-key T
@@ -14,10 +14,10 @@ in REPL
    (done :type boolean)))
 ```
 
-generate entity,
+generate model,
 
 ```lisp
-(defclass todo (clails-entity:base-entity))
+(defclass todo (clails-model:<base-model>))
 ```
 
 
@@ -40,7 +40,7 @@ and generate migration file.
 in REPL
 
 ```lisp
-(clails-entity:mod-entity todo :type :add-column
+(clails-model:mod-model todo :type :add-column
   ((done-at :type datetime)))
 ```
 

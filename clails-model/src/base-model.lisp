@@ -1,10 +1,10 @@
 (in-package #:cl-user)
-(defpackage #:clails-entity
+(defpackage #:clails-model/base-model
   (:use #:cl))
-(in-package #:clails-entity)
+(in-package #:clails-model/base-model)
 
 
-(defclass <base-entity> ()
+(defclass <base-model> ()
   ((id
     :initarg :id
     :accessor id)
@@ -16,19 +16,19 @@
     :accessor updated-at)))
 
 
-(defun select (entity-name &key where order-by)
+(defun select (model-name &key where order-by)
   (multiple-value-bind (query params)
-      (generate-select entity-name where order-by)
+      (generate-select model-name where order-by)
     ;; prepare query
     ;; execute params
     (values query params)))
 
 
-(defun generate-select (entity-name where order-by)
+(defun generate-select (model-name where order-by)
   (let* ((params (make-array (length where)
                              :fill-pointer 0))
-         (table-name (kebab->snake entity-name))
-         (columns (fetch-slots entity-name))
+         (table-name (kebab->snake model-name))
+         (columns (fetch-slots model-name))
          (conditions (if where
                          (parse-where where params)
                          nil)))
@@ -36,10 +36,10 @@
             params)))
 
 
-(defun fetch-slots (entity-name)
+(defun fetch-slots (model-name)
   (mapcar #'kebab->snake
           (mapcar #'closer-mop:slot-definition-name
-                  (closer-mop:class-slots (class-of (make-instance entity-name))))))
+                  (closer-mop:class-slots (class-of (make-instance model-name))))))
 
 (defun parse-where (where-cond params)
   (assert (not (null where-cond)))
