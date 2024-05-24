@@ -46,14 +46,30 @@
   :license \"\"
   :depends-on (\"clails-cli\"
                \"clails-model\")
-  :components ((:module \"app\"
-                :components ((:file \"packages\")))
-               (:module \"config\"
-                :components ((:file \"packages\")))
-               (:module \"db\"
-                :components ((:file \"packages\")))))
-
+  :components ((:file \"package\")
+               (:module \"app\"
+                :components ((:module \"controllers\"
+                              :components ((:file \"package\")))
+                             (:module \"models\"
+                              :components ((:file \"package\")))
+                             (:module \"views\"
+                              :components ((:file \"package\")))))))
 "))
+
+(defparameter package-template
+  (make-instance '<template>
+                 :path "/"
+                 :template "(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>
+  (:use #:cl))
+(in-package #:<%= (@ project-name ) %>)
+
+(setf clails-cli/main::*clails-project* \"<%= (@ project-name ) %>\")
+(setf clails-cli/main::*clails-directory* \"<%= (@ project-dir ) %>\")
+"))
+
+
+
 
 (defparameter controller-package-template
   (make-instance '<template>
@@ -70,8 +86,7 @@
                  :path "/app/models"
                  :template "(in-package #:cl-user)
 (defpackage #:<%= (@ project-name ) %>-model
-  (:use #:cl
-        #:clails-model))
+  (:use #:cl))
 (in-package #:<%= (@ project-name ) %>-model)
 "))
 
