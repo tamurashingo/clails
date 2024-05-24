@@ -15,8 +15,4 @@
   :license "MIT"
   :pathname "src"
   :depends-on ("cl-template"
-               "clails-cli/template"
-               "clails-cli/main"
-               "clails-cli/model"))
-
-
+               "clails-cli/main"))
