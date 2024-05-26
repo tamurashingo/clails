@@ -10,8 +10,8 @@
 
 ### Arguments and Values
 
-name -- string
-database -- `sqlite` , `mysql` , `postgresql`. default is `sqlite`
+- name -- string
+- database -- `sqlite` , `mysql` , `postgresql`. default is `sqlite`
 
 ### Examples
 
@@ -30,9 +30,9 @@ database -- `sqlite` , `mysql` , `postgresql`. default is `sqlite`
 
 ### Arguments and Values
 
-name -- string
-body -- list
-no-migration -- boolean. if T generate model only
+- name -- string
+- body -- list
+- no-migration -- boolean. if T generate model only
 
 ### Examples
 
@@ -53,9 +53,9 @@ no-migration -- boolean. if T generate model only
 
 ### Arguments and Values
 
-name -- string
-type -- `:create` or `:add-column`
-body -- list
+- name -- string
+- type -- `:create` or `:add-column`
+- body -- list
 
 
 Examples
