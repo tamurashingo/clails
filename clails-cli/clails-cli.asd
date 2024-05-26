@@ -1,3 +1,7 @@
+;;;; Copyright 2024 tamura shingo
+;;;;
+;;;; MIT License
+
 (in-package #:cl-user)
 
 (defpackage #:clails-cli-system
@@ -6,6 +10,9 @@
 (in-package #:clails-cli-system)
 
 (defsystem clails-cli
-  :components ((:module "src"
-                :components
-                ((:file "main")))))
+  :class :package-inferred-system
+  :author "tamura shingo"
+  :license "MIT"
+  :pathname "src"
+  :depends-on ("cl-template"
+               "clails-cli/main"))
