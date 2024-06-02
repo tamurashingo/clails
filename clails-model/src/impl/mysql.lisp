@@ -1,12 +1,14 @@
 (in-package #:cl-user)
 (defpackage #:clails-model/impl/mysql
   (:use #:cl
-        #:clails-model/migration))
+        #:clails-model/migration)
+  (:export #:initialize))
 (in-package #:clails-model/impl/mysql)
 
 (defclass <db-mysql> (clails-model/migration::<database>) ())
 
-(setf clails-model/migration::*db* (make-instance '<db-mysql>))
+(defun initialize ()
+  (setf clails-model/migration::*db* (make-instance '<db-mysql>)))
 
 (defparameter *mysql-type-convert*
   '((:string . "varchar(255)")

@@ -31,74 +31,6 @@
 
 
 
-(defparameter asd-template
-  (make-instance '<template>
-                 :path "/"
-                 :template   "(in-package #:cl-user)
-(defpackage #:<%= (@ project-name ) %>-system
-  (:use #:asdf #:cl))
-(in-package #:<%= (@ project-name ) %>-system)
-
-(defsystem <%= (@ project-name) %>
-  :description \"\"
-  :version \"0.0.1\"
-  :author \"\"
-  :license \"\"
-  :depends-on (\"clails-cli\"
-               \"clails-model\")
-  :components ((:file \"package\")
-               (:module \"app\"
-                :components ((:module \"controllers\"
-                              :components ((:file \"package\")))
-                             (:module \"models\"
-                              :components ((:file \"package\")))
-                             (:module \"views\"
-                              :components ((:file \"package\")))))))
-"))
-
-(defparameter package-template
-  (make-instance '<template>
-                 :path "/"
-                 :template "(in-package #:cl-user)
-(defpackage #:<%= (@ project-name ) %>
-  (:use #:cl))
-(in-package #:<%= (@ project-name ) %>)
-
-(setf clails-cli/main::*clails-project* \"<%= (@ project-name ) %>\")
-(setf clails-cli/main::*clails-directory* \"<%= (@ project-dir ) %>\")
-"))
-
-
-
-
-(defparameter controller-package-template
-  (make-instance '<template>
-                 :path "/app/controllers"
-                 :template "(in-package #:cl-user)
-(defpackage #:<%= (@ project-name ) %>-controller
-  (:use #:cl))
-(in-package #:<%= (@ project-name ) %>-controller)
-"))
-
-
-(defparameter model-package-template
-  (make-instance '<template>
-                 :path "/app/models"
-                 :template "(in-package #:cl-user)
-(defpackage #:<%= (@ project-name ) %>-model
-  (:use #:cl))
-(in-package #:<%= (@ project-name ) %>-model)
-"))
-
-(defparameter view-package-template
-  (make-instance '<template>
-                 :path "/app/views"
-                 :template "(in-package #:cl-user)
-(defpackage #:<%= (@ project-name ) %>-view
-  (:use #:cl))
-(in-package #:<%= (@ project-name ) %>-view)
-"))
-
 (defparameter model-migration-create-template
   (make-instance '<template>
                  :path "/db/migrate"
@@ -116,6 +48,8 @@
 (
 <% (loop for col in (@ body) do %><%= (format NIL \"  ~S~%\" col) %><% ) %>))
 "))
+
+
 
 
 (defparameter model-template

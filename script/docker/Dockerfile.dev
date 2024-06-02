@@ -1,12 +1,15 @@
 FROM fukamachi/sbcl
 
-RUN apt-get update
+RUN apt-get update && apt-get install -y \
+  default-libmysqlclient-dev \
+  libpq-dev \
+  libsqlite3-dev
 
 RUN mkdir /app
 WORKDIR /app
 COPY . /app
 
-COPY ./script/entrypoint.dev.sh /usr/bin/
+COPY entrypoint.dev.sh /usr/bin/
 RUN chmod +x /usr/bin/entrypoint.dev.sh
 ENTRYPOINT ["entrypoint.dev.sh"]
 
