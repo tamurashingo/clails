@@ -2,6 +2,9 @@
 
 ## create project
 
+`create-project` creates project name's package and some commands.
+
+
 ### Syntax
 
 ```lisp
@@ -11,12 +14,33 @@
 ### Arguments and Values
 
 - name -- string
-- database -- `sqlite` , `mysql` , `postgresql`. default is `sqlite`
+- database -- `sqlite3` , `mysql` , `postgresql`. default is `sqlite3`
+- paroject-path -- where to create the project. default is current directory
 
 ### Examples
 
 ```common-lisp
-(clails-cli:craete-project "todo-app" :database :mysql :project-path #P"/project")
+(clails-cli:craete-project "todoapp" :database :mysql :project-path #P"/project")
+```
+
+
+## create database
+
+### Syntax
+
+```common-lisp
+('project-name'-cli:db/create &key env)
+```
+
+### Arguments and Values
+
+- env -- `:development`, `:test`, `:production`. default is `:development` and `:test`
+
+
+### Examples
+
+```common-lisp
+(todoapp-cli:db/create)
 ```
 
 
@@ -25,7 +49,7 @@
 ### Syntax
 
 ```lisp
-(clails-cli:generate-model name body &key no-migration)
+('project-name'-cli:generate/model name body &key no-migration)
 ```
 
 ### Arguments and Values
@@ -37,10 +61,10 @@
 ### Examples
 
 ```lisp
-(clails-cli:generate-model "todo" '((title :type :string
-                                           :not-null T)
-                                    (done :type :boolean
-                                          :not-null T)))
+(todoapp-cli:generate/model "todo" '((title :type :string
+                                            :not-null T)
+                                      (done :type :boolean
+                                            :not-null T)))
 ```
 
 ## create migration file
@@ -48,7 +72,7 @@
 ### Syntax
 
 ```lisp
-(clails-cli:generate-migration name &key type body)
+('project-name'-cli:generate/migration name &key type body)
 ```
 
 ### Arguments and Values
@@ -61,8 +85,8 @@
 Examples
 
 ```lisp
-(clails-cli:generate-migration "todo" :type :add-column
-                                      :body '((done-at :type :datetime)))
+(todoapp-cli:generate-migration "todo" :type :add-column
+                                       :body '((done-at :type :datetime)))
 ```
 
 
