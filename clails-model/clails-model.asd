@@ -14,7 +14,6 @@
   :pathname "src"
   :depends-on ("closer-mop"
                "cl-ppcre"
-               "clails-model/migration"
-               "clails-model/base-model")
+               "clails-model/main")
   :description "clails model")
 

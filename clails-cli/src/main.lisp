@@ -16,24 +16,11 @@
 (defparameter *clails-directory* "")
 
 
-(defun create-project (project-name &key project-path (database :sqlite))
+(defun create-project (project-name &key project-path (database :sqlite3))
   (let ((project-dir (pathname (format NIL "~A/~A/" (if (null project-path)
                                               (truename #P"./")
                                               project-path)
                                           project-name))))
-    (setf *clails-project* project-name)
-    (setf *clails-directory* (namestring project-dir))
     (create-project-exp project-name project-dir database)))
 
 
-(defun generate-model (model-name body &key no-migration)
-  (generate-model-exp model-name *clails-project* *clails-directory*)
-  (when (not no-migration)
-    (generate-migration-exp model-name *clails-directory* :type :create :body body)))
-
-
-(defun generate-migration (model-name &key type body)
-  (when (not (or (eq type :create)
-                 (eq type :add-column)))
-    (error "type not supported:~A" type))
-  (generate-migration-exp model-name *clails-directory* :type type :body body))

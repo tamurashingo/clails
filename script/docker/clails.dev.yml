@@ -1,0 +1,16 @@
+services:
+  clails:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ../../:/app
+    ports:
+      - "8000:8000"
+      - "4005:4005"
+    tty: true
+    networks:
+      - clails_dev_nw
+networks:
+  clails_dev_nw:
+    external: true

@@ -21,7 +21,7 @@
                          :direction :output
                          :if-exists :error)
       (format out "~A" (funcall (cl-template:compile-template (template template))
-                                `(:project-name ,project-directory
+                                `(:project-name ,project-name
                                   :model ,model-name))))))
 
 (defun generate-migration-exp (model-name project-directory &key type body)
