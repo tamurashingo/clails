@@ -10,7 +10,13 @@ setup:
 .PHONY: test-prev
 test-prev:
 	docker-compose down || true
-	docker volume rm clails_test_db || true
+	#docker volume rm clails_test_db || true
+	rm -rf ./volumes
+	mkdir ./volumes
+	mkdir ./volumes/mysql
+	mkdir ./volumes/postgresql
+	mkdir ./volumes/postgresql/data
+	mkdir ./volumes/postgresql/log
 	docker-compose up -d
 
 .PHONY: test-wait

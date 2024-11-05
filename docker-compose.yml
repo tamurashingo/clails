@@ -9,7 +9,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - test_db:/var/lib/mysql
+      - ./volumes/mysql:/var/lib/mysql
     networks:
       - clails_test_nw
   postgresql:
@@ -18,12 +18,14 @@ services:
     environment:
       POSTGRES_USER: clails
       POSTGRES_PASSWORD: password
+      PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
+    volumes:
+      - ./volumes/postgresql/data:/var/lib/postgresql/data
+      - ./volumes/postgresql/log:/var/log
     networks:
       - clails_test_nw
 networks:
   clails_test_nw:
     external: true
-volumes:
-  test_db: {}
