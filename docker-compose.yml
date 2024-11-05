@@ -1,0 +1,29 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: clails_test_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - test_db:/var/lib/mysql
+    networks:
+      - clails_test_nw
+  postgresql:
+    image: postgres:16.3
+    container_name: clails_test_postgresql
+    environment:
+      POSTGRES_USER: clails
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    networks:
+      - clails_test_nw
+networks:
+  clails_test_nw:
+    external: true
+volumes:
+  test_db: {}

@@ -68,9 +68,9 @@
   (:use #:cl))
 (in-package #:<%= (@ project-name ) %>)
 
-(defparameter *clails-project* \"<%= (@ project-name ) %>\")      
-(defparameter *clails-directory* \"<%= (@ project-dir ) %>\")
-(defparameter *clails-database* \"<%= string-downcase (string (@ database )) %>\")
+(setf clails/environment:*project-name* \"<%= (@ project-name ) %>\")
+(setf clails/environment:*project-dir* \"<%= (@ project-dir ) %>\")
+(setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-<%= string-downcase (string (@ database )) %>>))
 "))
 
 (defparameter app/controller/package-template
@@ -87,7 +87,9 @@
                  :path "/app/models"
                  :template "(in-package #:cl-user)
 (defpackage #:<%= (@ project-name ) %>-model
-  (:use #:cl))
+  (:use #:cl)
+  (:import-from #:clails/model/base-model
+                #:<base-model>))
 (in-package #:<%= (@ project-name ) %>-model)
 "))
 
@@ -112,7 +114,7 @@
   (uiop:getenv env-name))
 
 (defun env-or-default (env-name default-value)
-  (or (uiop:geenv env-name)
+  (or (uiop:getenv env-name)
       default-value))
 "))
 

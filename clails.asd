@@ -15,6 +15,9 @@
   :author "tamura shingo"
   :license "MIT"
   :pathname "src"
-  :depends-on ("cl-template"
+  :depends-on ("cl-ppcre"
+               "cl-template"
+               "cl-dbi-connection-pool"
+               "closer-mop"
                "clails/main"))
 

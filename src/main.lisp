@@ -3,7 +3,15 @@
   (:use #:cl)
   (:nicknames #:clails)
   (:import-from #:clails/cmd
-                #:create-project)
-  (:export #:create-project))
+                #:create-project
+                #:generate/model
+                #:generate/migration)
+  (:export #:create-project
+           #:generate/model
+           #:generate/migration))
 (in-package #:clails/main)
+
+
+
+
 
