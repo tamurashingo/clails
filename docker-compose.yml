@@ -1,11 +1,31 @@
 services:
-  dev:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - ./:/app/
+  mysql:
+    image: mysql:8.0
+    container_name: clails_test_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
     ports:
-      - "8000:8000"
-      - "4005:4005"
-    tty: true
+      - "3306:3306"
+    volumes:
+      - ./volumes/mysql:/var/lib/mysql
+    networks:
+      - clails_test_nw
+  postgresql:
+    image: postgres:16.3
+    container_name: clails_test_postgresql
+    environment:
+      POSTGRES_USER: clails
+      POSTGRES_PASSWORD: password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./volumes/postgresql/data:/var/lib/postgresql/data
+      - ./volumes/postgresql/log:/var/log
+    networks:
+      - clails_test_nw
+networks:
+  clails_test_nw:
+    external: true
