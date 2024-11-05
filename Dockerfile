@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
   default-mysql-client \
   postgresql-client
 
+RUN ros run -e "(ql-dist:install-dist \"http://dist.shirakumo.org/shirakumo.txt\" :prompt nil)"
 RUN ros install qlot rove
 
 ENV PATH=${PATH}:/root/.roswell/bin
