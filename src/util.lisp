@@ -14,3 +14,19 @@
                  s)))
     (ppcre:regex-replace-all "-" str "_")))
 
+
+;;
+;; check args are not null
+;;
+;; sample
+;; (defun foo (name value)
+;;   (mandatory-check name value)
+;;   (format t "~A is ~A" name value))
+;;
+(defmacro mandatory-check (&rest args)
+  `(funcall #'(lambda ()
+                ,@(loop for a in args
+                        collect `(assert (not (null a))
+                                         (,a)
+                                         "mandatory-check error param: ~A" ,a)))))
+
