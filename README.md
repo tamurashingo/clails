@@ -3,30 +3,31 @@ framework?
 
 ## how to develop
 
-create docker image.
+### develop
+
+...
+
+### test
+
+Run setup only once.
 
 ```sh
 make setup
 ```
 
-run swank server on docker.
+
+Run test.
 
 ```sh
-make dev.up
-```
-
-connect swank server from emacs.
-
-```emacs
-M-x slime-connect
-Host: 127.0.0.1
-Port: 4005
+make test
 ```
 
 
-stop swank server
+Shutdown components.
 
 ```sh
-make dev.down
+docker compose down
 ```
 
+---
+Copyright 2024 tamura shingo
