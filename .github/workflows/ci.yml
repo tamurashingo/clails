@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:12.17-alpine3.19
+        env:
+          POSTGRES_USER: pgsql
+          POSTGRES_PASSWORD: password
+       options: >-
+         --health-cmd pg_isready
+         --health-interval 10s
+         --health-timeout 5s
+         --health-retries 5
+       ports:
+         - 5432:5432
+
+    steps:
+    - name: Check out
+      uses: actions/checkout@4
+
+    - name: Install Roswell
+      run: |
+        curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+    - name: Install Qlot, Rove
+      run: ros install qlot rove
+    - name: Run tests
+      run: |
+        PATH="~/.roswell/bin:$PATH"
+        qlot install
+        qlot exec rove clails-test.asd
+
+     
