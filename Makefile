@@ -1,11 +1,13 @@
 TEST_NW := clails_test_nw
+TEST_NW_EXISTS := $(shell docker network ls --filter name=$(TEST_NW) --format '{{ .ID }}')
 
 .PHONY: setup
 setup:
 	@echo "Setting up..."
 	docker build -t clails-dev .
-	test -z "$$(docker network ls --filter name=$(TEST_NW) --format '{{ .ID }}')"
-	docker network create -d bridge $(TEST_NW)
+	@if [ -z $(TEST_NW_EXISTS) ]; then \
+	    docker network create-d bridge $(TEST_NW) ; \
+	fi
 
 .PHONY: test-prev
 test-prev:
