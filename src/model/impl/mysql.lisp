@@ -12,7 +12,8 @@
                 #:drop-column-impl
                 #:drop-index-impl
                 #:ensure-database-impl
-                #:ensure-migration-table-impl)
+                #:ensure-migration-table-impl
+                #:check-type-valid)
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl)
   (:import-from #:clails/util
@@ -33,7 +34,6 @@
 
 (defun type-convert (type)
   (cdr (assoc type *mysql-type-convert*)))
-
 
 (defmethod create-table-impl ((database-type <database-type-mysql>) connection &key table columns constraints)
   (mandatory-check table columns)
@@ -115,7 +115,7 @@
          (primary-key-p (getf attr :primary-key))
          (auto-increment-p (getf attr :auto-increment))
          (default-value (getf attr :default-value)))
-    ;(check-type-valid type)
+    (check-type-valid type)
     (create-column column-name type not-null-p primary-key-p auto-increment-p default-value)))
 
 

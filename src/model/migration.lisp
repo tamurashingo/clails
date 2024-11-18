@@ -20,7 +20,10 @@
            #:add-index-impl
            #:drop-table-impl
            #:drop-column-impl
-           #:drop-index-impl))
+           #:drop-index-impl
+           #:db-create
+           #:db-migrate
+           #:check-type-valid))
 (in-package #:clails/model/migration)
 
 ;;; migration list
@@ -160,7 +163,6 @@
          (up-fn (getf migration :up)))
     (funcall up-fn connection)
     (insert-migration connection migration-name)))
-
 
 (defun not-migrated-p (connection migration-name)
   (format T "checking migration: ~A~%" migration-name)
