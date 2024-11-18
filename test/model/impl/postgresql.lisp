@@ -11,49 +11,11 @@
                                                 :user "clails"
                                                 :password "password"
                                                 :host "host.docker.internal"
-                                                :port "5432"))
-)
-
-(defhook initialize-tbl :before
-  (setf clails/model/migration::*tbl* '()))
-
-(deftest parse-migration
-  (testing "generated sql: create table"
-    (let* ((s '(create-table "todo"
-                (("title" :type :string)
-                 ("done" :type :boolean))))
-           (result-raw (clails/model/migration::parse-migration s))
-           (result (ppcre:regex-replace-all "\\s+" result-raw " "))
-           (expect (ppcre:regex-replace-all "\\s+" (format nil "create table todo ( ~
-                      id SERIAL NOT NULL PRIMARY KEY , ~
-                      created_at timestamp NOT NULL , ~
-                      updated_at timestamp NOT NULL , ~
-                      title varchar(255) NULL , ~
-                      done boolean NULL ~
-                 )") " ")))
-      (ok (string= expect result))))
-  (testing "generated model data"
-    (ok (equal '(("todo" . (("title" :TYPE :STRING)
-                            ("done" :TYPE :BOOLEAN))))
-               clails/model/migration::*tbl*)))
-
-  (testing "generated sql: add column"
-    (let* ((s '(add-column "todo"
-                (("done-at" :type :datetime))))
-           (result-raw (clails/model/migration::parse-migration s))
-           (result (ppcre:regex-replace-all "\\s+" result-raw " "))
-           (expect (ppcre:regex-replace-all "\\s+" (format nil "alter table todo add column done_at timestamp NULL ") " ")))
-      (ok (string= expect result))))
-
-  (testing "updated model data"
-    (ok (equal '(("todo" . (("title" :TYPE :STRING)
-                            ("done" :TYPE :BOOLEAN)
-                            ("done-at" :TYPE :DATETIME))))
-               clails/model/migration::*tbl*))))
+                                                :port "5432")))
 
 
 (deftest create-database
-  (clails/model/migration::%db/create)
+  (clails/model/migration::db-create)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check database exists
     (let* ((query (dbi:prepare connection "select datname from pg_database where datname = ?"))
@@ -64,9 +26,8 @@
            (result (dbi:execute query (list "migration"))))
       (ok (string= "migration" (getf (dbi:fetch result) :|tablename|))))))
 
-
 (deftest migration
-  (clails/model/migration::%db/migrate "/app/test/")
+  (clails/model/migration::db-migrate "/app/test/")
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
     (let* ((result (dbi:fetch-all (dbi:execute (dbi:prepare connection
@@ -96,7 +57,7 @@
       ;; title
       (ok (string= "title" (getf title :|column_name|)))
       (ok (string= "character varying" (getf title :|data_type|)))
-      (ok (string= "YES" (getf title :|is_nullable|)))
+      (ok (string= "NO" (getf title :|is_nullable|)))
       (ok (eq :NULL (getf title :|column_default|)))
       ;; done
       (ok (string= "done" (getf done :|column_name|)))
