@@ -5,6 +5,17 @@
         #:clails/model/impl/postgresql))
 (in-package #:clails-test/model/impl/postgresql)
 
+(defpackage #:clails-test/model/db
+  (:use #:cl)
+  (:import-from #:clails/model/migration
+                #:defmigration
+                #:create-table
+                #:add-column
+                #:add-index
+                #:drop-table
+                #:drop-column
+                #:drop-index))
+
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-postgresql>))
    (setf clails/environment:*database-config* '(:database "clails_test"
