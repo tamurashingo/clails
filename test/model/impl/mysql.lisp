@@ -5,6 +5,17 @@
         #:clails/model/impl/mysql))
 (in-package #:clails-test/model/impl/mysql)
 
+(defpackage #:clails-test/model/db
+  (:use #:cl)
+  (:import-from #:clails/model/migration
+                #:defmigration
+                #:create-table
+                #:add-column
+                #:add-index
+                #:drop-table
+                #:drop-column
+                #:drop-index))
+
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
    (setf clails/environment:*database-config* '(:database "clails_test"
@@ -14,47 +25,8 @@
                                                 :port "3306")))
 
 
-
-(defhook initialize-tbl :before
-  (setf clails/model/migration::*tbl* '()))
-
-(deftest parse-migration
-  (testing "generated sql: create table"
-    (let* ((s '(create-table "todo"
-                (("title" :type :string)
-                 ("done" :type :boolean))))
-           (result-raw (clails/model/migration::parse-migration s))
-           (result (ppcre:regex-replace-all "\\s+" result-raw " "))
-           (expect (ppcre:regex-replace-all "\\s+" (format nil "create table todo ( ~
-                      id integer NOT NULL PRIMARY KEY AUTO_INCREMENT , ~
-                      created_at datetime NOT NULL , ~
-                      updated_at datetime NOT NULL , ~
-                      title varchar(255) NULL , ~
-                      done boolean NULL ~
-                 )") " ")))
-      (ok (string= expect result))))
-  (testing "generated model data"
-    (ok (equal '(("todo" . (("title" :TYPE :STRING)
-                            ("done" :TYPE :BOOLEAN))))
-               clails/model/migration::*tbl*)))
-
-  (testing "generated sql: add column"
-    (let* ((s '(add-column "todo"
-                (("done-at" :type :datetime))))
-           (result-raw (clails/model/migration::parse-migration s))
-           (result (ppcre:regex-replace-all "\\s+" result-raw " "))
-           (expect (ppcre:regex-replace-all "\\s+" (format nil "alter table todo add column done_at datetime NULL ") " ")))
-      (ok (string= expect result))))
-
-  (testing "updated model data"
-    (ok (equal '(("todo" . (("title" :TYPE :STRING)
-                            ("done" :TYPE :BOOLEAN)
-                            ("done-at" :TYPE :DATETIME))))
-               clails/model/migration::*tbl*))))
-
-
 (deftest create-database
-  (clails/model/migration::%db/create)
+  (clails/model/migration::db-create)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check database exists
     (let* ((query (dbi:prepare connection "show databases like ?"))
@@ -66,7 +38,7 @@
       (ok (string= "migration" (getf (dbi:fetch result) :|Tables_in_clails_test (migration)|))))))
 
 (deftest migration
-  (clails/model/migration::%db/migrate "/app/test/")
+  (clails/model/migration::db-migrate "/app/test/")
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
     (let* ((result (dbi:fetch-all (dbi:execute (dbi:prepare connection
@@ -96,7 +68,7 @@
       ;; title
       (ok (string= "title" (getf title :COLUMN_NAME)))
       (ok (string= "varchar(255)" (flexi-streams:octets-to-string (getf title :COLUMN_TYPE))))
-      (ok (null (getf title :COLUMN_KEY)))
+      (ok (string= "MUL" (getf title :COLUMN_KEY)))
       (ok (null (getf title :EXTRA)))
       ;; done
       (ok (string= "done" (getf done :COLUMN_NAME)))
@@ -108,6 +80,4 @@
       (ok (string= "datetime" (flexi-streams:octets-to-string (getf done-at :COLUMN_TYPE))))
       (ok (null (getf done-at :COLUMN_KEY)))
       (ok (null (getf done-at :EXTRA))))))
-
-
 
