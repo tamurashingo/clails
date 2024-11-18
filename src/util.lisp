@@ -26,7 +26,7 @@
 (defmacro mandatory-check (&rest args)
   `(funcall #'(lambda ()
                 ,@(loop for a in args
-                        collect `(assert (not (null a))
+                        collect `(assert (not (null ,a))
                                          (,a)
-                                         "mandatory-check error param: ~A" ,a)))))
+                                         "mandatory-check error param: ~A" ',a)))))
 
