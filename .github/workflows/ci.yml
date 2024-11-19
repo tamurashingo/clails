@@ -31,10 +31,10 @@ jobs:
         curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
     - name: Install Qlot, Rove
       run: ros install qlot rove
-    - name: Run tests
+    - name: Set up
       run: |
         PATH="~/.roswell/bin:$PATH"
         qlot install
-        qlot exec rove clails-test.asd
+    - name: Run tests
+      run: qlot exec rove clails-test.asd
 
-     
