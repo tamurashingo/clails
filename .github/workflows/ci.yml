@@ -57,7 +57,7 @@ jobs:
         CLAILS_MIGRATION_DIR: ${{ github.workspace }}/test
         CLAILS_SQLITE3_DATABASE: ${{ github.workspace }}
         CLAILS_MYSQL_DATABASE: clails_test
-        CLAILS_MYSQL_USERNAME: clails_user
+        CLAILS_MYSQL_USERNAME: root
         CLAILS_MYSQL_PASSWORD: password
         CLAILS_MYSQL_HOST: 127.0.0.1
         CLAILS_MYSQL_PORT: 3306
