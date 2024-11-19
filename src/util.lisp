@@ -1,6 +1,9 @@
 (in-package #:cl-user)
 (defpackage #:clails/util
-  (:use #:cl))
+  (:use #:cl)
+  (:export #:kebab->snake
+           #:mandatory-check
+           #:env-or-default))
 (in-package #:clails/util)
 
 (defun kebab->snake (s)
@@ -30,3 +33,6 @@
                                          (,a)
                                          "mandatory-check error param: ~A" ',a)))))
 
+(defun env-or-default (env-name default-value)
+  (or (uiop:getenv env-name)
+      default-value))

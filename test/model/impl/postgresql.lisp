@@ -2,7 +2,9 @@
 (defpackage #:clails-test/model/impl/postgresql
   (:use #:cl
         #:rove
-        #:clails/model/impl/postgresql))
+        #:clails/model/impl/postgresql)
+  (:import-from #:clails/util
+                #:env-or-default))
 (in-package #:clails-test/model/impl/postgresql)
 
 (defpackage #:clails-test/model/db
@@ -18,11 +20,13 @@
 
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-postgresql>))
-   (setf clails/environment:*database-config* '(:database "clails_test"
-                                                :user "clails"
-                                                :password "password"
-                                                :host "host.docker.internal"
-                                                :port "5432")))
+   (setf clails/environment:*database-config* `(:database ,(env-or-default "CLAILS_POSTGRESQL_DATABASE" "clails_test")
+                                                :user ,(env-or-default "CLAILS_POSTGRESQL_USERNAME" "clails")
+                                                :password ,(env-or-default "CLAILS_POSTGRESQL_PASSWORD" "password")
+                                                :host ,(env-or-default "CLAILS_POSTGRESQL_HOST" "host.docker.internal")
+                                                :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "5432")))
+   (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+)
 
 
 (deftest create-database
@@ -38,7 +42,7 @@
       (ok (string= "migration" (getf (dbi:fetch result) :|tablename|))))))
 
 (deftest migration
-  (clails/model/migration::db-migrate "/app/test/")
+  (clails/model/migration::db-migrate *migration-dir*)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
     (let* ((result (dbi:fetch-all (dbi:execute (dbi:prepare connection

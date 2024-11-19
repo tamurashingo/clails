@@ -16,8 +16,8 @@
   :license "MIT"
   :pathname "src"
   :depends-on ("cl-ppcre"
-               "cl-template"
                "cl-dbi-connection-pool"
+               "cl-template"
                "closer-mop"
                "clails/main"))
 
