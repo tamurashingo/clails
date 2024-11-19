@@ -30,7 +30,9 @@ jobs:
       run: |
         curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
     - name: Install Qlot, Rove
-      run: ros install qlot rove
+      run: |
+        ros run -e "(ql-dist:install-dist \"http://dist.shirakumo.org/shirakumo.txt\" :prompt nil)"
+        ros install qlot rove
     - name: Set up
       run: |
         PATH="~/.roswell/bin:$PATH"
