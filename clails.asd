@@ -17,7 +17,6 @@
   :pathname "src"
   :depends-on ("cl-ppcre"
                "cl-template"
-               "cl-dbi-connection-pool"
                "closer-mop"
                "clails/main"))
 
