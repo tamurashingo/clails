@@ -21,7 +21,7 @@
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-sqlite3>))
    (setf clails/environment:*database-config* `(:database ,@(format NIL "~A/volumes/clails_test.sqlite3" (env-or-default "CLAILS_SQLITE3_DATABASE" "/app"))))
-   (defvar *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+   (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
 )
 
 

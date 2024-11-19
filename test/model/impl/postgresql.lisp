@@ -25,7 +25,7 @@
                                                 :password (env-or-default "CLAILS_POSTGRESQL_PASSWORD" "password")
                                                 :host (env-or-default "CLAILS_POSTGRESQL_HOST" "host.docker.internal")
                                                 :port (env-or-default "CLAILS_POSTGRESQL_PORT" "5432")))
-   (defvar *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+   (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
 )
 
 

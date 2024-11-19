@@ -25,7 +25,7 @@
                                                 :password (env-or-default "CLAILS_MYSQL_PASSWORD" "password")
                                                 :host (env-or-default "CLAILS_MYSQL_HOST" "host.docker.internal")
                                                 :port (env-or-default "CLAILS_MYSQL_PORT" "3306")))
-    (defvar *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+    (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
 )
 
 
