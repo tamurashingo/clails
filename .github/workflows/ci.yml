@@ -36,5 +36,7 @@ jobs:
         PATH="~/.roswell/bin:$PATH"
         qlot install
     - name: Run tests
-      run: qlot exec rove clails-test.asd
+      run: |
+        PATH="~/.roswell/bin:$PATH"
+        qlot exec rove clails-test.asd
 
