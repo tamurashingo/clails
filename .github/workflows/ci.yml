@@ -59,12 +59,12 @@ jobs:
         CLAILS_MYSQL_DATABASE: clails_test
         CLAILS_MYSQL_USER: clails_user
         CLAILS_MYSQL_PASSWORD: password
-        CLAILS_MYSQL_HOST: localhost
+        CLAILS_MYSQL_HOST: 127.0.0.1
         CLAILS_MYSQL_PORT: 3306
         CLAILS_POSTGRESQL_DATABASE: clails_test
         CLAILS_POSTGRESQL_USER: clails_user
         CLAILS_POSTGRESQL_PASSWORD: password
-        CLAILS_POSTGRESQL_HOST: localhost
+        CLAILS_POSTGRESQL_HOST: 127.0.0.1
         CLAILS_POSTGRESQL_PORT: 5432
 
 
