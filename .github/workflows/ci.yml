@@ -37,9 +37,7 @@ jobs:
       run: |
         PATH="~/.roswell/bin:$PATH"
         qlot install
-        which qlot
-        which rove
-        qlot exec rove clails-test.asd
+        rove clails-test.asd
       env:
         CL_SOURCE_REGISTRY: ${{ github.workspace }}
 
