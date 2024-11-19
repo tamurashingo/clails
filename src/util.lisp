@@ -1,6 +1,9 @@
 (in-package #:cl-user)
 (defpackage #:clails/util
-  (:use #:cl))
+  (:use #:cl)
+  (:export #:kebab->snake
+           #:mandatory-check
+           #:env-or-default))
 (in-package #:clails/util)
 
 (defun kebab->snake (s)
