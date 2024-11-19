@@ -107,15 +107,14 @@
                  :path "/config"
                  :template "(in-package #:cl-user)
 (defpackage #:<%= (@ project-name ) %>-config
-  (:use #:cl))
+  (:use #:cl)
+  (:import-from #:clails/util
+                #:env-or-default))
 (in-package #:<%= (@ project-name ) %>-config)
 
 (defun env (env-name)
   (uiop:getenv env-name))
 
-(defun env-or-default (env-name default-value)
-  (or (uiop:getenv env-name)
-      default-value))
 "))
 
 (defparameter config/database-sqlite-template

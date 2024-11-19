@@ -2,7 +2,9 @@
 (defpackage #:clails-test/model/impl/mysql
   (:use #:cl
         #:rove
-        #:clails/model/impl/mysql))
+        #:clails/model/impl/mysql)
+  (:import-from #:clails/util
+                #:env-or-default))
 (in-package #:clails-test/model/impl/mysql)
 
 (defpackage #:clails-test/model/db
@@ -18,11 +20,13 @@
 
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
-   (setf clails/environment:*database-config* '(:database "clails_test"
-                                                :user "root"
-                                                :password "password"
-                                                :host "host.docker.internal"
-                                                :port "3306")))
+   (setf clails/environment:*database-config* '(:database (env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
+                                                :user (env-or-default "CLAILS_MYSQL_USERNAME" "root")
+                                                :password (env-or-default "CLAILS_MYSQL_PASSWORD" "password")
+                                                :host (env-or-default "CLAILS_MYSQL_HOST" "host.docker.internal")
+                                                :port (env-or-default "CLAILS_MYSQL_PORT" "3306")))
+    (defvar *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+)
 
 
 (deftest create-database
@@ -38,7 +42,7 @@
       (ok (string= "migration" (getf (dbi:fetch result) :|Tables_in_clails_test (migration)|))))))
 
 (deftest migration
-  (clails/model/migration::db-migrate "/app/test/")
+  (clails/model/migration::db-migrate *migration-dir*)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
     (let* ((result (dbi:fetch-all (dbi:execute (dbi:prepare connection

@@ -2,7 +2,9 @@
 (defpackage #:clails-test/model/impl/sqlite3
   (:use #:cl
         #:rove
-        #:clails/model/impl/sqlite3))
+        #:clails/model/impl/sqlite3)
+  (:import-from #:clails/util
+                #:env-or-default))
 (in-package #:clails-test/model/impl/sqlite3)
 
 (defpackage #:clails-test/model/db
@@ -18,7 +20,8 @@
 
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-sqlite3>))
-   (setf clails/environment:*database-config* '(:database "/app/volumes/clails_test.sqlite3"))
+   (setf clails/environment:*database-config* `(:database ,@(format NIL "~A/volumes/clails_test.sqlite3" (env-or-default "CLAILS_SQLITE3_DATABASE" "/app"))))
+   (defvar *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
 )
 
 
@@ -31,7 +34,7 @@
       (ok (string= "migration" (getf (dbi:fetch result) :|tbl_name|))))))
 
 (deftest migration
-  (clails/model/migration::db-migrate "/app/test/")
+  (clails/model/migration::db-migrate *migration-dir*)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
     (let* ((result (dbi:fetch-all (dbi:execute (dbi:prepare connection "pragma table_info('todo')")
