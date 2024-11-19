@@ -35,9 +35,9 @@ jobs:
         ros install qlot rove
     - name: Run tests
       run: |
-        PATH="~/.roswell/bin:$PATH"
+        echo "$HOME/.roswell/bin" >> $GITHUB_PATH
         qlot install
-        rove clails-test.asd
+        qlot exec rove clails-test.asd
       env:
-        CL_SOURCE_REGISTRY: ${{ github.workspace }}:${{ github.workspace }}/qlot
+        CL_SOURCE_REGISTRY: ${{ github.workspace }}
 
