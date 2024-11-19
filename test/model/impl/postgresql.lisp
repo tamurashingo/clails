@@ -20,11 +20,11 @@
 
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-postgresql>))
-   (setf clails/environment:*database-config* '(:database (env-or-default "CLAILS_POSTGRESQL_DATABASE" "clails_test")
-                                                :user (env-or-default "CLAILS_POSTGRESQL_USERNAME" "clails")
-                                                :password (env-or-default "CLAILS_POSTGRESQL_PASSWORD" "password")
-                                                :host (env-or-default "CLAILS_POSTGRESQL_HOST" "host.docker.internal")
-                                                :port (env-or-default "CLAILS_POSTGRESQL_PORT" "5432")))
+   (setf clails/environment:*database-config* `(:database ,(env-or-default "CLAILS_POSTGRESQL_DATABASE" "clails_test")
+                                                :user ,(env-or-default "CLAILS_POSTGRESQL_USERNAME" "clails")
+                                                :password ,(env-or-default "CLAILS_POSTGRESQL_PASSWORD" "password")
+                                                :host ,(env-or-default "CLAILS_POSTGRESQL_HOST" "host.docker.internal")
+                                                :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "5432")))
    (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
 )
 
