@@ -39,5 +39,5 @@ jobs:
         qlot install
         rove clails-test.asd
       env:
-        CL_SOURCE_REGISTRY: ${{ github.workspace }}:"$HOME/.qlot"
+        CL_SOURCE_REGISTRY: ${{ github.workspace }}:${{ github.workspace }}/qlot
 
