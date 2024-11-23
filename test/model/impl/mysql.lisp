@@ -62,32 +62,32 @@
            (done-at (sixth result)))
       ;; id
       (ok (string= "id" (getf id :COLUMN_NAME)))
-      (ok (string= "int" (flexi-streams:octets-to-string (getf id :COLUMN_TYPE))))
+      (ok (string= "int" (babel:octets-to-string (getf id :COLUMN_TYPE))))
       (ok (string= "PRI" (getf id :COLUMN_KEY)))
       (ok (string= "auto_increment" (getf id :EXTRA)))
       ;; created-at
       (ok (string= "created_at" (getf created-at :COLUMN_NAME)))
-      (ok (string= "datetime" (flexi-streams:octets-to-string (getf created-at :COLUMN_TYPE))))
+      (ok (string= "datetime" (babel:octets-to-string (getf created-at :COLUMN_TYPE))))
       (ok (null (getf created-at :COLUMN_KEY)))
       (ok (null (getf created-at :EXTRA)))
       ;; updated-at
       (ok (string= "updated_at" (getf updated-at :COLUMN_NAME)))
-      (ok (string= "datetime" (flexi-streams:octets-to-string (getf updated-at :COLUMN_TYPE))))
+      (ok (string= "datetime" (babel:octets-to-string (getf updated-at :COLUMN_TYPE))))
       (ok (null (getf updated-at :COLUMN_KEY)))
       (ok (null (getf updated-at :EXTRA)))
       ;; title
       (ok (string= "title" (getf title :COLUMN_NAME)))
-      (ok (string= "varchar(255)" (flexi-streams:octets-to-string (getf title :COLUMN_TYPE))))
+      (ok (string= "varchar(255)" (babel:octets-to-string (getf title :COLUMN_TYPE))))
       (ok (string= "MUL" (getf title :COLUMN_KEY)))
       (ok (null (getf title :EXTRA)))
       ;; done
       (ok (string= "done" (getf done :COLUMN_NAME)))
-      (ok (string= "tinyint(1)" (flexi-streams:octets-to-string (getf done :COLUMN_TYPE))))
+      (ok (string= "tinyint(1)" (babel:octets-to-string (getf done :COLUMN_TYPE))))
       (ok (null (getf done :COLUMN_KEY)))
       (ok (null (getf done :EXTRA)))
       ;; done-at
       (ok (string= "done_at" (getf done-at :COLUMN_NAME)))
-      (ok (string= "datetime" (flexi-streams:octets-to-string (getf done-at :COLUMN_TYPE))))
+      (ok (string= "datetime" (babel:octets-to-string (getf done-at :COLUMN_TYPE))))
       (ok (null (getf done-at :COLUMN_KEY)))
       (ok (null (getf done-at :EXTRA))))))
 
