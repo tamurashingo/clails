@@ -1,19 +1,28 @@
 (in-package #:cl-user)
 (defpackage #:clails/model/base-model
   (:use #:cl)
-  (:export #:<base-model>))
+  (:import-from #:clails/environment
+                #:*database-type*)
+  (:import-from #:clails/model/connection
+                #:with-db-connection-direct)
+  (:import-from #:clails/util
+                #:kebab->snake)
+  (:export #:<base-model>
+           #:defmodel
+           #:fetch-columns-impl
+           #:ref))
 (in-package #:clails/model/base-model)
+
 
 (defclass <base-model> ()
   ((data :initform (make-hash-table))
    (save-p :initform nil)))
 
 (defmethod initialize-instance :after ((m <base-model>) &rest initargs)
-  (declare (ignorable initargs))
-  ;; make base field
-  (setf (gethash :id (slot-value m 'data)) nil)
-  (setf (gethash :created-at (slot-value m 'data)) nil)
-  (setf (gethash :updated-at (slot-value m 'data)) nil))
+  (declare (ignore initargs))
+  (loop for col in (slot-value m 'columns)
+        do (setf (gethash col (slot-value m 'data)) nil)))
+
 
 (defmethod ref ((inst <base-model>) key)
   (multiple-value-bind (value present-p)
@@ -35,6 +44,35 @@
   (maphash #'(lambda (key value)
                (format t "~A:~A~%" key value))
            (slot-value model 'data)))
+
+
+(defun model->tbl (sym)
+  "convert model name to table name.
+   <todo> -> \"TODO\"
+   <todo-history> -> \"TODO_HISTORY\""
+  (kebab->snake
+   (ppcre:regex-replace-all
+      "\>"
+      (ppcre:regex-replace-all
+         "\<"
+         (format NIL "~S" sym)
+         "")
+      "")))
+
+(defmacro defmodel (cls-name superclass &optional options)
+  (let ((table-name (anaphora:aif (getf options :table)
+                                  anaphora:it
+                                  (model->tbl cls-name)))
+        (fn-name (intern (format NIL "%MAKE-~S-INITFORM" cls-name))))
+    `(progn
+       (defun ,fn-name ()
+         (with-db-connection-direct (conn)
+           (fetch-columns-impl *database-type* conn ,table-name)))
+       (defclass ,cls-name ,superclass
+         ((columns :initform (,fn-name)))))))
+
+(defgeneric fetch-columns-impl (database-type connection tabole)
+  (:documentation "Implemantation of fetch column"))
 
 
 ;;

@@ -6,6 +6,9 @@
                 #:create-project
                 #:generate/model
                 #:generate/migration)
+  (:import-from #:clails/model/base-model
+                #:defmodel
+                #:<base-model>)
   (:export #:create-project
            #:generate/model
            #:generate/migration))
