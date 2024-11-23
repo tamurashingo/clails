@@ -76,11 +76,9 @@
 
 
 ;;
-;; (defclass <todo> (<base-model>) ())
-;; (defmethod initialize-instance :after ((m <todo>) &rest initargs)
-;;   ;; make field
-;;   (setf (gethash :title (slot-value m 'data)) nil)
-;;   (setf (gethash :done (slot-value m 'data)) nil))
+;; (defmodel <todo> (<base-model>)
+;;   (:table "todo"))
+;;
 ;; (defvar todo (make-instance '<todo>))
 ;;
 ;; (setf (ref todo :title) "refactor all products")
@@ -91,3 +89,4 @@
 ;; UPDATED-AT:NIL
 ;; TITLE:refactor all products
 ;; DONE:NIL
+;;
