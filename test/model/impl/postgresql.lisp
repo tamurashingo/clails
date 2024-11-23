@@ -9,8 +9,6 @@
                 #:<base-model>
                 #:defmodel
                 #:ref))
-(in-package #:clails-test/model/impl/postgresql)
-
 (defpackage #:clails-test/model/db
   (:use #:cl)
   (:import-from #:clails/model/migration
@@ -21,10 +19,10 @@
                 #:drop-table
                 #:drop-column
                 #:drop-index))
-
+(in-package #:clails-test/model/impl/postgresql)
 
 (defvar *migration-dir* nil)
-(defvar todo nil)
+(defvar todo-pg nil)
 
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-postgresql>))
@@ -37,7 +35,7 @@
 )
 
 
-(deftest create-database
+(deftest create-database-postgresql
   (clails/model/migration::db-create)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check database exists
@@ -49,7 +47,7 @@
            (result (dbi:execute query (list "migration"))))
       (ok (string= "migration" (getf (dbi:fetch result) :|tablename|))))))
 
-(deftest migration
+(deftest migration-postgresql
   (clails/model/migration::db-migrate *migration-dir*)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
@@ -94,36 +92,36 @@
       (ok (eq :NULL (getf done-at :|column_default|))))))
 
 
-(deftest defmodel
+(deftest defmodel-postgresql
   (defmodel <todo-postgresql> (<base-model>)
     (:table "todo"))
 
-  (setf todo (make-instance '<todo-postgresql>))
+  (setf todo-pg (make-instance '<todo-postgresql>))
 
   ;; check member field
-  (ok (null (ref todo :id)))
-  (ok (null (ref todo :created-at)))
-  (ok (null (ref todo :updated-at)))
-  (ok (null (ref todo :title)))
-  (ok (null (ref todo :done)))
-  (ok (null (ref todo :done-at)))
+  (ok (null (ref todo-pg :id)))
+  (ok (null (ref todo-pg :created-at)))
+  (ok (null (ref todo-pg :updated-at)))
+  (ok (null (ref todo-pg :title)))
+  (ok (null (ref todo-pg :done)))
+  (ok (null (ref todo-pg :done-at)))
 
   ;; error when no member field
   (ok (signals (ref todo :done-by)))
 
   ;; update member
-  (setf (ref todo :id) 1)
-  (setf (ref todo :created-at) "2024-01-01 00:00:00")
-  (setf (ref todo :updated-at) "2024-02-02 12:34:56")
-  (setf (ref todo :title) "refactor all products")
-  (setf (ref todo :done) T)
-  (setf (ref todo :done-at) "2024-03-03 12:00:00")
+  (setf (ref todo-pg :id) 1)
+  (setf (ref todo-pg :created-at) "2024-01-01 00:00:00")
+  (setf (ref todo-pg :updated-at) "2024-02-02 12:34:56")
+  (setf (ref todo-pg :title) "refactor postgresql impl")
+  (setf (ref todo-pg :done) T)
+  (setf (ref todo-pg :done-at) "2024-03-03 12:00:00")
 
   ;; check updated
-  (ok (= 1 (ref todo :id)))
-  (ok (string= "2024-01-01 00:00:00" (ref todo :created-at)))
-  (ok (string= "2024-02-02 12:34:56" (ref todo :updated-at)))
-  (ok (string= "refactor all products" (ref todo :title)))
-  (ok (eq T (ref todo :done)))
-  (ok (string= "2024-03-03 12:00:00" (ref todo :done-at))))
+  (ok (= 1 (ref todo-pg :id)))
+  (ok (string= "2024-01-01 00:00:00" (ref todo-pg :created-at)))
+  (ok (string= "2024-02-02 12:34:56" (ref todo-pg :updated-at)))
+  (ok (string= "refactor postgresql impl" (ref todo-pg :title)))
+  (ok (eq T (ref todo-pg :done)))
+  (ok (string= "2024-03-03 12:00:00" (ref todo-pg :done-at))))
 

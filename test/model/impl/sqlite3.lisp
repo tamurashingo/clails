@@ -9,8 +9,6 @@
                 #:<base-model>
                 #:defmodel
                 #:ref))
-(in-package #:clails-test/model/impl/sqlite3)
-
 (defpackage #:clails-test/model/db
   (:use #:cl)
   (:import-from #:clails/model/migration
@@ -21,7 +19,7 @@
                 #:drop-table
                 #:drop-column
                 #:drop-index))
-
+(in-package #:clails-test/model/impl/sqlite3)
 
 (defvar *migration-dir* nil)
 (defvar todo nil)
@@ -33,7 +31,7 @@
 )
 
 
-(deftest create-database
+(deftest create-database-sqlite3
   (clails/model/migration::db-create)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check migration table exists
@@ -41,7 +39,7 @@
            (result (dbi:execute query (list "migration"))))
       (ok (string= "migration" (getf (dbi:fetch result) :|tbl_name|))))))
 
-(deftest migration
+(deftest migration-sqlite3
   (clails/model/migration::db-migrate *migration-dir*)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
@@ -81,7 +79,7 @@
 
 
 
-(deftest defmodel
+(deftest defmodel-sqlite3
     (defmodel <todo> (<base-model>))
 
   (setf todo (make-instance '<todo>))
@@ -101,7 +99,7 @@
   (setf (ref todo :id) 1)
   (setf (ref todo :created-at) "2024-01-01 00:00:00")
   (setf (ref todo :updated-at) "2024-02-02 12:34:56")
-  (setf (ref todo :title) "refactor all products")
+  (setf (ref todo :title) "refactor sqlite3 impl")
   (setf (ref todo :done) T)
   (setf (ref todo :done-at) "2024-03-03 12:00:00")
 
@@ -109,7 +107,7 @@
   (ok (= 1 (ref todo :id)))
   (ok (string= "2024-01-01 00:00:00" (ref todo :created-at)))
   (ok (string= "2024-02-02 12:34:56" (ref todo :updated-at)))
-  (ok (string= "refactor all products" (ref todo :title)))
+  (ok (string= "refactor sqlite3 impl" (ref todo :title)))
   (ok (eq T (ref todo :done)))
   (ok (string= "2024-03-03 12:00:00" (ref todo :done-at))))
 

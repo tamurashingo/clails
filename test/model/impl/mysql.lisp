@@ -9,8 +9,6 @@
                 #:<base-model>
                 #:defmodel
                 #:ref))
-(in-package #:clails-test/model/impl/mysql)
-
 (defpackage #:clails-test/model/db
   (:use #:cl)
   (:import-from #:clails/model/migration
@@ -21,10 +19,10 @@
                 #:drop-table
                 #:drop-column
                 #:drop-index))
-
+(in-package #:clails-test/model/impl/mysql)
 
 (defvar *migration-dir* nil)
-(defvar todo nil)
+(defvar todo-my nil)
 
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
@@ -37,7 +35,7 @@
 )
 
 
-(deftest create-database
+(deftest create-database-mysql
   (clails/model/migration::db-create)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check database exists
@@ -49,7 +47,7 @@
            (result (dbi:execute query (list "migration"))))
       (ok (string= "migration" (getf (dbi:fetch result) :|Tables_in_clails_test (migration)|))))))
 
-(deftest migration
+(deftest migration-mysql
   (clails/model/migration::db-migrate *migration-dir*)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
@@ -94,36 +92,36 @@
       (ok (null (getf done-at :EXTRA))))))
 
 
-(deftest defmodel
-  (defmodel <<todo-mysql> (<base-model>)
+(deftest defmodel-mysql
+  (defmodel <todo-mysql> (<base-model>)
     (:table "todo"))
 
-  (setf todo (make-instance '<todo-mysql>))
+  (setf todo-my (make-instance '<todo-mysql>))
 
   ;; check member field
-  (ok (null (ref todo :id)))
-  (ok (null (ref todo :created-at)))
-  (ok (null (ref todo :updated-at)))
-  (ok (null (ref todo :title)))
-  (ok (null (ref todo :done)))
-  (ok (null (ref todo :done-at)))
+  (ok (null (ref todo-my :id)))
+  (ok (null (ref todo-my :created-at)))
+  (ok (null (ref todo-my :updated-at)))
+  (ok (null (ref todo-my :title)))
+  (ok (null (ref todo-my :done)))
+  (ok (null (ref todo-my :done-at)))
 
   ;; error when no member field
-  (ok (signals (ref todo :done-by)))
+  (ok (signals (ref todo-my :done-by)))
 
   ;; update member
-  (setf (ref todo :id) 1)
-  (setf (ref todo :created-at) "2024-01-01 00:00:00")
-  (setf (ref todo :updated-at) "2024-02-02 12:34:56")
-  (setf (ref todo :title) "refactor all products")
-  (setf (ref todo :done) T)
-  (setf (ref todo :done-at) "2024-03-03 12:00:00")
+  (setf (ref todo-my :id) 1)
+  (setf (ref todo-my :created-at) "2024-01-01 00:00:00")
+  (setf (ref todo-my :updated-at) "2024-02-02 12:34:56")
+  (setf (ref todo-my :title) "refactor mysql impl")
+  (setf (ref todo-my :done) T)
+  (setf (ref todo-my :done-at) "2024-03-03 12:00:00")
 
   ;; check updated
-  (ok (= 1 (ref todo :id)))
-  (ok (string= "2024-01-01 00:00:00" (ref todo :created-at)))
-  (ok (string= "2024-02-02 12:34:56" (ref todo :updated-at)))
-  (ok (string= "refactor all products" (ref todo :title)))
-  (ok (eq T (ref todo :done)))
-  (ok (string= "2024-03-03 12:00:00" (ref todo :done-at))))
+  (ok (= 1 (ref todo-my :id)))
+  (ok (string= "2024-01-01 00:00:00" (ref todo-my :created-at)))
+  (ok (string= "2024-02-02 12:34:56" (ref todo-my :updated-at)))
+  (ok (string= "refactor mysql impl" (ref todo-my :title)))
+  (ok (eq T (ref todo-my :done)))
+  (ok (string= "2024-03-03 12:00:00" (ref todo-my :done-at))))
 
