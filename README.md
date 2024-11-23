@@ -29,7 +29,7 @@ M-x slime-connect 127.0.0.1 4005
 Set up Quicklisp
 
 ```lisp
-(setf #P"/app" ql:*local-project-directories*)
+(push #P"/app" ql:*local-project-directories*)
 ```
 
 
