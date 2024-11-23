@@ -17,6 +17,18 @@
                  s)))
     (ppcre:regex-replace-all "-" str "_")))
 
+(defun snake->kebab (s)
+  "convert SNAKE_CASE to KEBAB-CASE"
+  (assert (or (and (symbolp s)
+                   (not (keywordp s)))
+              (stringp s)))
+
+  (let ((str (if (symbolp s)
+                 (string s)
+                 s)))
+    (ppcre:regex-replace-all "_" str "-")))
+
+
 
 ;;
 ;; check args are not null

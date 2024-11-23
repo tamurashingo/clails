@@ -6,7 +6,7 @@
 (defsystem clails-test
   :class :package-inferred-system
   :pathname "test"
-  :depends-on (#:flexi-streams
+  :depends-on (#:babel
                #:clails
                #:rove
                #:clails-test/model/impl/sqlite3

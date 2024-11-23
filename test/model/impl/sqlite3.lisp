@@ -4,9 +4,11 @@
         #:rove
         #:clails/model/impl/sqlite3)
   (:import-from #:clails/util
-                #:env-or-default))
-(in-package #:clails-test/model/impl/sqlite3)
-
+                #:env-or-default)
+  (:import-from #:clails/model/base-model
+                #:<base-model>
+                #:defmodel
+                #:ref))
 (defpackage #:clails-test/model/db
   (:use #:cl)
   (:import-from #:clails/model/migration
@@ -17,6 +19,10 @@
                 #:drop-table
                 #:drop-column
                 #:drop-index))
+(in-package #:clails-test/model/impl/sqlite3)
+
+(defvar *migration-dir* nil)
+(defvar todo nil)
 
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-sqlite3>))
@@ -25,7 +31,7 @@
 )
 
 
-(deftest create-database
+(deftest create-database-sqlite3
   (clails/model/migration::db-create)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check migration table exists
@@ -33,7 +39,7 @@
            (result (dbi:execute query (list "migration"))))
       (ok (string= "migration" (getf (dbi:fetch result) :|tbl_name|))))))
 
-(deftest migration
+(deftest migration-sqlite3
   (clails/model/migration::db-migrate *migration-dir*)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
@@ -70,4 +76,38 @@
       (ok (string= "done_at" (getf done-at :|name|)))
       (ok (string= "datetime" (getf done-at :|type|)))
       (ok (equal 0 (getf done-at :|notnull|))))))
+
+
+
+(deftest defmodel-sqlite3
+    (defmodel <todo> (<base-model>))
+
+  (setf todo (make-instance '<todo>))
+
+  ;; check member field
+  (ok (null (ref todo :id)))
+  (ok (null (ref todo :created-at)))
+  (ok (null (ref todo :updated-at)))
+  (ok (null (ref todo :title)))
+  (ok (null (ref todo :done)))
+  (ok (null (ref todo :done-at)))
+
+  ;; error when no member field
+  (ok (signals (ref todo :done-by)))
+
+  ;; update member
+  (setf (ref todo :id) 1)
+  (setf (ref todo :created-at) "2024-01-01 00:00:00")
+  (setf (ref todo :updated-at) "2024-02-02 12:34:56")
+  (setf (ref todo :title) "refactor sqlite3 impl")
+  (setf (ref todo :done) T)
+  (setf (ref todo :done-at) "2024-03-03 12:00:00")
+
+  ;; check updated
+  (ok (= 1 (ref todo :id)))
+  (ok (string= "2024-01-01 00:00:00" (ref todo :created-at)))
+  (ok (string= "2024-02-02 12:34:56" (ref todo :updated-at)))
+  (ok (string= "refactor sqlite3 impl" (ref todo :title)))
+  (ok (eq T (ref todo :done)))
+  (ok (string= "2024-03-03 12:00:00" (ref todo :done-at))))
 

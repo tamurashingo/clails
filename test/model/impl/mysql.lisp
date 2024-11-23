@@ -4,9 +4,11 @@
         #:rove
         #:clails/model/impl/mysql)
   (:import-from #:clails/util
-                #:env-or-default))
-(in-package #:clails-test/model/impl/mysql)
-
+                #:env-or-default)
+  (:import-from #:clails/model/base-model
+                #:<base-model>
+                #:defmodel
+                #:ref))
 (defpackage #:clails-test/model/db
   (:use #:cl)
   (:import-from #:clails/model/migration
@@ -17,6 +19,10 @@
                 #:drop-table
                 #:drop-column
                 #:drop-index))
+(in-package #:clails-test/model/impl/mysql)
+
+(defvar *migration-dir* nil)
+(defvar todo-my nil)
 
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
@@ -29,7 +35,7 @@
 )
 
 
-(deftest create-database
+(deftest create-database-mysql
   (clails/model/migration::db-create)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check database exists
@@ -41,7 +47,7 @@
            (result (dbi:execute query (list "migration"))))
       (ok (string= "migration" (getf (dbi:fetch result) :|Tables_in_clails_test (migration)|))))))
 
-(deftest migration
+(deftest migration-mysql
   (clails/model/migration::db-migrate *migration-dir*)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
@@ -56,32 +62,66 @@
            (done-at (sixth result)))
       ;; id
       (ok (string= "id" (getf id :COLUMN_NAME)))
-      (ok (string= "int" (flexi-streams:octets-to-string (getf id :COLUMN_TYPE))))
+      (ok (string= "int" (babel:octets-to-string (getf id :COLUMN_TYPE))))
       (ok (string= "PRI" (getf id :COLUMN_KEY)))
       (ok (string= "auto_increment" (getf id :EXTRA)))
       ;; created-at
       (ok (string= "created_at" (getf created-at :COLUMN_NAME)))
-      (ok (string= "datetime" (flexi-streams:octets-to-string (getf created-at :COLUMN_TYPE))))
+      (ok (string= "datetime" (babel:octets-to-string (getf created-at :COLUMN_TYPE))))
       (ok (null (getf created-at :COLUMN_KEY)))
       (ok (null (getf created-at :EXTRA)))
       ;; updated-at
       (ok (string= "updated_at" (getf updated-at :COLUMN_NAME)))
-      (ok (string= "datetime" (flexi-streams:octets-to-string (getf updated-at :COLUMN_TYPE))))
+      (ok (string= "datetime" (babel:octets-to-string (getf updated-at :COLUMN_TYPE))))
       (ok (null (getf updated-at :COLUMN_KEY)))
       (ok (null (getf updated-at :EXTRA)))
       ;; title
       (ok (string= "title" (getf title :COLUMN_NAME)))
-      (ok (string= "varchar(255)" (flexi-streams:octets-to-string (getf title :COLUMN_TYPE))))
+      (ok (string= "varchar(255)" (babel:octets-to-string (getf title :COLUMN_TYPE))))
       (ok (string= "MUL" (getf title :COLUMN_KEY)))
       (ok (null (getf title :EXTRA)))
       ;; done
       (ok (string= "done" (getf done :COLUMN_NAME)))
-      (ok (string= "tinyint(1)" (flexi-streams:octets-to-string (getf done :COLUMN_TYPE))))
+      (ok (string= "tinyint(1)" (babel:octets-to-string (getf done :COLUMN_TYPE))))
       (ok (null (getf done :COLUMN_KEY)))
       (ok (null (getf done :EXTRA)))
       ;; done-at
       (ok (string= "done_at" (getf done-at :COLUMN_NAME)))
-      (ok (string= "datetime" (flexi-streams:octets-to-string (getf done-at :COLUMN_TYPE))))
+      (ok (string= "datetime" (babel:octets-to-string (getf done-at :COLUMN_TYPE))))
       (ok (null (getf done-at :COLUMN_KEY)))
       (ok (null (getf done-at :EXTRA))))))
+
+
+(deftest defmodel-mysql
+  (defmodel <todo-mysql> (<base-model>)
+    (:table "todo"))
+
+  (setf todo-my (make-instance '<todo-mysql>))
+
+  ;; check member field
+  (ok (null (ref todo-my :id)))
+  (ok (null (ref todo-my :created-at)))
+  (ok (null (ref todo-my :updated-at)))
+  (ok (null (ref todo-my :title)))
+  (ok (null (ref todo-my :done)))
+  (ok (null (ref todo-my :done-at)))
+
+  ;; error when no member field
+  (ok (signals (ref todo-my :done-by)))
+
+  ;; update member
+  (setf (ref todo-my :id) 1)
+  (setf (ref todo-my :created-at) "2024-01-01 00:00:00")
+  (setf (ref todo-my :updated-at) "2024-02-02 12:34:56")
+  (setf (ref todo-my :title) "refactor mysql impl")
+  (setf (ref todo-my :done) T)
+  (setf (ref todo-my :done-at) "2024-03-03 12:00:00")
+
+  ;; check updated
+  (ok (= 1 (ref todo-my :id)))
+  (ok (string= "2024-01-01 00:00:00" (ref todo-my :created-at)))
+  (ok (string= "2024-02-02 12:34:56" (ref todo-my :updated-at)))
+  (ok (string= "refactor mysql impl" (ref todo-my :title)))
+  (ok (eq T (ref todo-my :done)))
+  (ok (string= "2024-03-03 12:00:00" (ref todo-my :done-at))))
 

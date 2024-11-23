@@ -14,10 +14,13 @@
                 #:ensure-database-impl
                 #:ensure-migration-table-impl
                 #:check-type-valid)
+  (:import-from #:clails/model/base-model
+                #:fetch-columns-impl)
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl)
   (:import-from #:clails/util
                 #:kebab->snake
+                #:snake->kebab
                 #:mandatory-check))
 (in-package #:clails/model/impl/postgresql)
 
@@ -52,7 +55,7 @@
   (mandatory-check table columns)
   (let ((query (gen-add-column table columns)))
     (dbi:do-sql connection query)))
-  
+
 (defmethod add-index-impl ((database-type <database-type-postgresql>) connection &key table index columns)
   (mandatory-check table index columns)
   (let ((query (gen-add-index table index columns)))
@@ -72,6 +75,14 @@
   (mandatory-check table index)
   (let ((query (gen-drop-index table index)))
     (dbi:do-sql connection query)))
+
+
+(defmethod fetch-columns-impl ((database-type <database-type-postgresql>) connection table)
+  (let* ((query (dbi:prepare connection "select column_name from information_schema.columns where table_name = ? order by ordinal_position"))
+         (result (dbi:execute query (list table))))
+    (loop for row = (dbi:fetch result)
+          while row
+          collect (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))))
 
 
 (defun gen-create-table (table columns)
@@ -159,10 +170,15 @@
                  created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP)~
               "))
 
+(defun exist-database-p (connection database)
+  (let* ((query (dbi:prepare connection "select datname from pg_database where datname = ?"))
+         (result (dbi:execute query (list database))))
+    (string= database (getf (dbi:fetch result) :|datname|))))
 
 (defmethod ensure-database-impl ((database-type <database-type-postgresql>) connection)
   (let ((database-name (getf *database-config* :database)))
-    (dbi:do-sql connection (format NIL CREATE-DATABASE database-name))))
+    (when (not (exist-database-p connection database-name))
+      (dbi:do-sql connection (format NIL CREATE-DATABASE database-name)))))
 
 (defmethod ensure-migration-table-impl ((database-type <database-type-postgresql>) connection)
   (dbi:do-sql connection CREATE-MIGRATION-TABLE))

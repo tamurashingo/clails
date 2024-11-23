@@ -19,6 +19,7 @@ test-prev:
 	mkdir ./volumes/postgresql
 	mkdir ./volumes/postgresql/data
 	mkdir ./volumes/postgresql/log
+	sleep 1
 	docker-compose up -d
 
 .PHONY: test-wait

@@ -4,9 +4,11 @@
         #:rove
         #:clails/model/impl/postgresql)
   (:import-from #:clails/util
-                #:env-or-default))
-(in-package #:clails-test/model/impl/postgresql)
-
+                #:env-or-default)
+  (:import-from #:clails/model/base-model
+                #:<base-model>
+                #:defmodel
+                #:ref))
 (defpackage #:clails-test/model/db
   (:use #:cl)
   (:import-from #:clails/model/migration
@@ -17,6 +19,10 @@
                 #:drop-table
                 #:drop-column
                 #:drop-index))
+(in-package #:clails-test/model/impl/postgresql)
+
+(defvar *migration-dir* nil)
+(defvar todo-pg nil)
 
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-postgresql>))
@@ -29,7 +35,7 @@
 )
 
 
-(deftest create-database
+(deftest create-database-postgresql
   (clails/model/migration::db-create)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check database exists
@@ -41,7 +47,7 @@
            (result (dbi:execute query (list "migration"))))
       (ok (string= "migration" (getf (dbi:fetch result) :|tablename|))))))
 
-(deftest migration
+(deftest migration-postgresql
   (clails/model/migration::db-migrate *migration-dir*)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
@@ -86,8 +92,36 @@
       (ok (eq :NULL (getf done-at :|column_default|))))))
 
 
+(deftest defmodel-postgresql
+  (defmodel <todo-postgresql> (<base-model>)
+    (:table "todo"))
 
-                                                                                                            
+  (setf todo-pg (make-instance '<todo-postgresql>))
 
+  ;; check member field
+  (ok (null (ref todo-pg :id)))
+  (ok (null (ref todo-pg :created-at)))
+  (ok (null (ref todo-pg :updated-at)))
+  (ok (null (ref todo-pg :title)))
+  (ok (null (ref todo-pg :done)))
+  (ok (null (ref todo-pg :done-at)))
 
+  ;; error when no member field
+  (ok (signals (ref todo :done-by)))
+
+  ;; update member
+  (setf (ref todo-pg :id) 1)
+  (setf (ref todo-pg :created-at) "2024-01-01 00:00:00")
+  (setf (ref todo-pg :updated-at) "2024-02-02 12:34:56")
+  (setf (ref todo-pg :title) "refactor postgresql impl")
+  (setf (ref todo-pg :done) T)
+  (setf (ref todo-pg :done-at) "2024-03-03 12:00:00")
+
+  ;; check updated
+  (ok (= 1 (ref todo-pg :id)))
+  (ok (string= "2024-01-01 00:00:00" (ref todo-pg :created-at)))
+  (ok (string= "2024-02-02 12:34:56" (ref todo-pg :updated-at)))
+  (ok (string= "refactor postgresql impl" (ref todo-pg :title)))
+  (ok (eq T (ref todo-pg :done)))
+  (ok (string= "2024-03-03 12:00:00" (ref todo-pg :done-at))))
 

@@ -14,10 +14,13 @@
                 #:ensure-database-impl
                 #:ensure-migration-table-impl
                 #:check-type-valid)
+  (:import-from #:clails/model/base-model
+                #:fetch-columns-impl)
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl)
   (:import-from #:clails/util
                 #:kebab->snake
+                #:snake->kebab
                 #:mandatory-check))
 (in-package #:clails/model/impl/sqlite3)
 
@@ -52,7 +55,7 @@
   (mandatory-check table columns)
   (let ((query (gen-add-column table columns)))
     (dbi:do-sql connection query)))
-  
+
 (defmethod add-index-impl ((database-type <database-type-sqlite3>) connection &key table index columns)
   (mandatory-check table index columns)
   (let ((query (gen-add-index table index columns)))
@@ -73,6 +76,12 @@
   (let ((query (gen-drop-index table index)))
     (dbi:do-sql connection query)))
 
+(defmethod fetch-columns-impl ((database-type <database-type-sqlite3>) connection table)
+  (let* ((query (dbi:prepare connection (format NIL "pragma table_info('~A')" table)))
+         (result (dbi:execute query '())))
+    (loop for row = (dbi:fetch result)
+          while row
+          collect (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))))
 
 (defun gen-create-table (table columns)
   (format NIL "CREATE TABLE ~A (~{~A~^, ~})" (kebab->snake table)
