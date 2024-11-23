@@ -1,0 +1,35 @@
+services:
+  clails:
+    image: clails-dev
+    container_name: clails_dev_app
+    volumes:
+      - ./:/app
+    ports:
+      - 4005:4005
+    tty: true
+    networks:
+      - clails_dev_nw
+  mysql-dev:
+    image: mysql:8.0
+    container_name: clails_dev_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    networks:
+      - clails_dev_nw
+  postgresql-dev:
+    image: postgres:16.3
+    container_name: clails_dev_postgresql
+    environment:
+      POSTGRES_USER: clails
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    networks:
+      - clails_dev_nw
+networks:
+  clails_dev_nw:
+    external: true
