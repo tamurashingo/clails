@@ -30,7 +30,7 @@
                                                 :user ,(env-or-default "CLAILS_MYSQL_USERNAME" "root")
                                                 :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
                                                 :host ,(env-or-default "CLAILS_MYSQL_HOST" "host.docker.internal")
-                                                :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306")))
+                                                :port ,(env-or-default "CLAILS_MYSQL_PORT" "13306")))
     (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
 )
 

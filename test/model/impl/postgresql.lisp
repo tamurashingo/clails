@@ -30,7 +30,7 @@
                                                 :user ,(env-or-default "CLAILS_POSTGRESQL_USERNAME" "clails")
                                                 :password ,(env-or-default "CLAILS_POSTGRESQL_PASSWORD" "password")
                                                 :host ,(env-or-default "CLAILS_POSTGRESQL_HOST" "host.docker.internal")
-                                                :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "5432")))
+                                                :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "15432")))
    (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
 )
 
