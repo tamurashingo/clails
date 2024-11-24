@@ -29,8 +29,8 @@
    (setf clails/environment:*database-config* `(:database ,(env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
                                                 :user ,(env-or-default "CLAILS_MYSQL_USERNAME" "root")
                                                 :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
-                                                :host ,(env-or-default "CLAILS_MYSQL_HOST" "host.docker.internal")
-                                                :port ,(env-or-default "CLAILS_MYSQL_PORT" "13306")))
+                                                :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
+                                                :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306")))
     (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
 )
 

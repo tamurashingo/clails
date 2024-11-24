@@ -1,6 +1,9 @@
 services:
   clails:
-    image: clails-dev
+    image: clails_dev
+    build:
+      context: .
+      dockerfile: ./Dockerfile
     container_name: clails_dev_app
     volumes:
       - ./:/app

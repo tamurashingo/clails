@@ -1,10 +1,8 @@
 DEV_NW := clails_dev_nw
 DEV_NW_EXISTS := $(shell docker network ls --filter name=$(DEV_NW) --format '{{ .ID }}')
-TEST_NW := clails_test_nw
-TEST_NW_EXISTS := $(shell docker network ls --filter name=$(TEST_NW) --format '{{ .ID }}')
 
 .PHONY: setup
-setup: dev.setup test.setup
+setup: dev.setup
 	@echo "Setting up..."
 	docker build -t clails-dev .
 
@@ -32,12 +30,7 @@ dev.down:
 # ----------------------------------------
 # for testing
 # ----------------------------------------
-.PHONY: test.setup test.prev
-test.setup:
-	@if [ -z $(TEST_NW_EXISTS) ]; then \
-	    docker network create -d bridge $(TEST_NW) ; \
-	fi
-
+.PHONY: test.prev
 test.prev:
 	docker-compose -f docker-compose.test.yml down || true
 	rm -rf ./volumes
@@ -54,8 +47,8 @@ test.prev:
 .PHONY: test
 test: test.prev
 	@echo "Running tests..."
-	docker run --rm -v $(PWD):/app --entrypoint qlot clails-dev install
-	docker run --network $(TEST_NW) --rm -v $(PWD):/app --add-host host.docker.internal:host-gateway --entrypoint qlot clails-dev exec rove clails-test.asd
+	docker-compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test install
+	docker-compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test exec rove clails-test.asd
 
 .PHONY: test.down
 test.down:
@@ -64,5 +57,4 @@ test.down:
 
 .PHONY: console.test
 console.test:
-	docker run -it --rm --network $(TEST_NW) -v $(PWD):/app --add-host host.docker-internal:host-gateway --entrypoint "/bin/bash" clails-dev
-
+	docker-compose -f docker-compose.test-runner.yml run -it --rm --entrypoint /bin/bash clails-test
