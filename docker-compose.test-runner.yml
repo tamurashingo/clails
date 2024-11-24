@@ -1,0 +1,11 @@
+services:
+  clails-test:
+    image: clails-test
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    container_name: clails_test_app
+    volumes:
+      - ./:/app
+    ports:
+      - 4005:4005
