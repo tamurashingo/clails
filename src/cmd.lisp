@@ -14,7 +14,9 @@
                 #:db-migrate)
   (:export #:create-project
            #:generate/model
-           #:generate/migration))
+           #:generate/migration)
+           #:db/create
+           #:db/migrate)
 (in-package #:clails/cmd)
 
 (defun create-project (project-name &key project-path (database :sqlite3))
