@@ -45,8 +45,7 @@
   :version \"0.0.1\"
   :author \"\"
   :license \"\"
-  :depends-on (\"clails\"
-               \"clails-<%= string-downcase (@ database )) %>\")
+  :depends-on (\"clails\")
   :components ((:file \"package\")
                (:module \"app\"
                 :components ((:module \"controllers\"
@@ -57,6 +56,7 @@
                               :components ((:file \"package\")))))
                (:module \"config\"
                 :components ((:file \"package\")
+                             (:file \"environment\")
                              (:file \"database\")))))
 "))
 
@@ -66,6 +66,16 @@
                  :template "(in-package #:cl-user)
 (defpackage #:<%= (@ project-name ) %>
   (:use #:cl))
+(defpackage #:<%= (@ project-name ) %>/model/db
+  (:use #:cl)
+  (:import-from #:clails/model/migration
+                #:defmigration
+                #:create-table
+                #:add-column
+                #:add-index
+                #:drop-table
+                #:drop-column
+                #:drop-index))
 (in-package #:<%= (@ project-name ) %>)
 
 (setf clails/environment:*project-name* \"<%= (@ project-name ) %>\")
@@ -89,6 +99,8 @@
 (defpackage #:<%= (@ project-name ) %>-model
   (:use #:cl)
   (:import-from #:clails/model/base-model
+                #:defmodel
+                #:ref
                 #:<base-model>))
 (in-package #:<%= (@ project-name ) %>-model)
 "))
@@ -108,6 +120,8 @@
                  :template "(in-package #:cl-user)
 (defpackage #:<%= (@ project-name ) %>-config
   (:use #:cl)
+  (:import-from #:clails/environment
+                #:*project-environment*)
   (:import-from #:clails/util
                 #:env-or-default))
 (in-package #:<%= (@ project-name ) %>-config)
@@ -117,16 +131,30 @@
 
 "))
 
+(defparameter config/environment-template
+  (make-instance '<template>
+                 :path "/config"
+                 :template "(in-package #:<%= (@ project-name ) %>-config)
+
+
+;; project name
+(setf clails/environment:*project-name* \"<%= (@ project-name ) %>\")
+
+;; project directory
+(setf clails/environment:*project-dir* #P\"<%= (@ project-dir ) %>\")
+"))
+
+
 (defparameter config/database-sqlite-template
   (make-instance '<template>
                  :path "/config"
                  :template "(in-package #:<%= (@ project-name ) %>-config)
 
-(defparameter *db*
+(setf clails/environment:*database-config*
   `(:database :sqlite3
-    :develop (:database ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-dir ) %>/tmp/<%= (@ project-name ) %>-develop.sqlite3\"))
-    :test (:database ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-dir ) %>/tmp/<%= (@ project-name ) %>-test.sqlite3\"))
-    :production (:database ,(env \"CLAILS_DB_NAME\"))))
+    :develop (:database-name ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-dir ) %>/tmp/<%= (@ project-name ) %>-develop.sqlite3\"))
+    :test (:database-name ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-dir ) %>/tmp/<%= (@ project-name ) %>-test.sqlite3\"))
+    :production (:database-name ,(env \"CLAILS_DB_NAME\"))))
 "))
 
 (defparameter config/database-mysql-template
@@ -134,19 +162,19 @@
                  :path "/config"
                  :template "(in-package #:<%= (@ project-name ) %>-config)
 
-(defparameter *db*
+(setf clails/environment:*database-config*
   `(:database :mysql
-    :develop (:database ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-name ) %>_develop\")
+    :develop (:database-name ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-name ) %>_develop\")
               :host ,(env-or-default \"CLAILS_DB_HOST\" \"localhost\")
               :port ,(env-or-default \"CLAILS_DB_PORT\" \"3306\")
               :username ,(env-or-default \"CLAILS_DB_USERNAME\" \"root\")
               :password ,(env-or-default \"CLAILS_DB_PASSWORD\" \"password\"))
-    :test (:database ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-name ) %>_test\")
+    :test (:database-name ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-name ) %>_test\")
            :host ,(env-or-default \"CLAILS_DB_HOST\" \"localhost\")
            :port ,(env-or-default \"CLAILS_DB_PORT\" \"3306\")
            :username ,(env-or-default \"CLAILS_DB_USERNAME\" \"root\")
            :password ,(env-or-default \"CLAILS_DB_PASSWORD\" \"password\"))
-    :production (:database ,(env \"CLAILS_DB_NAME\")
+    :production (:database-name ,(env \"CLAILS_DB_NAME\")
                  :host ,(env \"CLAILS_DB_HOST\")
                  :port ,(env \"CLAILS_DB_PORT\")
                  :username ,(env \"CLAILS_DB_USERNAME\")
@@ -158,19 +186,19 @@
                  :path "/config"
                  :template "(in-package #:<%= (@ project-name ) %>-config)
 
-(defparameter *db*
+(setf clails/environment:*database-config*
   `(:database :postgresql
-    :develop (:database ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-name ) %>_develop\")
+    :develop (:database-name ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-name ) %>_develop\")
               :host ,(env-or-default \"CLAILS_DB_HOST\" \"localhost\")
               :port ,(env-or-default \"CLAILS_DB_PORT\" \"3306\")
               :username ,(env-or-default \"CLAILS_DB_USERNAME\" \"root\")
               :password ,(env-or-default \"CLAILS_DB_PASSWORD\" \"password\"))
-    :test (:database ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-name ) %>_test\")
+    :test (:database-name ,(env-or-default \"CLAILS_DB_NAME\" \"<%= (@ project-name ) %>_test\")
            :host ,(env-or-default \"CLAILS_DB_HOST\" \"localhost\")
            :port ,(env-or-default \"CLAILS_DB_PORT\" \"3306\")
            :username ,(env-or-default \"CLAILS_DB_USERNAME\" \"root\")
            :password ,(env-or-default \"CLAILS_DB_PASSWORD\" \"password\"))
-    :production (:database ,(env \"CLAILS_DB_NAME\")
+    :production (:database-name ,(env \"CLAILS_DB_NAME\")
                  :host ,(env \"CLAILS_DB_HOST\")
                  :port ,(env \"CLAILS_DB_PORT\")
                  :username ,(env \"CLAILS_DB_USERNAME\")
@@ -178,22 +206,19 @@
 "))
 
 
-(defparameter model-migration-create-template
+(defparameter model-migration-template
   (make-instance '<template>
                  :path "/db/migrate"
                  :prefix "create"
-                 :template "(create-table <%= (@ model-name ) %>
-(
-<% (loop for col in (@ body do %><%= (format NIL \"  ~S~%\" col) %><% ) %>))
-"))
+                 :template "(in-package #:<%= (@ project-name ) %>/model/db)
 
-(defparameter model-migration-addcolumn-template
-  (make-instance '<template>
-                 :path "/db/migrate"
-                 :prefix "add-column"
-                 :template "(add-column <%= (@ model-name ) %>
-(
-<% (loop for col in (@ body do %><%= (format NIL \"  ~S~%\" col) %><% ) %>))
+(defmigration \"<%= (@ migration-name ) %>\"
+  (:up #'(lambda (connection)
+           ;;
+           nil)
+   :down #'(lambda (connection)
+             ;;
+             nil)))
 "))
 
 (defparameter model-template
@@ -201,7 +226,7 @@
                  :path "/app/models"
                  :template "(in-package #:<%= (@ project-name ) %>-model)
 
-(defclass <%= (@ model ) %> (<base-model>) ())
+(defmodel <<%= (@ model ) %>> (<base-model>)
+  (:table \"<%= (@ model ) %>\"))
 "))
-              
 

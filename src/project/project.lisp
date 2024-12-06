@@ -92,6 +92,14 @@
                                (%dirname clails/project/template::config/package-template)
                                "package.lisp"
                                clails/project/template::config/package-template)
+
+    ;; config/environment
+    (create-file-with-template project-name
+                               project-dir
+                               database
+                               (%dirname clails/project/template::config/environment-template)
+                               "environment.lisp"
+                               clails/project/template::config/environment-template)
     
     ;; config/database
     (let ((db-template (cond ((eq database :sqlite3)

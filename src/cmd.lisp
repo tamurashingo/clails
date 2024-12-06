@@ -10,7 +10,8 @@
                 #:%generate-model
                 #:%generate-migration)
   (:import-from #:clails/model/migration
-                #:migrate-all)
+                #:db-create
+                #:db-migrate)
   (:export #:create-project
            #:generate/model
            #:generate/migration))
@@ -24,17 +25,18 @@
     (%create-project project-name project-dir database)))
 
 
-(defun generate/model (model-name body &key (no-migration NIl))
-  (%generate-model model-name *project-name* *project-dir*)
+(defun generate/model (model-name &key overwrite (no-migration NIl))
+  (%generate-model model-name *project-name* *project-dir* :overwrite overwrite)
   (when (not no-migration)
-    (%generate-migration model-name *project-dir* :type :create :body body)))
+    (%generate-migration model-name *project-name* *project-dir*)))
 
-(defun generate/migration (model-name &key type body)
-  (when (not (or (eq type :create)
-                 (eq type :add-column)))
-    (error "type not supppoerted: ~A" type))
-  (%generate-migration model-name *project-dir* :type type :body body))
+(defun generate/migration (migration-name)
+  (%generate-migration migration-name *project-name* *project-dir*))
 
+
+(defun db/create ()
+  (db-create))
 
 (defun db/migrate ()
-  (migrate-all))
+  (db-migrate *project-dir*))
+

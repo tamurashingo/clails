@@ -125,6 +125,7 @@
 (defun db-migrate (basedir)
   "implementation of `db/migrate`. load migration files and apply migrations"
   (ensure-migration-table)
+  (setf *migrations* nil)
   (load-migration-files basedir)
   (migrate-all))
 
@@ -173,4 +174,3 @@
 (defun insert-migration (connection migration-name)
   (dbi:do-sql connection "insert into migration (migration_name) values (?)" (list migration-name)))
 
- 

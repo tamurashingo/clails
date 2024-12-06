@@ -3,6 +3,7 @@
   (:use #:cl)
   (:import-from #:clails/environment
                 #:<database-type-sqlite3>
+                #:*project-environment*
                 #:*database-config*)
   (:import-from #:clails/model/migration
                 #:create-table-impl
@@ -139,7 +140,8 @@
 
 
 (defmethod get-connection-direct-impl ((database-type <database-type-sqlite3>) &key no-database)
-  (let ((database-name (getf *database-config* :database)))
+  (let ((database-name (getf (getf *database-config* *project-environment*)
+                             :database-name)))
     (dbi:connect :sqlite3
                  :database-name database-name)))
 

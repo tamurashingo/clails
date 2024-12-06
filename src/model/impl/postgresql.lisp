@@ -3,6 +3,7 @@
   (:use #:cl)
   (:import-from #:clails/environment
                 #:<database-type-postgresql>
+                #:*project-environment*
                 #:*database-config*)
   (:import-from #:clails/model/migration
                 #:create-table-impl
@@ -141,11 +142,12 @@
 
 
 (defmethod get-connection-direct-impl ((database-type <database-type-postgresql>) &key no-database)
-  (let ((database-name (getf *database-config* :database))
-        (host (getf *database-config* :host))
-        (port (parse-integer (getf *database-config* :port)))
-        (username (getf *database-config* :user))
-        (password (getf *database-config* :password)))
+  (let* ((config (getf *database-config* *project-environment*))
+         (database-name (getf config :database-name))
+         (host (getf config :host))
+         (port (parse-integer (getf config :port)))
+         (username (getf config :user))
+         (password (getf config :password)))
     (if no-database
         (dbi:connect :postgres
                      :database-name "postgres"
@@ -176,7 +178,8 @@
     (string= database (getf (dbi:fetch result) :|datname|))))
 
 (defmethod ensure-database-impl ((database-type <database-type-postgresql>) connection)
-  (let ((database-name (getf *database-config* :database)))
+  (let ((database-name (getf (getf *database-config* *project-environment*)
+                             :database-name)))
     (when (not (exist-database-p connection database-name))
       (dbi:do-sql connection (format NIL CREATE-DATABASE database-name)))))
 
