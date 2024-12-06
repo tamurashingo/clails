@@ -1,6 +1,43 @@
 # clails
 framework?
 
+## usage
+
+### create project
+
+```lisp
+(clails:create-project "todoapp")
+```
+
+
+### load project
+
+```lisp
+(ql:quickload :todoapp)
+```
+
+
+### create database
+
+
+```lisp
+(clails:db/create)
+```
+
+### create model
+
+```lisp
+(clails:generate/model "todo")
+```
+
+### apply migration
+
+
+```lisp
+(clails:db/migrate)
+```
+
+
 ## how to develop
 
 Run setup only once.
@@ -9,7 +46,7 @@ Run setup only once.
 make setup
 ```
 
-### develop
+### develop clails
 
 Startup components.
 
@@ -40,7 +77,6 @@ Load `clails`
 ```
 
 
-
 When it's finished, shutdown components.
 
 
@@ -49,7 +85,7 @@ make dev.down
 ```
 
 
-### test
+### test clails
 
 
 Run test.

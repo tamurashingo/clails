@@ -3,6 +3,7 @@
   (:use #:cl)
   (:export #:*project-name*
            #:*project-dir*
+           #:*project-environment*
            #:*database-config*
            #:*database-type*
            #:*connection-pool*))
@@ -23,6 +24,9 @@
 
 (defparameter *project-dir* ""
   "Project directory, Used whengenerating migration files, etc.")
+
+(defparameter *project-environment* :develop
+  ":develop, :test, :production")
 
 (defparameter *database-config* nil
   "Database configuration. Set when the application server starts.")

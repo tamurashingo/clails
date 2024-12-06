@@ -16,6 +16,8 @@
 
 (defclass <base-model> ()
   ((data :initform (make-hash-table))
+   (columns)
+   (table-name)
    (save-p :initform nil)))
 
 (defmethod initialize-instance :after ((m <base-model>) &rest initargs)
@@ -69,7 +71,8 @@
          (with-db-connection-direct (conn)
            (fetch-columns-impl *database-type* conn ,table-name)))
        (defclass ,cls-name ,superclass
-         ((columns :initform (,fn-name)))))))
+         ((table-name :initform ,table-name)
+          (columns :initform (,fn-name)))))))
 
 (defgeneric fetch-columns-impl (database-type connection tabole)
   (:documentation "Implemantation of fetch column"))
