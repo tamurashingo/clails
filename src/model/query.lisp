@@ -1,32 +1,57 @@
 (in-package #:cl-user)
 (defpackage #:clails/model/query
   (:use #:cl)
+  (:import-from #:clails/model/base-model
+                #:ref)
   (:import-from #:clails/util
                 #:kebab->snake))
 (in-package #:clails/model/query)
 
-(defun select (model-name &key where order-by)
-  (multiple-value-bind (qyer params)
-      (generate-select model-name where order-by)
-    ;; prepare query
-    ;; execute params
-    (values query params)))
 
-(defun generate-select (model-name where order-by)
+
+(defun select (model-name &key where order-by)
+  "Given a model name, returns instances that match the conditions
+(select '<todo>) => (#<TODO> #<TODO> #<TODO>)
+(select '<todo> :where '(= id 1)) => (#<TODO>)
+(select '<todo> :where '(or (= id 1)
+                            (= done false))) => (#<TODO> #<TODO>)
+"
+  (let* ((inst (make-instance model-name))
+         (select (generate-select-query inst where order-by)))
+    ;; TODO: debug
+    (format t "debug: query: ~A~%" (getf select :query))
+    (format t "debug: params: ~A~%" (getf select :params))
+    ;; TODO: get current thread connection
+    (clails/model/connection:with-db-connection (connection)
+      (let ((result (dbi-cp:fetch-all
+                      (dbi-cp:execute
+                        (dbi-cp:prepare connection (getf select :query))
+                        (getf select :params)))))
+        (loop for row in result
+              collect (let ((ret (make-instance model-name)))
+                         (loop for col in (slot-value ret 'clails/model/base-model::columns)
+                               do (setf (ref ret col)
+                                        (getf row (intern (kebab->snake (string col)) :KEYWORD))))
+                          ret))))))
+
+
+(defun generate-select-query (inst where order-by)
   (let* ((params (make-array (length where)
                              :fill-pointer 0))
-         (table-name (kebab->snake model-name))
-         (columns (fetch-slots model-name))
+         (table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
+         (columns (fetch-columns inst))
          (conditions (if where
                          (parse-where where params)
                          nil)))
-    (values (format NIL "SELECT ~{~A~^, ~} FROM ~A ~@[ WHERE ~A ~]" columns table-name conditions)
-            params)))
+    (list :query (format NIL "SELECT ~{~A~^, ~} FROM ~A ~@[ WHERE ~A ~]" columns table-name conditions)
+          :params (coerce params 'list))))
 
-(defun fetch-slots (model-name)
-  (mapcar #'kebab->snake
-          (mapcar #'closer-mop:slot-definition-name
-                  (closer-mop:class-slots (class-of (make-instance model-name))))))
+
+(defun fetch-columns (inst)
+  (loop for col in (slot-value inst 'clails/model/base-model::columns)
+        collect (kebab->snake (string col))))
+
+
 
 (defun parse-where (where-cond params)
   (assert (not (null where-cond)))
@@ -56,7 +81,7 @@
           (t (error "parse error: ~A" elm)))))
 
 (defun parse-exp (op exp params)
-  (asset (= 2 (length exp)))
+  (assert (= 2 (length exp)))
   (let (x y)
     (multiple-value-bind (col1 param1)
         (lexer (car exp))
