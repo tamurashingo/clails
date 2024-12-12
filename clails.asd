@@ -20,5 +20,7 @@
                "cl-dbi-connection-pool"
                "cl-template"
                "closer-mop"
-               "clails/main"))
+               "clails/main"
+               "dbi-cp"))
+
 

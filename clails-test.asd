@@ -11,7 +11,8 @@
                #:rove
                #:clails-test/model/impl/sqlite3
                #:clails-test/model/impl/mysql
-               #:clails-test/model/impl/postgresql)
+               #:clails-test/model/impl/postgresql
+               #:clails-test/model/connection)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 
