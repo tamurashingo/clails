@@ -40,11 +40,12 @@
 
 
 (deftest with-db-connection-test
-  (format t "all threads:~A~%" (bt:all-threads))
   (with-db-connection (connection)
-    (format t "migration:~A~%"
-      (dbi-cp:fetch-all
-        (dbi-cp:execute
-          (dbi-cp:prepare connection "select * from migration")
-          '())))))
+    (let ((result (dbi-cp:fetch-all
+                    (dbi-cp:execute
+                      (dbi-cp:prepare connection "select MIGRATION_NAME from migration order by MIGRATION_NAME")
+                      '()))))
+      (ok (equal '((:MIGRATION_NAME "20240101-000000-create-initial-tables")
+                   (:MIGRATION_NAME "20240102-000000-add-done-at-to-todo"))
+                  result)))))
 

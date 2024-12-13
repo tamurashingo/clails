@@ -4,7 +4,8 @@
   (:import-from #:clails/model/base-model
                 #:ref)
   (:import-from #:clails/util
-                #:kebab->snake))
+                #:kebab->snake)
+  (:export #:select))
 (in-package #:clails/model/query)
 
 
