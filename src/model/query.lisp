@@ -16,6 +16,8 @@
 (select '<todo> :where '(= id 1)) => (#<TODO>)
 (select '<todo> :where '(or (= id 1)
                             (= done false))) => (#<TODO> #<TODO>)
+(select '<todo> :order-by '(id))
+(select '<todo> :order-by '((id :desc) (created-at :asc)))
 "
   (let* ((inst (make-instance model-name))
          (select (generate-select-query inst where order-by)))
@@ -43,15 +45,17 @@
          (columns (fetch-columns inst))
          (conditions (if where
                          (parse-where where params)
-                         nil)))
-    (list :query (format NIL "SELECT ~{~A~^, ~} FROM ~A ~@[ WHERE ~A ~]" columns table-name conditions)
+                         nil))
+         (sort (if order-by
+                   (parse-order-by order-by)
+                   nil)))
+    (list :query (format NIL "SELECT ~{~A~^, ~} FROM ~A ~@[ WHERE ~A ~] ~@[ ORDER BY ~{~{~A~^ ~}~^, ~}~]" columns table-name conditions sort)
           :params (coerce params 'list))))
 
 
 (defun fetch-columns (inst)
   (loop for col in (slot-value inst 'clails/model/base-model::columns)
         collect (kebab->snake (string col))))
-
 
 
 (defun parse-where (where-cond params)
@@ -105,4 +109,28 @@
               (not (keywordp param)))
           (values (kebab->snake param) NIL))
         (t (values param NIL))))
+
+(defun parse-order-by (params &optional order)
+  (flet ((convert (p)
+         (when (and (not (symbolp p))
+                    (not (stringp p)))
+           (error "parse error: expect symbol or string but got ~A" p))
+         (kebab->snake (string p))))
+    (if (null params)
+        order
+        (let ((p (car params)))
+          (cond ((or (symbolp p) (stringp p))
+                 (parse-order-by (cdr params)
+                                 (append order (list (list (convert p) "ASC")))))
+                ((listp p)
+                 (parse-order-by (cdr params)
+                                 (append order
+                                         (list
+                                           (list (convert (car p))
+                                                 (cond ((eq (cadr p) :asc)
+                                                        "ASC")
+                                                       ((eq (cadr p) :desc)
+                                                        "DESC")
+                                                       (t (error "parse error: order by expected keyword :ASC or :DESC but ~A" p))))))))
+                (t (error "parse error: expect symbol, string or list but got ~A" p)))))))
 
