@@ -2,9 +2,26 @@
 (defpackage #:clails/model/connection
   (:use #:cl)
   (:import-from #:clails/environment
-                #:*database-type*)
-  (:export #:with-db-connection))
+                #:*database-type*
+                #:*connection-pool*)
+  (:export #:startup-connection-pool
+           #:shutdown-connection-pool
+           #:create-connection-pool-impl
+           #:with-db-connection))
 (in-package #:clails/model/connection)
+
+(defun startup-connection-pool ()
+  (when (null *connection-pool*)
+    (setf *connection-pool* (create-connection-pool-impl *database-type*))))
+
+(defun shutdown-connection-pool ()
+  (when *connection-pool*
+    (dbi-cp:shutdown *connection-pool*)
+    (setf *connection-pool* nil)))
+
+(defgeneric create-connection-pool-impl (database-type)
+  (:documentation "Create connection pool."))
+
 
 (defun get-connection-direct (&key (no-database nil))
   (get-connection-direct-impl *database-type* :no-database no-database))
@@ -24,12 +41,12 @@
 
 
 (defun get-connection ()
-  '())
+  (dbi-cp:get-connection *connection-pool*))
 
 (defun disconnect (connection)
-  '())
+  (dbi-cp:disconnect connection))
 
-(defmacro with-db-connection (connection &body body)
+(defmacro with-db-connection ((connection) &body body)
   `(let ((,connection (get-connection)))
      (unwind-protect
          (progn

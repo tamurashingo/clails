@@ -18,7 +18,8 @@
   (:import-from #:clails/model/base-model
                 #:fetch-columns-impl)
   (:import-from #:clails/model/connection
-                #:get-connection-direct-impl)
+                #:get-connection-direct-impl
+                #:create-connection-pool-impl)
   (:import-from #:clails/util
                 #:kebab->snake
                 #:snake->kebab
@@ -40,6 +41,7 @@
   (cdr (assoc type *postgresql-type-convert*)))
 
 (defmethod create-table-impl ((database-type <database-type-postgresql>) connection &key table columns constraints)
+  (declare (ignore database-type))
   (mandatory-check table columns)
   (let ((query (gen-create-table table (append '(("id" :type :integer
                                                        :not-null T
@@ -53,32 +55,38 @@
     (dbi:do-sql connection query)))
 
 (defmethod add-column-impl ((database-type <database-type-postgresql>) connection &key table columns)
+  (declare (ignore database-type))
   (mandatory-check table columns)
   (let ((query (gen-add-column table columns)))
     (dbi:do-sql connection query)))
 
 (defmethod add-index-impl ((database-type <database-type-postgresql>) connection &key table index columns)
+  (declare (ignore database-type))
   (mandatory-check table index columns)
   (let ((query (gen-add-index table index columns)))
     (dbi:do-sql connection query)))
 
 (defmethod drop-table-impl ((database-type <database-type-postgresql>) connection &key table)
+  (declare (ignore database-type))
   (mandatory-check table)
   (let ((query (gen-drop-table table)))
     (dbi:do-sql connection query)))
 
 (defmethod drop-column-impl ((database-type <database-type-postgresql>) connection &key table column)
+  (declare (ignore database-type))
   (mandatory-check table column)
   (let ((query (gen-drop-column table column)))
     (dbi:do-sql connection query)))
 
 (defmethod drop-index-impl ((database-type <database-type-postgresql>) connection &key table index)
+  (declare (ignore database-type))
   (mandatory-check table index)
   (let ((query (gen-drop-index table index)))
     (dbi:do-sql connection query)))
 
 
 (defmethod fetch-columns-impl ((database-type <database-type-postgresql>) connection table)
+  (declare (ignore database-type))
   (let* ((query (dbi:prepare connection "select column_name from information_schema.columns where table_name = ? order by ordinal_position"))
          (result (dbi:execute query (list table))))
     (loop for row = (dbi:fetch result)
@@ -142,6 +150,7 @@
 
 
 (defmethod get-connection-direct-impl ((database-type <database-type-postgresql>) &key no-database)
+  (declare (ignore database-type))
   (let* ((config (getf *database-config* *project-environment*))
          (database-name (getf config :database-name))
          (host (getf config :host))
@@ -162,6 +171,21 @@
                      :username username
                      :password password))))
 
+(defmethod create-connection-pool-impl ((database-type <database-type-postgresql>))
+  (declare (ignore database-type))
+  (let* ((config (getf *database-config* *project-environment*))
+         (database-name (getf config :database-name))
+         (host (getf config :host))
+         (port (parse-integer (getf config :port)))
+         (username (getf config :user))
+         (password (getf config :password)))
+    (dbi-cp:make-dbi-connection-pool :postgres
+                                     :database-name database-name
+                                     :host host
+                                     :port port
+                                     :username username
+                                     :password password)))
+
 
 (defparameter CREATE-DATABASE
   "CREATE DATABASE ~A ENCODING = 'UTF8'")
@@ -178,11 +202,13 @@
     (string= database (getf (dbi:fetch result) :|datname|))))
 
 (defmethod ensure-database-impl ((database-type <database-type-postgresql>) connection)
+  (declare (ignore database-type))
   (let ((database-name (getf (getf *database-config* *project-environment*)
                              :database-name)))
     (when (not (exist-database-p connection database-name))
       (dbi:do-sql connection (format NIL CREATE-DATABASE database-name)))))
 
 (defmethod ensure-migration-table-impl ((database-type <database-type-postgresql>) connection)
+  (declare (ignore database-type))
   (dbi:do-sql connection CREATE-MIGRATION-TABLE))
 
