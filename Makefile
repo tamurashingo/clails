@@ -19,12 +19,12 @@ dev.setup:
 .PHONY: dev.up
 dev.up:
 	@echo "Booting up..."
-	docker-compose -f docker-compose.dev.yml up -d
+	docker compose -f docker-compose.dev.yml up -d
 
 .PHONY: dev.down
 dev.down:
 	@echo "Shutting down..."
-	docker-compose -f docker-compose.dev.yml down
+	docker compose -f docker-compose.dev.yml down
 
 
 # ----------------------------------------
@@ -32,7 +32,7 @@ dev.down:
 # ----------------------------------------
 .PHONY: test.prev
 test.prev:
-	docker-compose -f docker-compose.test.yml down || true
+	docker compose -f docker-compose.test.yml down || true
 	rm -rf ./volumes
 	mkdir ./volumes
 	mkdir ./volumes/mysql
@@ -40,21 +40,21 @@ test.prev:
 	mkdir ./volumes/postgresql/data
 	mkdir ./volumes/postgresql/log
 	sleep 1
-	docker-compose -f docker-compose.test.yml up -d
+	docker compose -f docker-compose.test.yml up -d
 	echo wait...
 	sleep 10
 
 .PHONY: test
 test: test.prev
 	@echo "Running tests..."
-	docker-compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test install
-	docker-compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test exec rove clails-test.asd
+	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test install
+	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test exec rove clails-test.asd
 
 .PHONY: test.down
 test.down:
 	@Echo "Shutting down..."
-	docker-compose -f docker-compose.test.yml down
+	docker compose -f docker-compose.test.yml down
 
 .PHONY: console.test
 console.test:
-	docker-compose -f docker-compose.test-runner.yml run -it --rm --entrypoint /bin/bash clails-test
+	docker compose -f docker-compose.test-runner.yml run -it --rm --entrypoint /bin/bash clails-test
