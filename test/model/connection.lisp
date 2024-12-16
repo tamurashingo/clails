@@ -46,6 +46,7 @@
                       (dbi-cp:prepare connection "select MIGRATION_NAME from migration order by MIGRATION_NAME")
                       '()))))
       (ok (equal '((:MIGRATION_NAME "20240101-000000-create-initial-tables")
-                   (:MIGRATION_NAME "20240102-000000-add-done-at-to-todo"))
+                   (:MIGRATION_NAME "20240102-000000-add-done-at-to-todo")
+                   (:MIGRATION_NAME "20240103-000000-create-debug-table"))
                   result)))))
 
