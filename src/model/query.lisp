@@ -5,9 +5,15 @@
                 #:ref)
   (:import-from #:clails/util
                 #:kebab->snake)
-  (:export #:select))
+  (:export #:select
+           #:make-record
+           #:save))
 (in-package #:clails/model/query)
 
+
+
+(let ((inst (create '<todo> :title "create new project" :done false)))
+  ...)
 
 
 (defun select (model-name &key where order-by)
@@ -20,6 +26,7 @@
 (select '<todo> :order-by '((id :desc) (created-at :asc)))
 "
   (let* ((inst (make-instance model-name))
+         ;; TODO: cache the instance
          (select (generate-select-query inst where order-by)))
     ;; TODO: debug
     (format t "debug: query: ~A~%" (getf select :query))
@@ -37,18 +44,23 @@
                                         (getf row (intern (kebab->snake (string col)) :KEYWORD))))
                           ret))))))
 
+(defun make-record (model-name &rest values)
+  "(let ((inst (make-record '<todo> :title \"create new project\" :done nil)))
+     (save inst))"
+  (let ((inst (make-instance model-name)))
+    (loop for (key value) on values by #'cddr
+          do (setf (ref inst key) value))))
+
 
 (defun generate-select-query (inst where order-by)
   (let* ((params (make-array (length where)
                              :fill-pointer 0))
          (table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
          (columns (fetch-columns inst))
-         (conditions (if where
-                         (parse-where where params)
-                         nil))
-         (sort (if order-by
-                   (parse-order-by order-by)
-                   nil)))
+         (conditions (when where
+                       (parse-where where params)))
+         (sort (when order-by
+                 (parse-order-by order-by))))
     (list :query (format NIL "SELECT ~{~A~^, ~} FROM ~A ~@[ WHERE ~A ~] ~@[ ORDER BY ~{~{~A~^ ~}~^, ~}~]" columns table-name conditions sort)
           :params (coerce params 'list))))
 
@@ -133,4 +145,51 @@
                                                         "DESC")
                                                        (t (error "parse error: order by expected keyword :ASC or :DESC but ~A" p))))))))
                 (t (error "parse error: expect symbol, string or list but got ~A" p)))))))
+
+
+(defun generate-insert-query (inst)
+  (let ((table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
+        (column-and-value (columns-and-values)))
+
+    ;; remove :ID
+    (setf column-and-value (remove-if #'(lambda (p) (eq :ID (car p)))
+                                      column-and-value))
+
+    ;; set current-datetime
+    (rplacd (assoc :CREATED-AT column-and-value) "now()")
+    (rplacd (assoc :UPDATED-AT column-and-value) "now()")
+
+    (list :query (format nil "INSERT INTO ~A (~{~A~^, ~}) VALUES ~{?~*~^, ~}"
+                         table-name
+                         (mapcar #'car column-and-value)
+                         (mapcar #'cdr column-and-value))
+          :params (mapcar #'cdr column-and-value))))
+
+(defun generate-update-query (inst)
+  (let* ((table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
+         (column-and-value (columns-and-values))
+         (id (assoc :ID column-and-value)))
+
+
+    ;; remove :ID
+    (setf column-and-value (remove-if #'(lambda (p) (eq :ID (car p)))
+                                      column-and-value))
+    ;; remove :CREATED-AT
+    (setf column-and-value (remove-if #'(lambda (p) (eq :CREATED-AT (car p)))
+                                      column-and-value))
+
+    ;; set current-datetime
+    (rplacd (assoc :UPDATED-AT column-and-value) "now()")
+
+    (list :query (format nil "UPDATE ~A SET ~{~A = ?~^,~} WHERE ID = ?"
+                         table-name
+                         (mapcar #'car column-and-value))
+          :params (append (mapcar #'cdr column-and-value)
+                          (list id)))))
+
+
+(defun columns-and-values (inst)
+  (let ((collumns (fetch-columns inst)))
+    (loop for column in columns
+          collect (cons column (ref inst column)))))
 
