@@ -23,7 +23,8 @@ Wrapper class for easily refrencing <dbi-connection-proxy> by thread-id
 
 
 (defparameter *thread-connection-pool*
-  (make-hash-table :test #'eq)
+  nil
+  ;(make-hash-table :test #'eq)
   "#### Description:
 
 **key** -> thread id\
@@ -93,11 +94,13 @@ Execute every minute like garbage collection.
 
 (defun startup-connection-pool ()
   (when (null *connection-pool*)
+    (setf *thread-connection-pool* (make-hash-table :test #'eq))
     (setf *connection-pool* (create-connection-pool-impl *database-type*))))
 
 (defun shutdown-connection-pool ()
   (when *connection-pool*
     (dbi-cp:shutdown *connection-pool*)
+    (setf *thread-connection-pool* nil)
     (setf *connection-pool* nil)))
 
 (defgeneric create-connection-pool-impl (database-type)
@@ -127,7 +130,9 @@ Execute every minute like garbage collection.
 
 
 (defun disconnect (connection)
-  (dbi-cp:disconnect connection))
+  (let ((thread-id (sb-thread::thread-os-thread (bt:current-thread))))
+    (remhash thread-id *thread-connection-pool*)
+    (dbi-cp:disconnect connection)))
 
 (defmacro with-db-connection ((connection) &body body)
   `(let ((,connection (get-connection)))

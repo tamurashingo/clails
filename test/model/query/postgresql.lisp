@@ -73,7 +73,8 @@
   (clails/model/migration::db-create)
   (clails/model/migration::db-migrate *migration-dir*)
   (clails/model/connection::with-db-connection-direct (connection)
-    (dbi-cp:do-sql connection *insert-query-postgresql*))
+    (dbi:do-sql connection *insert-query-postgresql*)
+    (dbi:commit connection))
   (clails/model/connection:startup-connection-pool))
 
 (teardown
