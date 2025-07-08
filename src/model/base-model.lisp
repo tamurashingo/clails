@@ -8,22 +8,51 @@
   (:import-from #:clails/util
                 #:kebab->snake)
   (:export #:<base-model>
+           #:validate
            #:defmodel
-           #:fetch-columns-impl
+           #:fetch-columns-and-types-impl
            #:ref))
 (in-package #:clails/model/base-model)
 
 
 (defclass <base-model> ()
-  ((data :initform (make-hash-table))
-   (columns)
-   (table-name)
+  ((data :initform (make-hash-table :test #'eq)
+         :documentation "A hash table that holds the columns (:key) and their values for the table")
+   (columns :documentation "Holds information about columns in the form of a plist. This value varies depending on the DB implementation.
+- :name - [string] the name of the column
+- :access - [keyword] the key used to retrieve values from the database (note: in PostgreSQL, keywords are converted to lowercase, so this is defined separately from :name)
+- :type - [keyword] the type specified during migration
+- :convert-fn - [function] function to convert database values to Common Lisp values
+
+'ex: ((:name :id
+       :access \"ID\"
+       :type :integer
+       :convert-fn #'identity)
+      (:name :created-at
+       :access \"CREATED-AT\"
+       :type :datetime
+       :function #'identity)
+      (:name :updated-at
+       :access \"UPDATED-AT\"
+       :type :datetime
+       :function #'identity)
+      (:name :title
+       :access \"TITLE\"
+       :type :text
+       :function #'babel:octets-to-string))")
+   (table-name :documentation "database table name")
    (save-p :initform nil)))
 
 (defmethod initialize-instance :after ((m <base-model>) &rest initargs)
   (declare (ignore initargs))
-  (loop for col in (slot-value m 'columns)
-        do (setf (gethash col (slot-value m 'data)) nil)))
+  (loop for column in (slot-value m 'columns)
+        do (let ((col (getf column :name)))
+              (setf (gethash col (slot-value m 'data)) nil))))
+
+(defgeneric validate (inst)
+  (:documentation "validate mode before save")
+  (:method ((inst <base-model>))
+    t))
 
 
 (defmethod ref ((inst <base-model>) key)
@@ -42,10 +71,15 @@
   (setf (gethash key (slot-value inst 'data))
         new-value))
 
-(defun show-model (model)
+
+(defun show-model-data (model)
   (maphash #'(lambda (key value)
                (format t "~A:~A~%" key value))
            (slot-value model 'data)))
+(defun show-model-columns (model)
+  (format t "show-model-columns: model: ~A~%" model)
+  (loop for col in (slot-value model 'columns)
+        do (format t "show-model-columns: column: ~A~%" col)))
 
 
 (defun model->tbl (sym)
@@ -65,17 +99,19 @@
   (let ((table-name (anaphora:aif (getf options :table)
                                   anaphora:it
                                   (model->tbl cls-name)))
-        (fn-name (intern (format NIL "%MAKE-~S-INITFORM" cls-name))))
+        (fn-name (intern (format NIL "%MAKE-~A-INITFORM" cls-name))))
     `(progn
        (defun ,fn-name ()
-         (with-db-connection-direct (conn)
-           (fetch-columns-impl *database-type* conn ,table-name)))
+         (let ((result
+                 (with-db-connection-direct (conn)
+                   (fetch-columns-and-types-impl *database-type* conn ,table-name))))
+           result))
        (defclass ,cls-name ,superclass
          ((table-name :initform ,table-name)
           (columns :initform (,fn-name)))))))
 
-(defgeneric fetch-columns-impl (database-type connection tabole)
-  (:documentation "Implemantation of fetch column"))
+(defgeneric fetch-columns-and-types-impl (database-type connection tabole)
+  (:documentation "Implemantation of fetch column and its type"))
 
 
 ;;

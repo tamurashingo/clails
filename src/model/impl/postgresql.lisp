@@ -16,7 +16,7 @@
                 #:ensure-migration-table-impl
                 #:check-type-valid)
   (:import-from #:clails/model/base-model
-                #:fetch-columns-impl)
+                #:fetch-columns-and-types-impl)
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl
                 #:create-connection-pool-impl)
@@ -31,11 +31,28 @@
     (:text . "text")
     (:integer . "integer")
     (:float . "float")
-    (:decimal . "decimal")
+    (:decimal . "numeric")
     (:datetime . "timestamp")
     (:date . "date")
     (:time . "time")
     (:boolean . "boolean")))
+
+(defparameter *postgresql-type-convert-functions*
+  `(("character varying" . (:string ,#'identity))
+    ("text" . (:text ,#'identity))
+    ("integer" . (:integer ,#'identity))
+    ("double precision" . (:float ,#'identity))
+    ("numeric" . (:decimal ,#'(lambda (v) (coerce v 'double-float))))
+    ("timestamp without time zone" . (:datetime ,#'identity))
+    ("date" . (:date ,#'identity))
+    ("time without time zone" . (:time ,#'(lambda (v)
+                                            (+ (* 60 60 (cadr (assoc :HOURS v)))
+                                               (* 60 (cadr (assoc :MINUTES v)))
+                                               (cadr (assoc :SECONDS v))))))
+    ("boolean" . (:boolean ,#'identity))))
+
+(defparameter *postgresql-type-convert-unknown-type* :string)
+(defparameter *postgresql-type-convert-unknown-function* #'identity)
 
 (defun type-convert (type)
   (cdr (assoc type *postgresql-type-convert*)))
@@ -85,13 +102,24 @@
     (dbi:do-sql connection query)))
 
 
-(defmethod fetch-columns-impl ((database-type <database-type-postgresql>) connection table)
+(defmethod fetch-columns-and-types-impl ((database-type <database-type-postgresql>) connection table)
   (declare (ignore database-type))
-  (let* ((query (dbi:prepare connection "select column_name from information_schema.columns where table_name = ? order by ordinal_position"))
+  (let* ((query (dbi:prepare connection "select COLUMN_NAME, DATA_TYPE from information_schema.columns where table_name = ? order by ordinal_position"))
          (result (dbi:execute query (list table))))
     (loop for row = (dbi:fetch result)
           while row
-          collect (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))))
+;;          collect (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))))
+          collect (let* ((name (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))
+                         (access (intern (string-downcase (getf row :|column_name|)) :KEYWORD))
+                         (inv (assoc (getf row :|data_type|) *postgresql-type-convert-functions* :test #'string=))
+                         (type (if inv (cadr inv)
+                                       *postgresql-type-convert-unknown-type*))
+                         (fn (if inv (caddr inv)
+                                     *postgresql-type-convert-unknown-function*)))
+                    (list :name name
+                          :access access
+                          :type type
+                          :convert-fn fn)))))
 
 
 (defun gen-create-table (table columns)
@@ -135,6 +163,7 @@
          (primary-key-p (getf attr :primary-key))
          (auto-increment-p (getf attr :auto-increment))
          (default-value (getf attr :default-value)))
+
     (check-type-valid type)
     (create-column column-name type not-null-p primary-key-p auto-increment-p default-value)))
 
@@ -143,7 +172,7 @@
   (format NIL " ~A ~:[~A~;SERIAL~*~]~@[ NOT NULL~*~]~@[ PRIMARY KEY~*~]~@[ DEFAULT ~A~]"
               column-name
               auto-increment-p
-              (type-convert type)
+              (type-convert type) ; (format NIL "~A~:[~2*~;(~A,~A)~]" (type-convert type) (and precision scale) precision scale)
               not-null-p
               primary-key-p
               default-value))

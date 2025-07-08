@@ -10,6 +10,87 @@
            #:with-db-connection))
 (in-package #:clails/model/connection)
 
+
+(defclass <connection> ()
+  ((thread-id :initarg :thread-id)
+   (connection :initarg :connection
+               :reader connection
+               :type dbi-cp.proxy::<dbi-connection-proxy>))
+  (:documentation "#### Description:
+
+Wrapper class for easily refrencing <dbi-connection-proxy> by thread-id
+"))
+
+
+(defparameter *thread-connection-pool*
+  (make-hash-table :test #'eq)
+  "#### Description:
+
+**key** -> thread id\
+**value** -> <connection>
+
+Hashtable to manage connections bound to threads.
+")
+
+
+(defun find-connection-by-thread (thread)
+  "#### Syntax:
+
+**find-connection-by-thread** thread => <connection> | nil
+
+#### Arguments and values:
+
+*thread* -> thread \
+*<connection>* -> connection
+
+#### Description:
+
+find connection bt thread from connection-
+"
+  (let ((thread-id (sb-thread::thread-os-thread thread)))
+    (gethash thread-id *thread-connection-pool*)))
+
+
+(defun get-connection-by-thread (thread)
+  "#### Syntax:
+
+**get-connection-by-thread** thread => <connection>
+
+### Arguments and values:
+
+*thread* -> thread \
+*<connection>* -> connection
+"
+
+  (anaphora:aif (find-connection-by-thread thread)
+                (connection anaphora:it)
+                (let* ((connection (dbi-cp:get-connection *connection-pool*))
+                       (thread-id (sb-thread::thread-os-thread thread))
+                       (inst (make-instance '<connection>
+                                            :thread-id thread-id
+                                            :connection connection)))
+                  (setf (gethash thread-id *thread-connection-pool*) inst)
+                  connection)))
+
+(defun collect-destroyed-thread-connection ()
+  "#### Syntax:
+
+**collect-destroyed-thread-connection** => any
+
+#### Description:
+
+Releases the connection bound to the terminated thread.
+Execute every minute like garbage collection.
+"
+  (let ((all-threads (mapcar #'(lambda (th) (sb-thread::thread-os-thread th))
+                             (bt:all-threads))))
+    (maphash #'(lambda (key connection)
+                 (when (not (find key all-threads))
+                   (dbi-cp:disconnect connection)))
+             *thread-connection-pool*)))
+
+
+
 (defun startup-connection-pool ()
   (when (null *connection-pool*)
     (setf *connection-pool* (create-connection-pool-impl *database-type*))))
@@ -41,7 +122,9 @@
 
 
 (defun get-connection ()
-  (dbi-cp:get-connection *connection-pool*))
+  (let ((current-th (bt:current-thread)))
+    (get-connection-by-thread current-th)))
+
 
 (defun disconnect (connection)
   (dbi-cp:disconnect connection))

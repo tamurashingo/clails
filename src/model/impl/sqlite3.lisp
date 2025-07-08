@@ -16,7 +16,7 @@
                 #:ensure-migration-table-impl
                 #:check-type-valid)
   (:import-from #:clails/model/base-model
-                #:fetch-columns-impl)
+                #:fetch-columns-and-types-impl)
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl
                 #:create-connection-pool-impl)
@@ -36,6 +36,44 @@
     (:date . "date")
     (:time . "time")
     (:boolean . "boolean")))
+
+(defparameter *sqlite3-type-convert-functions*
+  `(("varchar" . (:string ,#'identity))
+    ("text" . (:text ,#'identity))
+    ("integer" . (:integer ,#'identity))
+    ("float" . (:float ,#'identity))
+    ("decimal" . (:decimal ,#'identity))
+    ("datetime" . (:datetime ,#'(lambda (v)
+                                  ; 0123456789012345678
+                                  ; yyyy-mm-dd hh:mi:ss
+                                  (encode-universal-time
+                                    (parse-integer (subseq v 17 19))
+                                    (parse-integer (subseq v 14 16))
+                                    (parse-integer (subseq v 11 13))
+                                    (parse-integer (subseq v 8 10))
+                                    (parse-integer (subseq v 5 7))
+                                    (parse-integer (subseq v 0 4))))))
+    ("date" . (:date ,#'(lambda (v)
+                        ; 0123456789
+                        ; yyyy-mm-dd
+                        (encode-universal-time
+                          0
+                          0
+                          0
+                          (parse-integer (subseq v 8 10))
+                          (parse-integer (subseq v 5 7))
+                          (parse-integer (subseq v 0 4))))))
+    ("time" . (:time ,#'(lambda (v)
+                        ; 012345
+                        ; hh:mi:ss
+                        (+ (* 60 60 (parse-integer (subseq v 0 2)))
+                           (* 60 (parse-integer (subseq v 3 5)))
+                           (parse-integer (subseq v 6 8))))))
+    ("boolean" . (:boolean ,#'identity))))
+
+(defparameter *sqlite3-type-convert-unknown-type* :string)
+(defparameter *sqlite3-type-convert-unknown-function* #'identity)
+
 
 (defun type-convert (type)
   (cdr (assoc type *sqlite3-type-convert*)))
@@ -84,13 +122,26 @@
   (let ((query (gen-drop-index table index)))
     (dbi:do-sql connection query)))
 
-(defmethod fetch-columns-impl ((database-type <database-type-sqlite3>) connection table)
+(defmethod fetch-columns-and-types-impl ((database-type <database-type-sqlite3>) connection table)
   (declare (ignore database-type))
   (let* ((query (dbi:prepare connection (format NIL "pragma table_info('~A')" table)))
          (result (dbi:execute query '())))
     (loop for row = (dbi:fetch result)
           while row
-          collect (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))))
+;;          collect (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))))
+          collect (let* ((name (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))
+                         (access (intern (string-downcase (getf row :|name|)) :KEYWORD))
+                         ; ex: varcahr(255) -> varchar
+                         (column-type (car (str:split "(" (string-downcase (getf row :|type|)))))
+                         (inv (assoc column-type *sqlite3-type-convert-functions* :test #'string=))
+                         (type (if inv (cadr inv)
+                                       *sqlite3-type-convert-unknown-type*))
+                         (fn (if inv (caddr inv)
+                                     *sqlite3-type-convert-unknown-function*)))
+                    (list :name name
+                          :access access
+                          :type type
+                          :convert-fn fn)))))
 
 (defun gen-create-table (table columns)
   (format NIL "CREATE TABLE ~A (~{~A~^, ~})" (kebab->snake table)
@@ -132,15 +183,24 @@
          (not-null-p (getf attr :not-null))
          (primary-key-p (getf attr :primary-key))
          (auto-increment-p (getf attr :auto-increment))
-         (default-value (getf attr :default-value)))
+         (default-value (getf attr :default-value))
+         (precision (when (or (eq type :decimal)
+                              (eq type :float))
+                      (getf attr :precision)))
+         (scale (when (or (eq type :decimal)
+                           (eq type :float))
+                  (getf attr :scale))))
     (check-type-valid type)
-    (create-column column-name type not-null-p primary-key-p auto-increment-p default-value)))
+    (create-column column-name type precision scale not-null-p primary-key-p auto-increment-p default-value)))
 
 
-(defun create-column (column-name type not-null-p primary-key-p auto-increment-p default-value)
-  (format NIL " ~A ~A~@[ NOT NULL~*~]~@[ PRIMARY KEY~*~]~@[ AUTOINCREMENT~*~]~@[ DEFAULT ~A~]"
+(defun create-column (column-name type precision scale not-null-p primary-key-p auto-increment-p default-value)
+  (format NIL " ~A ~A~:[~2*~;(~A,~A)~]~@[ NOT NULL~*~]~@[ PRIMARY KEY~*~]~@[ AUTOINCREMENT~*~]~@[ DEFAULT ~A~]"
               column-name
               (type-convert type)
+              (and precision scale)
+              precision
+              scale
               not-null-p
               primary-key-p
               auto-increment-p

@@ -85,6 +85,8 @@
 
   (setf todo (make-instance '<todo>))
 
+(clails/model/base-model::show-model-columns todo)
+
   ;; check member field
   (ok (null (ref todo :id)))
   (ok (null (ref todo :created-at)))

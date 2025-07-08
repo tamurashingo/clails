@@ -173,3 +173,34 @@
       (ok (string= "create program" (ref 2nd :title)))
       (ok (string= "create pull request" (ref 3rd :title))))))
 
+(deftest save
+  (let ((record (make-record 'clails-test-model::<todo> :title "create new project")))
+
+    ;; make sure id is set
+    (ok (null (ref record :id)))
+    (ok (null (ref record :created-at)))
+    (ok (null (ref record :updated-at)))
+    (save record)
+    (ok (not (null (ref record :id))))
+    (ok (not (null (ref record :created-at))))
+    (ok (not (null (ref record :updated-at))))
+
+    (let ((result (select 'clails-test-model::<todo> :where `(= id ,(ref record :id)))))
+      (ok (= (length result)))
+      (ok (string= "create new project" (ref (first result) :title))))
+
+    ;; debug output
+    (clails/model/base-model::show-model-data record)
+
+    ;; change title
+    (setf (ref record :title) "create clails project")
+
+    (save record)
+
+    (let ((result (select 'clails-test-model::<todo> :where `(= id ,(ref record :id)))))
+      (ok (= (length result)))
+      (ok (string= "create clails project" (ref (first result) :title))))
+
+    ;; debug output
+    (clails/model/base-model::show-model-data record)))
+

@@ -48,3 +48,27 @@
 (defun env-or-default (env-name default-value)
   (or (uiop:getenv env-name)
       default-value))
+
+
+
+(defun plist-values (plist)
+  "#### Syntax:
+
+**plist-values** plist => result
+
+#### Arguments and values:
+
+*plist* -> property list \
+*result* -> list
+
+#### Description:
+
+Returns only the value of plist.
+
+
+#### Example:
+
+(plist-avlues '(:a 1 :b 2: :c :d)) => (1 2 :d)
+"
+  (loop for (key . rest) on plist by #'cddr
+        collect (car rest)))

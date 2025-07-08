@@ -16,10 +16,12 @@
                 #:ensure-migration-table-impl
                 #:check-type-valid)
   (:import-from #:clails/model/base-model
-                #:fetch-columns-impl)
+                #:fetch-columns-and-types-impl)
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl
                 #:create-connection-pool-impl)
+  (:import-from #:clails/model/query
+                #:get-last-id-impl)
   (:import-from #:clails/util
                 #:kebab->snake
                 #:snake->kebab
@@ -36,6 +38,21 @@
     (:date . "date")
     (:time . "time")
     (:boolean . "boolean")))
+
+(defparameter *mysql-type-convert-functions*
+  `(("varchar" . (:string ,#'identity))
+    ("text" . (:text ,#'babel:octets-to-string))
+    ("int" . (:integer ,#'identity))
+    ("float" . (:float ,#'identity))
+    ("decimal" . (:decimal ,#'(lambda (v) (coerce v 'double-float))))
+    ("datetime" . (:datetime ,#'identity))
+    ("date" . (:date ,#'identity))
+    ("time" . (:time ,#'identity))
+    ("tinyint" . (:boolean ,#'identity))))
+
+(defparameter *mysql-type-convert-unknown-type* :string)
+(defparameter *mysql-type-convert-unknown-function* #'identity)
+
 
 (defun type-convert (type)
   (cdr (assoc type *mysql-type-convert*)))
@@ -83,14 +100,25 @@
   (let ((query (gen-drop-index table index)))
     (dbi:do-sql connection query)))
 
-(defmethod fetch-columns-impl ((database-type <database-type-mysql>) connection table)
+(defmethod fetch-columns-and-types-impl ((database-type <database-type-mysql>) connection table)
   (declare (ignore database-type))
-  (let* ((query (dbi:prepare connection "select column_name from information_schema.columns where table_name = ? order by ordinal_position"))
+  ;; select column_name, column_type, data_type, character_maximum_length, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION from information_schema.columns where table_name = 'todo'
+  (let* ((query (dbi:prepare connection "select column_name, data_type from information_schema.columns where table_name = ? order by ordinal_position"))
          (result (dbi:execute query (list table))))
     (loop for row = (dbi:fetch result)
           while row
-          collect (intern (snake->kebab (string-upcase (getf row :COLUMN_NAME))) :KEYWORD))))
-
+;;          collect (intern (snake->kebab (string-upcase (getf row :COLUMN_NAME))) :KEYWORD))))
+          collect (let* ((name (intern (snake->kebab (string-upcase (getf row :COLUMN_NAME))) :KEYWORD))
+                         (access (intern (string-upcase (getf row :COLUMN_NAME)) :KEYWORD))
+                         (inv (assoc (string-downcase (babel:octets-to-string (getf row :DATA_TYPE))) *mysql-type-convert-functions* :test #'string=))
+                         (type (if inv (cadr inv)
+                                        *mysql-type-convert-unknown-type*))
+                         (fn (if inv (caddr inv)
+                                     *mysql-type-convert-unknown-function*)))
+                    (list :name name
+                          :access access
+                          :type type
+                          :convert-fn fn)))))
 
 (defun gen-create-table (table columns)
   (format NIL "CREATE TABLE ~A (~{~A~^, ~})" (kebab->snake table)
@@ -132,15 +160,24 @@
          (not-null-p (getf attr :not-null))
          (primary-key-p (getf attr :primary-key))
          (auto-increment-p (getf attr :auto-increment))
-         (default-value (getf attr :default-value)))
+         (default-value (getf attr :default-value))
+         (precision (when (or (eq type :float)
+                              (eq type :decimal))
+                      (getf attr :precision)))
+         (scale (when (or (eq type :float)
+                          (eq type :decimal))
+                  (getf attr :scale))))
     (check-type-valid type)
-    (create-column column-name type not-null-p primary-key-p auto-increment-p default-value)))
+    (create-column column-name type precision scale not-null-p primary-key-p auto-increment-p default-value)))
 
 
-(defun create-column (column-name type not-null-p primary-key-p auto-increment-p default-value)
-  (format NIL " ~A ~A~@[ NOT NULL~*~]~@[ PRIMARY KEY~*~]~@[ AUTO_INCREMENT~*~]~@[ DEFAULT ~A~]"
+(defun create-column (column-name type precision scale not-null-p primary-key-p auto-increment-p default-value)
+  (format NIL " ~A ~A~:[~2*~;(~A,~A)~]~@[ NOT NULL~*~]~@[ PRIMARY KEY~*~]~@[ AUTO_INCREMENT~*~]~@[ DEFAULT ~A~]"
               column-name
               (type-convert type)
+              (and precision scale)
+              precision
+              scale
               not-null-p
               primary-key-p
               auto-increment-p
@@ -203,4 +240,14 @@
 (defmethod ensure-migration-table-impl ((database-type <database-type-mysql>) connection)
   (declare (ignore database-type))
   (dbi:do-sql connection CREATE-MIGRATION-TABLE))
+
+
+(defmethod get-last-id-impl ((databse-type <database-type-mysql>) connection)
+  (declare (ignore databse-type))
+
+  (let ((result (dbi-cp:execute
+                 (dbi-cp:prepare connection "select last_insert_id()")
+                 '())))
+    (getf (dbi-cp:fetch result) :|last_insert_id()|)))
+
 
