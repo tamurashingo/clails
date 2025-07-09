@@ -30,6 +30,26 @@ framework?
 (clails:generate/model "todo")
 ```
 
+
+edit migration file: db/migrate/yyyymmddhhmmss_todo.lisp
+
+```lisp
+(in-package #:todoapp/model/db)
+
+(defmigration "yyyymmddhhmmss_todo"
+  (:up #'(lambda (connection)
+           (create-table connection :table "todo"
+i                                   :columns '(("title" :type :string
+                                                        :not-null T)
+                                               ("done" :type :boolean
+                                                       :default-value nil)))
+           (add-index connection :table "todo"
+                                 :index "idx-title"
+                                 :columns '("title")))
+   :down #'(lambda (connection)
+             (drop-table connection :table "todo"))))
+```
+
 ### apply migration
 
 
