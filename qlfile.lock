@@ -1,0 +1,12 @@
+("quicklisp" .
+ (:class qlot/source/dist:source-dist
+  :initargs (:distribution "https://beta.quicklisp.org/dist/quicklisp.txt" :%version :latest)
+  :version "2024-10-12"))
+("cl-dbi-connection-pool" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "tamurashingo/cl-dbi-connection-pool" :ref nil :branch nil :tag nil)
+  :version "github-e3e02a5d391978793de006e65d085aa48c8b673b"))
+("uiop" .
+ (:class qlot/source/http:source-http
+  :initargs (:url "https://asdf.common-lisp.dev/archives/uiop-3.3.1.tar.gz" :archive-md5 nil)
+  :version "http-7a90377c4fc96676d5fa5197d9e9ec11"))

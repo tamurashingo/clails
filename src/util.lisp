@@ -3,7 +3,8 @@
   (:use #:cl)
   (:export #:kebab->snake
            #:mandatory-check
-           #:env-or-default))
+           #:env-or-default
+           #:plist-exists))
 (in-package #:clails/util)
 
 (defun kebab->snake (s)
@@ -48,3 +49,35 @@
 (defun env-or-default (env-name default-value)
   (or (uiop:getenv env-name)
       default-value))
+
+
+
+
+(defun plist-exists (plist key)
+  "#### Syntax:
+
+**plist-exists** plist key => result
+
+#### Arguments and values:
+
+*plist* -> property list \
+*key* -> property indicator\
+*result* -> boolean
+
+#### Description:
+
+Return t if key exists in plist. otherwise, returns nil.
+
+
+#### Example:
+
+(plist-exists '(:a 1 :b 2 :c :d :e nil) :a) => t \
+(plist-exists '(:a 1 :b 2 :c :d :e nil) :e) => t
+
+
+(plist-exists '(:a 1 :b 2 :c :d :e nil) :f) => nil
+
+"
+  (loop for (k . rest) on plist by #'cddr
+        when (eq k key)
+          return t))

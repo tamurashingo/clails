@@ -9,9 +9,15 @@
   :depends-on (#:babel
                #:clails
                #:rove
+               #:clails-test/util
                #:clails-test/model/impl/sqlite3
                #:clails-test/model/impl/mysql
-               #:clails-test/model/impl/postgresql)
+               #:clails-test/model/impl/postgresql
+               #:clails-test/model/connection
+               #:clails-test/model/query
+               #:clails-test/model/query/sqlite3
+               #:clails-test/model/query/mysql
+               #:clails-test/model/query/postgresql)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 

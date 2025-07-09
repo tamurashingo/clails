@@ -16,9 +16,12 @@
   :license "MIT"
   :pathname "src"
   :depends-on ("anaphora"
-               "cl-ppcre"
+               "babel"
                "cl-dbi-connection-pool"
+               "cl-ppcre"
                "cl-template"
-               "closer-mop"
+               "local-time"
+               "str"
                "clails/main"))
+
 
