@@ -9,6 +9,7 @@
   :depends-on (#:babel
                #:clails
                #:rove
+               #:clails-test/util
                #:clails-test/model/impl/sqlite3
                #:clails-test/model/impl/mysql
                #:clails-test/model/impl/postgresql

@@ -90,3 +90,30 @@
     (ok (ref result :col-9))))
 
 
+(deftest sqlite3-insert-check
+  (let ((record (make-record 'clails-test-model::<debug> :col-1 "new sqlite3 record")))
+
+    (ok (null (ref record :id)))
+    (ok (null (ref record :created-at)))
+    (ok (null (ref record :updated-at)))
+
+    (save record)
+
+    (ok (not (null (ref record :id))))
+    (ok (not (null (ref record :created-at))))
+    (ok (not (null (ref record :updated-at))))
+
+    ; check inserted record
+    (let ((result (select 'clails-test-model::<debug> :where `(= id ,(ref record :id)))))
+      (ok (= (length result) 1))
+      (ok (string= "new sqlite3 record" (ref (first result) :col-1))))
+
+    ;; change content
+    (setf (ref record :col-1) "updated sqlite3 record")
+
+    (save record)
+
+    ;; check updated record
+    (let ((result (select 'clails-test-model::<debug> :where `(= id ,(ref record :id)))))
+      (ok (= (length result) 1))
+      (ok (string= "updated sqlite3 record" (ref (first result) :col-1))))))

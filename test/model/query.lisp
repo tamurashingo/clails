@@ -101,19 +101,19 @@
       (ok (string= "create program" (ref 1st :title)))
       (ok (= (encode-universal-time 0 0  0 1 1 2024) (ref 1st :created-at)))
       (ok (= (encode-universal-time 0 0 13 2 1 2024) (ref 1st :updated-at)))
-      (ok (= 1 (ref 1st :done)))
+      (ok (eq T (ref 1st :done)))
       (ok (= (encode-universal-time 0 0 13 2 1 2024) (ref 1st :done-at)))
                         
       (ok (string= "create pull request" (ref 2nd :title)))
       (ok (= (encode-universal-time 1 0  0 1 1 2024) (ref 2nd :created-at)))
       (ok (= (encode-universal-time 0 0 13 2 1 2024) (ref 2nd :updated-at)))
-      (ok (= 0 (ref 2nd :done)))
+      (ok (null (ref 2nd :done)))
       (ok (null (ref 2nd :done-at)))
                         
       (ok (string= "merge pr" (ref 3rd :title)))
       (ok (= (encode-universal-time 2 0  0 1 1 2024) (ref 3rd :created-at)))
       (ok (= (encode-universal-time 1 0 13 2 1 2024) (ref 3rd :updated-at)))
-      (ok (= 0 (ref 3rd :done)))
+      (ok (null (ref 3rd :done)))
       (ok (null (ref 3rd :done-at)))))
          
   (testing "single condition"
@@ -186,7 +186,7 @@
     (ok (not (null (ref record :updated-at))))
 
     (let ((result (select 'clails-test-model::<todo> :where `(= id ,(ref record :id)))))
-      (ok (= (length result)))
+      (ok (= (length result) 1))
       (ok (string= "create new project" (ref (first result) :title))))
 
     ;; debug output

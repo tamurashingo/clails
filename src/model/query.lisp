@@ -9,7 +9,7 @@
                 #:ref)
   (:import-from #:clails/util
                 #:kebab->snake
-                #:plist-values)
+                #:plist-exists)
   (:export #:select
            #:make-record
            #:save
@@ -43,7 +43,7 @@
                          (loop for column in (slot-value ret 'clails/model/base-model::columns)
                                do (let ((name (getf column :name))
                                         (access (getf column :access))
-                                        (fn (getf column :convert-fn)))
+                                        (fn (getf column :db-cl-fn)))
                                     (setf (ref ret name)
                                           (funcall fn (getf row access)))))
                          ret))))))
@@ -184,19 +184,17 @@
                                                as  colkey = (intern colstr :KEYWORD)
                                                collect (cons colkey (ref inst colkey))))))
 
-
-    (format t "current-datetime:~A~%" current-datetime)
     ;; set created-at and updated-at
     (setf (getf params :created-at) current-datetime)
     (setf (getf params :updated-at) current-datetime)
 
-
+    ;; convert parameter
     ;; plist -> values
-    (setf params (plist-values params))
+    (setf params (convert-cl-db-values params inst))
 
     ;; TODO: debug
-    (format t "debug: query: ~A~%" sql)
-    (format t "debug: params: ~A~%" params)
+    (format t "debug: query: ~S~%" sql)
+    (format t "debug: params: ~S~%" params)
 
     (clails/model/connection:with-db-connection (connection)
       (dbi-cp:execute
@@ -217,7 +215,6 @@
   (:documentation "get last id"))
 
 
-
 (defun update1 (inst)
   (let* ((local-time:*default-timezone* local-time:+utc-zone+)
          (current-datetime (local-time:format-timestring nil (local-time:now)
@@ -229,12 +226,15 @@
                                                as  colkey = (intern colstr :KEYWORD)
                                                collect (cons colkey (ref inst colkey))))))
 
-    (format t "current-datetime:~A~%" current-datetime)
     ;; set updated-at
     (setf (getf params :updated-at) current-datetime)
 
-    ;; plist -> values and append id
-    (setf params (append (plist-values params)
+    ;; convert parameter
+    ;; plist -> values
+    (setf params (convert-cl-db-values params inst))
+
+    ;; append id
+    (setf params (append params
                          (list (ref inst :id))))
 
     ;; TODO: debug
@@ -247,5 +247,13 @@
         params)
       (setf (ref inst :updated-at) current-datetime)
       inst)))
+
+
+(defun convert-cl-db-values (params inst)
+  (loop for column in (slot-value inst 'clails/model/base-model::columns)
+        when (plist-exists params (getf column :name))
+          collect (let ((name (getf column :name))
+                        (fn (getf column :cl-db-fn)))
+                    (funcall fn (getf params name)))))
 
 

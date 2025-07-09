@@ -20,6 +20,8 @@
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl
                 #:create-connection-pool-impl)
+  (:import-from #:clails/model/query
+                #:get-last-id-impl)
   (:import-from #:clails/util
                 #:kebab->snake
                 #:snake->kebab
@@ -37,19 +39,61 @@
     (:time . "time")
     (:boolean . "boolean")))
 
+(defun identity-null (v)
+  (if (null v)
+      :null
+      v))
+
 (defparameter *postgresql-type-convert-functions*
-  `(("character varying" . (:string ,#'identity))
-    ("text" . (:text ,#'identity))
-    ("integer" . (:integer ,#'identity))
-    ("double precision" . (:float ,#'identity))
-    ("numeric" . (:decimal ,#'(lambda (v) (coerce v 'double-float))))
-    ("timestamp without time zone" . (:datetime ,#'identity))
-    ("date" . (:date ,#'identity))
-    ("time without time zone" . (:time ,#'(lambda (v)
-                                            (+ (* 60 60 (cadr (assoc :HOURS v)))
-                                               (* 60 (cadr (assoc :MINUTES v)))
-                                               (cadr (assoc :SECONDS v))))))
-    ("boolean" . (:boolean ,#'identity))))
+  `(("character varying" . (:type :string
+                            :db-cl-fn ,#'identity
+                            :cl-db-fn ,#'identity))
+    ("text" . (:type :text
+               :db-cl-fn ,#'identity
+               :cl-db-fn ,#'identity-null))
+    ("integer" . (:type :integer
+                  :db-cl-fn ,#'identity
+                  :cl-db-fn ,#'identity-null))
+    ("double precision" . (:type :float
+                           :db-cl-fn ,#'identity
+                           :cl-db-fn ,#'identity-null))
+    ("numeric" . (:type :decimal
+                  :db-cl-fn ,#'(lambda (v)
+                                 (when (not (eq v :null))
+                                   (coerce v 'double-float)))
+                  :cl-db-fn ,#'identity-null))
+    ("timestamp without time zone" . (:type :datetime
+                                      :db-cl-fn ,#'identity
+                                      :cl-db-fn ,#'identity-null))
+    ("date" . (:type :date
+               :db-cl-fn ,#'identity
+               :cl-db-fn ,#'identity-null))
+    ("time without time zone" . (:type :time
+                                 :db-cl-fn ,#'(lambda (v)
+                                                (when (not (eq v :null))
+                                                  (+ (* 60 60 (cadr (assoc :HOURS v)))
+                                                     (* 60 (cadr (assoc :MINUTES v)))
+                                                     (cadr (assoc :SECONDS v)))))
+                                 :cl-db-fn ,#'identity-null))
+    ("boolean" . (:type :boolean
+                  :db-cl-fn ,#'(lambda (v)
+                                 (cond ((and (numberp v)
+                                             (= v 0))
+                                        nil)
+                                       ((and (stringp v)
+                                             (or (string= v "f")
+                                                 (string= v "false")
+                                                 (string= v "n")
+                                                 (string= v "no")
+                                                 (string= v "off")))
+                                        nil)
+                                       ((eq v :null)
+                                        nil)
+                                       (t t)))
+                  :cl-db-fn ,#'(lambda (v)
+                                 (if v "true"
+                                       "false"))))))
+
 
 (defparameter *postgresql-type-convert-unknown-type* :string)
 (defparameter *postgresql-type-convert-unknown-function* #'identity)
@@ -111,15 +155,18 @@
 ;;          collect (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))))
           collect (let* ((name (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))
                          (access (intern (string-downcase (getf row :|column_name|)) :KEYWORD))
-                         (inv (assoc (getf row :|data_type|) *postgresql-type-convert-functions* :test #'string=))
-                         (type (if inv (cadr inv)
+                         (inv (cdr (assoc (getf row :|data_type|) *postgresql-type-convert-functions* :test #'string=)))
+                         (type (if inv (getf inv :type)
                                        *postgresql-type-convert-unknown-type*))
-                         (fn (if inv (caddr inv)
-                                     *postgresql-type-convert-unknown-function*)))
+                         (db-cl-fn (if inv (getf inv :db-cl-fn)
+                                           *postgresql-type-convert-unknown-function*))
+                         (cl-db-fn (if inv (getf inv :cl-db-fn)
+                                           *postgresql-type-convert-unknown-function*)))
                     (list :name name
                           :access access
                           :type type
-                          :convert-fn fn)))))
+                          :db-cl-fn db-cl-fn
+                          :cl-db-fn cl-db-fn)))))
 
 
 (defun gen-create-table (table columns)
@@ -240,4 +287,13 @@
 (defmethod ensure-migration-table-impl ((database-type <database-type-postgresql>) connection)
   (declare (ignore database-type))
   (dbi:do-sql connection CREATE-MIGRATION-TABLE))
+
+
+(defmethod get-last-id-impl ((database-type <database-type-postgresql>) connection)
+  (declare (ignore database-type))
+
+  (let ((result (dbi-cp:execute
+                 (dbi-cp:prepare connection "select lastval()")
+                 '())))
+    (getf (dbi-cp:fetch result) :|lastval|)))
 

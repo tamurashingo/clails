@@ -40,15 +40,43 @@
     (:boolean . "boolean")))
 
 (defparameter *mysql-type-convert-functions*
-  `(("varchar" . (:string ,#'identity))
-    ("text" . (:text ,#'babel:octets-to-string))
-    ("int" . (:integer ,#'identity))
-    ("float" . (:float ,#'identity))
-    ("decimal" . (:decimal ,#'(lambda (v) (coerce v 'double-float))))
-    ("datetime" . (:datetime ,#'identity))
-    ("date" . (:date ,#'identity))
-    ("time" . (:time ,#'identity))
-    ("tinyint" . (:boolean ,#'identity))))
+  `(("varchar" . (:type :string
+                  :db-cl-fn ,#'identity
+                  :cl-db-fn ,#'identity))
+    ("text" . (:type :text
+               :db-cl-fn ,#'(lambda (txt) (when txt
+                                            (babel:octets-to-string txt)))
+               :cl-db-fn ,#'identity))
+    ("int" . (:type :integer
+              :db-cl-fn ,#'identity
+              :cl-db-fn ,#'identity))
+    ("float" . (:type :float
+                :db-cl-fn ,#'identity
+                :cl-db-fn ,#'identity))
+    ("decimal" . (:type :decimal
+                  :db-cl-fn ,#'(lambda (v) (when v
+                                             (coerce v 'double-float)))
+                  :cl-db-fn ,#'identity))
+    ("datetime" . (:type :datetime
+                   :db-cl-fn ,#'identity
+                   :cl-db-fn ,#'identity))
+    ("date" . (:type :date
+               :db-cl-fn ,#'identity
+               :cl-db-fn ,#'identity))
+    ("time" . (:type :time
+               :db-cl-fn ,#'identity
+               :cl-db-fn ,#'identity))
+    ("tinyint" . (:type :boolean
+                  :db-cl-fn ,#'(lambda (v)
+                                 (cond ((null v) nil)
+                                       ((and (numberp v)
+                                             (= v 0))
+                                        nil)
+                                       (t t)))
+                  :cl-db-fn ,#'(lambda (v)
+                                 (or (and (numberp v)
+                                          (> v 0))
+                                     (eq v t)))))))
 
 (defparameter *mysql-type-convert-unknown-type* :string)
 (defparameter *mysql-type-convert-unknown-function* #'identity)
@@ -110,15 +138,18 @@
 ;;          collect (intern (snake->kebab (string-upcase (getf row :COLUMN_NAME))) :KEYWORD))))
           collect (let* ((name (intern (snake->kebab (string-upcase (getf row :COLUMN_NAME))) :KEYWORD))
                          (access (intern (string-upcase (getf row :COLUMN_NAME)) :KEYWORD))
-                         (inv (assoc (string-downcase (babel:octets-to-string (getf row :DATA_TYPE))) *mysql-type-convert-functions* :test #'string=))
-                         (type (if inv (cadr inv)
+                         (inv (cdr (assoc (string-downcase (babel:octets-to-string (getf row :DATA_TYPE))) *mysql-type-convert-functions* :test #'string=)))
+                         (type (if inv (getf inv :type)
                                         *mysql-type-convert-unknown-type*))
-                         (fn (if inv (caddr inv)
-                                     *mysql-type-convert-unknown-function*)))
+                         (db-cl-fn (if inv (getf inv :db-cl-fn)
+                                           *mysql-type-convert-unknown-function*))
+                         (cl-db-fn (if inv (getf inv :cl-db-fn)
+                                           *mysql-type-convert-unknown-function*)))
                     (list :name name
                           :access access
                           :type type
-                          :convert-fn fn)))))
+                          :db-cl-fn db-cl-fn
+                          :cl-db-fn cl-db-fn)))))
 
 (defun gen-create-table (table columns)
   (format NIL "CREATE TABLE ~A (~{~A~^, ~})" (kebab->snake table)

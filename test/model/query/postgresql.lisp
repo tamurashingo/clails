@@ -92,3 +92,32 @@
     (ok (= (encode-universal-time 0 0 0 1 10 2024) (ref result :col-7)))
     (ok (= (+ (* 12 60 60) (* 34 60) 45) (ref result :col-8)))
     (ok (ref result :col-9))))
+
+
+(deftest postgresql-insert-check
+  (let ((record (make-record 'clails-test-model::<debug> :col-1 "new postgresql record")))
+
+    (ok (null (ref record :id)))
+    (ok (null (ref record :created-at)))
+    (ok (null (ref record :updated-at)))
+
+    (save record)
+
+    (ok (not (null (ref record :id))))
+    (ok (not (null (ref record :created-at))))
+    (ok (not (null (ref record :updated-at))))
+
+    ; check inserted record
+    (let ((result (select 'clails-test-model::<debug> :where `(= id ,(ref record :id)))))
+      (ok (= (length result) 1))
+      (ok (string= "new postgresql record" (ref (first result) :col-1))))
+
+    ;; change content
+    (setf (ref record :col-1) "updated postgresql record")
+
+    (save record)
+
+    ;; check updated record
+    (let ((result (select 'clails-test-model::<debug> :where `(= id ,(ref record :id)))))
+      (ok (= (length result) 1))
+      (ok (string= "updated postgresql record" (ref (first result) :col-1))))))

@@ -3,7 +3,8 @@
   (:use #:cl)
   (:export #:kebab->snake
            #:mandatory-check
-           #:env-or-default))
+           #:env-or-default
+           #:plist-exists))
 (in-package #:clails/util)
 
 (defun kebab->snake (s)
@@ -51,24 +52,32 @@
 
 
 
-(defun plist-values (plist)
+
+(defun plist-exists (plist key)
   "#### Syntax:
 
-**plist-values** plist => result
+**plist-exists** plist key => result
 
 #### Arguments and values:
 
 *plist* -> property list \
-*result* -> list
+*key* -> property indicator\
+*result* -> boolean
 
 #### Description:
 
-Returns only the value of plist.
+Return t if key exists in plist. otherwise, returns nil.
 
 
 #### Example:
 
-(plist-avlues '(:a 1 :b 2: :c :d)) => (1 2 :d)
+(plist-exists '(:a 1 :b 2 :c :d :e nil) :a) => t \
+(plist-exists '(:a 1 :b 2 :c :d :e nil) :e) => t
+
+
+(plist-exists '(:a 1 :b 2 :c :d :e nil) :f) => nil
+
 "
-  (loop for (key . rest) on plist by #'cddr
-        collect (car rest)))
+  (loop for (k . rest) on plist by #'cddr
+        when (eq k key)
+          return t))

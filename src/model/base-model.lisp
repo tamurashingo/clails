@@ -22,7 +22,8 @@
 - :name - [string] the name of the column
 - :access - [keyword] the key used to retrieve values from the database (note: in PostgreSQL, keywords are converted to lowercase, so this is defined separately from :name)
 - :type - [keyword] the type specified during migration
-- :convert-fn - [function] function to convert database values to Common Lisp values
+- :db-cl-fn - [function] function to convert database values to Common Lisp values
+- :cl-db-fn - [function] function to convert Common Lisp values to database values
 
 'ex: ((:name :id
        :access \"ID\"

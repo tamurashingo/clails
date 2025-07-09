@@ -20,6 +20,8 @@
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl
                 #:create-connection-pool-impl)
+  (:import-from #:clails/model/query
+                #:get-last-id-impl)
   (:import-from #:clails/util
                 #:kebab->snake
                 #:snake->kebab
@@ -38,38 +40,59 @@
     (:boolean . "boolean")))
 
 (defparameter *sqlite3-type-convert-functions*
-  `(("varchar" . (:string ,#'identity))
-    ("text" . (:text ,#'identity))
-    ("integer" . (:integer ,#'identity))
-    ("float" . (:float ,#'identity))
-    ("decimal" . (:decimal ,#'identity))
-    ("datetime" . (:datetime ,#'(lambda (v)
-                                  ; 0123456789012345678
-                                  ; yyyy-mm-dd hh:mi:ss
-                                  (encode-universal-time
-                                    (parse-integer (subseq v 17 19))
-                                    (parse-integer (subseq v 14 16))
-                                    (parse-integer (subseq v 11 13))
-                                    (parse-integer (subseq v 8 10))
-                                    (parse-integer (subseq v 5 7))
-                                    (parse-integer (subseq v 0 4))))))
-    ("date" . (:date ,#'(lambda (v)
-                        ; 0123456789
-                        ; yyyy-mm-dd
-                        (encode-universal-time
-                          0
-                          0
-                          0
-                          (parse-integer (subseq v 8 10))
-                          (parse-integer (subseq v 5 7))
-                          (parse-integer (subseq v 0 4))))))
-    ("time" . (:time ,#'(lambda (v)
-                        ; 012345
-                        ; hh:mi:ss
-                        (+ (* 60 60 (parse-integer (subseq v 0 2)))
-                           (* 60 (parse-integer (subseq v 3 5)))
-                           (parse-integer (subseq v 6 8))))))
-    ("boolean" . (:boolean ,#'identity))))
+  `(("varchar" . (:type :string
+                  :db-cl-fn ,#'identity
+                  :cl-db-fn ,#'identity))
+    ("text" . (:type :text
+               :db-cl-fn ,#'identity
+               :cl-db-fn ,#'identity))
+    ("integer" . (:type :integer
+                  :db-cl-fn ,#'identity
+                  :cl-db-fn ,#'identity))
+    ("float" . (:type :float
+                :db-cl-fn ,#'identity
+                :cl-db-fn ,#'identity))
+    ("decimal" . (:type :decimal
+                  :db-cl-fn ,#'identity
+                  :cl-db-fn ,#'identity))
+    ("datetime" . (:type :datetime
+                   :db-cl-fn ,#'(lambda (v)
+                                  (when v
+                                    ; 0123456789012345678
+                                    ; yyyy-mm-dd hh:mi:ss
+                                    (encode-universal-time
+                                     (parse-integer (subseq v 17 19))
+                                     (parse-integer (subseq v 14 16))
+                                     (parse-integer (subseq v 11 13))
+                                     (parse-integer (subseq v 8 10))
+                                     (parse-integer (subseq v 5 7))
+                                     (parse-integer (subseq v 0 4)))))
+                   :cl-db-fn ,#'identity))
+    ("date" . (:type :date
+               :db-cl-fn ,#'(lambda (v)
+                              (when v
+                                ; 0123456789
+                                ; yyyy-mm-dd
+                                (encode-universal-time
+                                 0
+                                 0
+                                 0
+                                 (parse-integer (subseq v 8 10))
+                                 (parse-integer (subseq v 5 7))
+                                 (parse-integer (subseq v 0 4)))))
+               :cl-db-fn ,#'identity))
+    ("time" . (:type :time
+               :db-cl-fn ,#'(lambda (v)
+                              (when v
+                                ; 012345
+                                ; hh:mi:ss
+                                (+ (* 60 60 (parse-integer (subseq v 0 2)))
+                                   (* 60 (parse-integer (subseq v 3 5)))
+                                   (parse-integer (subseq v 6 8)))))
+               :cl-db-fn ,#'identity))
+    ("boolean" . (:type :boolean
+                  :db-cl-fn ,#'identity
+                  :cl-db-fn ,#'identity))))
 
 (defparameter *sqlite3-type-convert-unknown-type* :string)
 (defparameter *sqlite3-type-convert-unknown-function* #'identity)
@@ -133,15 +156,18 @@
                          (access (intern (string-downcase (getf row :|name|)) :KEYWORD))
                          ; ex: varcahr(255) -> varchar
                          (column-type (car (str:split "(" (string-downcase (getf row :|type|)))))
-                         (inv (assoc column-type *sqlite3-type-convert-functions* :test #'string=))
-                         (type (if inv (cadr inv)
+                         (inv (cdr (assoc column-type *sqlite3-type-convert-functions* :test #'string=)))
+                         (type (if inv (getf inv :type)
                                        *sqlite3-type-convert-unknown-type*))
-                         (fn (if inv (caddr inv)
-                                     *sqlite3-type-convert-unknown-function*)))
+                         (db-cl-fn (if inv (getf inv :db-cl-fn)
+                                           *sqlite3-type-convert-unknown-function*))
+                         (cl-db-fn (if inv (getf inv :cl-db-fn)
+                                           *sqlite3-type-convert-unknown-function*)))
                     (list :name name
                           :access access
                           :type type
-                          :convert-fn fn)))))
+                          :db-cl-fn db-cl-fn
+                          :cl-db-fn cl-db-fn)))))
 
 (defun gen-create-table (table columns)
   (format NIL "CREATE TABLE ~A (~{~A~^, ~})" (kebab->snake table)
@@ -236,3 +262,11 @@
   (declare (ignore database-type))
   (dbi:do-sql connection CREATE-MIGRATION-TABLE))
 
+
+(defmethod get-last-id-impl ((database-type <database-type-sqlite3>) connection)
+  (declare (ignore database-type))
+
+  (let ((result (dbi-cp:execute
+                 (dbi-cp:prepare connection "select last_insert_rowid()")
+                 '())))
+    (getf (dbi-cp:fetch result) :|last_insert_rowid()|)))
