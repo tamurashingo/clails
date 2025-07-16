@@ -1,0 +1,99 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -Q -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+  (ql:quickload '(:qlot) :silent t)
+  )
+
+
+(defpackage :ros.script.clails.3961085205.boot
+  (:use :cl))
+(in-package :ros.script.clails.3961085205.boot)
+
+(defparameter CLAILS_CONF_DIR (format NIL "~A/.clails/" (user-homedir-pathname)))
+
+(progn
+  (setf qlot/logger:*logger-message-stream* (make-broadcast-stream))
+  (ensure-directories-exist CLAILS_CONF_DIR)
+  (setf qlot:*project-root* CLAILS_CONF_DIR)
+  (qlot:add "tamurashingo/cl-dbi-connection-pool")
+
+;; in develop, set CL_SOURCE_REGISTRY
+;  (qlot:add "tamurashingo/clails")
+
+  (qlot:add "tamurashingo/getcmd")
+  (qlot:install)
+  (push (format NIL "~A/.qlot/" CLAILS_CONF_DIR) ql:*local-project-directories*)
+  (ql:quickload :clails :silent t))
+
+
+(defpackage :ros.script.clails.3961085205
+  (:use :cl))
+(in-package :ros.script.clails.3961085205)
+
+(defun load-project ()
+  (push (uiop/os:getcwd) ql:*local-project-directories*)
+  (load "clails.boot"))
+
+(defun db/create ()
+  (load-project)
+  (clails/cmd:db/create))
+
+(defun db/migrate/up ()
+  (load-project)
+  (clails/cmd:db/migrate))
+
+(defun generate/model (model-name &key overwrite no-migration)
+  (load-project)
+  (clails/cmd:generate/model model-name :overwrite overwrite :no-migration no-migration))
+
+(defun generate/migration (migration-name)
+  (load-project)
+  (clails/cmd:generate/migration migration-name))
+
+
+(defun help ()
+  (format t "clails CMD [OPTIONS] [args...]~%"))
+
+
+(defparameter *config*
+  `(:commands ((:command "new"
+                :function ,#'clails/cmd:create-project
+                :options ((:short-option "p"
+                           :long-option "path"
+                           :keyword :project-path
+                           :consume T)
+                          (:short-option "d"
+                           :long-option "database"
+                           :keyword :database
+                           :consume T
+                           :converter ,#'(lambda (s)
+                                           (intern (string-upcase s) :KEYWORD)))))
+               (:command "db"
+                :commands ((:command "create"
+                            :function ,#'db/create)
+                           (:command "migrate"
+                            :commands ((:command "up"
+                                        :function ,#'db/migrate/up)))))
+               (:command "generate"
+                :commands ((:command "model"
+                            :function ,#'generate/model
+                            :options ((:short-option "o"
+                                       :long-option "overwrite"
+                                       :keyword :overwrite)
+                                      (:short-option "n"
+                                       :long-option "no-migration"
+                                       :keyword :no-migration)))
+                           (:command "migration"
+                            :function ,#'generate/migration))))))
+
+
+(defun main (&rest argv)
+  (let ((c (getcmd:getcmd argv *config* #'help)))
+    (apply (getf c :function)
+           (getf c :args))))
+
+;;; vim: set ft=lisp lisp:

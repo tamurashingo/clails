@@ -32,6 +32,16 @@
     :type string)))
 
 
+(defparameter project-template
+  (make-instance '<template>
+                 :path "/"
+                 :template ";;;; boot from clails cli
+
+(ql:quickkload :<%= (@ project-name ) %>)
+(setf clails/environment:*project-dir* (uiop/os:getcwd))
+"))
+
+
 (defparameter asd-template
   (make-instance '<template>
                  :path "/"
