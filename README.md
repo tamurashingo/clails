@@ -1,7 +1,7 @@
 # clails
 framework?
 
-## usage
+## usage (repl)
 
 ### create project
 
@@ -39,7 +39,7 @@ edit migration file: db/migrate/yyyymmddhhmmss_todo.lisp
 (defmigration "yyyymmddhhmmss_todo"
   (:up #'(lambda (connection)
            (create-table connection :table "todo"
-i                                   :columns '(("title" :type :string
+                                    :columns '(("title" :type :string
                                                         :not-null T)
                                                ("done" :type :boolean
                                                        :default-value nil)))
@@ -55,6 +55,64 @@ i                                   :columns '(("title" :type :string
 
 ```lisp
 (clails:db/migrate)
+```
+
+
+## usage (cli)
+
+Environment variables must be set at runtime.
+
+Run the following command in the `clails` directory.
+
+```bash
+export CL_SOURCE_REGISTRY=$PWD
+```
+
+
+### create project
+
+```bash
+clails.ros new todoapp --path /cl-projects
+```
+
+### create database
+
+in project directory,
+
+```bash
+clails.ros db create
+```
+
+### create model
+
+```bash
+clails.ros generate model todo
+```
+
+edit migration file: db/migrate/yyyymmddhhmmss_todo.lisp
+
+```lisp
+(in-package #:todoapp/model/db)
+
+(defmigration "yyyymmddhhmmss_todo"
+  (:up #'(lambda (connection)
+           (create-table connection :table "todo"
+                                    :columns '(("title" :type :string
+                                                        :not-null T)
+                                               ("done" :type :boolean
+                                                       :default-value nil)))
+           (add-index connection :table "todo"
+                                 :index "idx-title"
+                                 :columns '("title")))
+   :down #'(lambda (connection)
+             (drop-table connection :table "todo"))))
+```
+
+
+### apply migration
+
+```bash
+clails.ros db migrate up
 ```
 
 

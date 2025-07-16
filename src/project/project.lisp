@@ -44,7 +44,15 @@
 
 (defun create-initial-files (project-name project-dir database)
   (flet ((%dirname (template)
-            (pathname (format NIL "~A/~A" project-name (path template)))))
+            (pathname (format NIL "~A/~A" project-dir (path template)))))
+
+    ;; project file
+    (create-file-with-template project-name
+                               project-dir
+                               database
+                               (%dirname clails/project/template::project-template)
+                               "clails.boot"
+                               clails/project/template::project-template)
 
     ;; asd file
     (create-file-with-template project-name
@@ -60,7 +68,7 @@
                                (%dirname clails/project/template::package-template)
                                "package.lisp"
                                clails/project/template::package-template)
-    
+
     ;; controller package
     (create-file-with-template project-name
                                project-dir
@@ -68,7 +76,7 @@
                                (%dirname clails/project/template::app/controller/package-template)
                                "package.lisp"
                                clails/project/template::app/controller/package-template)
-    
+
     ;; model package
     (create-file-with-template project-name
                                project-dir
@@ -76,7 +84,7 @@
                                (%dirname clails/project/template::app/model/package-template)
                                "package.lisp"
                                 clails/project/template::app/model/package-template)
-    
+
     ;; view package
     (create-file-with-template project-name
                                project-dir
@@ -84,7 +92,7 @@
                                (%dirname clails/project/template::app/view/package-template)
                                "package.lisp"
                                clails/project/template::app/view/package-template)
-    
+
     ;; config
     (create-file-with-template project-name
                                project-dir
@@ -100,7 +108,7 @@
                                (%dirname clails/project/template::config/environment-template)
                                "environment.lisp"
                                clails/project/template::config/environment-template)
-    
+
     ;; config/database
     (let ((db-template (cond ((eq database :sqlite3)
                                clails/project/template::config/database-sqlite-template)
