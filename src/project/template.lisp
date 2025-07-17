@@ -37,7 +37,7 @@
                  :path "/"
                  :template ";;;; boot from clails cli
 
-(ql:quickkload :<%= (@ project-name ) %>)
+(ql:quickload :<%= (@ project-name ) %>)
 (setf clails/environment:*project-dir* (uiop/os:getcwd))
 "))
 
