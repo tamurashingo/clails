@@ -36,3 +36,9 @@
 
 (defparameter *connection-pool* nil
   "Database connection pool. Created when the application server statts and destroyed when it shuts down.")
+
+(defparameter *routing-tables*
+  '((:path "/"
+     :controller "clails/controller/base-controller:<default-controller>"
+     :type all)))
+
