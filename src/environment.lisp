@@ -6,7 +6,8 @@
            #:*project-environment*
            #:*database-config*
            #:*database-type*
-           #:*connection-pool*))
+           #:*connection-pool*
+           #:*routing-tables*))
 (in-package #:clails/environment)
 
 (defclass <database-type> ()

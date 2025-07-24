@@ -8,14 +8,20 @@
   (:import-from #:clails/environment
                 #:*routing-tables*)
   (:export #:<base-controller>
-           #:get-all
-           #:get-one
-           #:post-one
-           #:put-one
-           #:delete-one
+           #:<web-controller>
+           #:<rest-controller>
+           #:request
+           #:env
+           #:params
+           #:view
+           #:do-get
+           #:do-post
+           #:do-put
+           #:do-delete
            #:initialize-routing-tables
            #:create-scanner-from-uri-path
-           #:path-controller))
+           #:path-controller
+           #:<default-controller>))
 
 
 (in-package #:clails/controller/base-controller)
@@ -23,41 +29,41 @@
 (defclass <base-controller> ()
   ((request :reader request)
    (env :reader env)
-   (params :initform (make-hash-table :test #'string=))
-   (view :accessor view)))
+   (params :initform (make-hash-table :test 'equal)
+           :reader params)))
+
+(defclass <web-controller> (<base-controller>)
+  ((view :accessor view)))
+
+(defclass <rest-cotnroller> (<base-controller>)
+  ((resopnse :accessor response)))
+
 
 (defmethod param ((controller <base-controller>) key)
   (gethash key (slot-value controller 'params)))
 
-(defgeneric get-all (controller)
+(defgeneric do-get (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))
 
-(defgeneric get-one (controller)
+(defgeneric do-post (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))
 
-(defgeneric post-one (controller)
+(defgeneric do-put (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))
 
-(defgeneric put-one (controller)
-  (:documentation "")
-  (:method ((controller <base-controller>))
-    (error '404/not-found
-           :path (getf (getf controller :request)
-                       :path-info))))
-
-(defgeneric delete-one (controller)
+(defgeneric do-delete (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
     (error '404/not-found
@@ -66,10 +72,11 @@
 
 
 
-(defclass <default-controller> (<base-controller>)
+(defclass <default-controller> (<web-controller>)
   ())
 
-(defmethod get-all ((controller <default-controller>))
+(defmethod do-get ((controller <default-controller>))
+  (format t "default-controller:do-get~%")
   (setf (view controller) "index.html"))
 
 #|
