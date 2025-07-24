@@ -5,12 +5,15 @@
                 #:appendf)
   (:import-from #:clails/condition
                 #:404/not-found)
+  (:import-from #:clails/environment
+                #:*routing-tables*)
   (:export #:<base-controller>
            #:get-all
            #:get-one
            #:post-one
            #:put-one
            #:delete-one
+           #:initialize-routing-tables
            #:create-scanner-from-uri-path))
 
 
@@ -19,7 +22,11 @@
 (defclass <base-controller> ()
   ((request :reader request)
    (env :reader env)
+   (params :initform (make-hash-table))
    (view :accessor view)))
+
+(defmethod param ((controller <base-controller>) key)
+  (gethash key (slot-value controller 'params)))
 
 (defgeneric get-all (controller)
   (:documentation "")
@@ -73,15 +80,23 @@
      :controller "todoapp/controller/todo-controller:<todo-controller>"
      :type :one)))
 
-(defparameter *router* nil)
 |#
 
-
 (defparameter *router* nil)
+
+
+(defun path-controller (path)
+  (loop for r in *router*
+        do (multiple-value-bind (match regs)
+               (ppcre:scan-to-strings (getf r :scanner) path)
+             (when match
+               (return (append r
+                               `(:parameters ,regs)))))))
+
 
 (defun initialize-routing-tables ()
   (setf *router*
-        (loop for tbl in *tables*
+        (loop for tbl in *routing-tables*
               collect(append tbl
                              (create-scanner-from-uri-path (getf tbl :path))))))
 
@@ -89,50 +104,50 @@
 (defun create-scanner-from-uri-path (path)
   "return regex string, parameter names"
   (let ((scanner (list #\^))
-        (params))
-    (%create-scanner-normal path 0 (length path) scanner params)))
+        (keys))
+    (%create-scanner-normal path 0 (length path) scanner keys)))
 
 
-(defun %create-scanner-normal (path pos len scanner params)
+(defun %create-scanner-normal (path pos len scanner keys)
   (if (= pos len)
       (progn
         (push #\$ scanner)
         `(:scanner ,(coerce (nreverse scanner) 'string)
-          :params ,params))
+          :keys ,keys))
       (let ((c (aref path pos)))
         (cond ((eq c #\:)
                (push #\( scanner)
                (setf scanner (append (nreverse (coerce "[0-9A-Za-z\\-._~%]+" 'list))
                                      scanner))
-               (%create-scanner-read-id path (1+ pos) len scanner params))
+               (%create-scanner-read-id path (1+ pos) len scanner keys))
               (t
                (when (find c ".")
                  (push #\\ scanner))
                (push c scanner)
-               (%create-scanner-normal path (1+ pos) len scanner params))))))
+               (%create-scanner-normal path (1+ pos) len scanner keys))))))
 
 
-(defun %create-scanner-read-id (path pos len scanner params &optional reading-params)
+(defun %create-scanner-read-id (path pos len scanner keys &optional reading-key)
   (if (= pos len)
       (progn
-        (push (intern (string-upcase (coerce (nreverse reading-params)
+        (push (intern (string-upcase (coerce (nreverse reading-key)
                                              'string))
                       :KEYWORD)
-              params)
+              keys)
         (push #\) scanner)
         (push #\$ scanner)
         `(:scanner ,(coerce (nreverse scanner) 'string)
-          :params ,(nreverse params)))
+          :keys ,(nreverse keys)))
       (let ((c (aref path pos)))
         (cond ((find c "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-._~%")
-               (%create-scanner-read-id path (1+ pos) len scanner params (push c reading-params)))
+               (%create-scanner-read-id path (1+ pos) len scanner keys (push c reading-key)))
               (t
                (eq c #\/)
                (push #\) scanner)
                (push c scanner)
-               (push (intern (string-upcase (coerce (nreverse reading-params)
+               (push (intern (string-upcase (coerce (nreverse reading-key)
                                                     'string))
                              :KEYWORD)
-                     params)
-               (%create-scanner-normal path (1+ pos) len scanner params))))))
+                     keys)
+               (%create-scanner-normal path (1+ pos) len scanner keys))))))
 
