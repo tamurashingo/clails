@@ -50,12 +50,12 @@
   (testing "with single parameter"
     (let ((result (create-scanner-from-uri-path "/users/:id")))
       (ok (string= (getf result :scanner) "^/users/([0-9A-Za-z\\-._~%]+)$"))
-      (ok (equal (getf result :keys) '(:id)))))
+      (ok (equal (getf result :keys) '("id")))))
 
   (testing "with double parameter"
     (let ((result (create-scanner-from-uri-path "/blog/:blog-id/comment/:comment-id")))
       (ok (string= (getf result :scanner) "^/blog/([0-9A-Za-z\\-._~%]+)/comment/([0-9A-Za-z\\-._~%]+)$"))
-      (ok (equal (getf result :keys) '(:blog-id :comment-id))))))
+      (ok (equal (getf result :keys) '("blog-id" "comment-id"))))))
 
 
 

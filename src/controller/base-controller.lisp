@@ -14,7 +14,8 @@
            #:put-one
            #:delete-one
            #:initialize-routing-tables
-           #:create-scanner-from-uri-path))
+           #:create-scanner-from-uri-path
+           #:path-controller))
 
 
 (in-package #:clails/controller/base-controller)
@@ -22,7 +23,7 @@
 (defclass <base-controller> ()
   ((request :reader request)
    (env :reader env)
-   (params :initform (make-hash-table))
+   (params :initform (make-hash-table :test #'string=))
    (view :accessor view)))
 
 (defmethod param ((controller <base-controller>) key)
@@ -130,9 +131,8 @@
 (defun %create-scanner-read-id (path pos len scanner keys &optional reading-key)
   (if (= pos len)
       (progn
-        (push (intern (string-upcase (coerce (nreverse reading-key)
-                                             'string))
-                      :KEYWORD)
+        (push (string-downcase (coerce (nreverse reading-key)
+                                       'string))
               keys)
         (push #\) scanner)
         (push #\$ scanner)
@@ -145,9 +145,8 @@
                (eq c #\/)
                (push #\) scanner)
                (push c scanner)
-               (push (intern (string-upcase (coerce (nreverse reading-key)
+               (push (string-downcase (coerce (nreverse reading-key)
                                                     'string))
-                             :KEYWORD)
                      keys)
                (%create-scanner-normal path (1+ pos) len scanner keys))))))
 
