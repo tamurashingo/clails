@@ -17,7 +17,8 @@
                #:clails-test/model/query
                #:clails-test/model/query/sqlite3
                #:clails-test/model/query/mysql
-               #:clails-test/model/query/postgresql)
+               #:clails-test/model/query/postgresql
+               #:clails-test/controller/base-controller)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 
