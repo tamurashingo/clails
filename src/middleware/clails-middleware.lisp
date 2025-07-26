@@ -9,6 +9,8 @@
                 #:do-post
                 #:do-put
                 #:do-delete)
+  (:import-from #:clails/view/view-resolver
+                #:resolve-view)
   (:export #:*lack-middleware-clails-controller*))
 
 
@@ -28,8 +30,7 @@
              (do-delete controller))
             (t
              nil))
-     )
-    '(200 (:content-type "text/plain") ("OK"))))
+      (resolve-view controller))))
 
 
 
