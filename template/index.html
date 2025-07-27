@@ -1,1 +1,12 @@
-<h1>hello, this is clails</h1>
+<% in-package :clails/controller/base-controller %>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title></title>
+</head>
+<body>
+    <h1>hello, this is clails</h1>
+    <div>Implementation Type: <%= lisp-type (@ controller) %></div>
+    <div>Implementation Version: <%= lisp-version (@ controller) %></div>
+</body>
+</html>

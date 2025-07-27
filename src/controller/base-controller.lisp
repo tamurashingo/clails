@@ -22,7 +22,9 @@
            #:initialize-routing-tables
            #:create-scanner-from-uri-path
            #:path-controller
-           #:<default-controller>))
+           #:<default-controller>
+           #:lisp-type
+           #:lisp-version))
 
 
 (in-package #:clails/controller/base-controller)
@@ -77,10 +79,13 @@
                                            *project-dir)))
 
 (defclass <default-controller> (<web-controller>)
-  ())
+  ((lisp-type :accessor lisp-type)
+   (lisp-version :accessor lisp-version)))
 
 (defmethod do-get ((controller <default-controller>))
   (format t "default-controller:do-get~%")
+  (setf (lisp-type controller) (lisp-implementation-type))
+  (setf (lisp-version controller) (lisp-implementation-version))
   (setf (view controller) (asdf:system-relative-pathname :clails "template/index.html")))
 
 
