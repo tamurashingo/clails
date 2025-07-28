@@ -15,6 +15,7 @@
            #:env
            #:params
            #:view
+           #:set-view
            #:do-get
            #:do-post
            #:do-put
@@ -75,8 +76,8 @@
 
 
 (defmethod set-view ((controller <web-controller>) viewname)
-  (setf (view controller) (merge-pathnames (format nil "/app/views/~A" viewname)
-                                           *project-dir)))
+  (setf (view controller) (merge-pathnames (format nil "app/views/~A" viewname)
+                                           *project-dir*)))
 
 (defclass <default-controller> (<web-controller>)
   ((lisp-type :accessor lisp-type)

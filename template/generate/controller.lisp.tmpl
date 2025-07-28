@@ -1,0 +1,25 @@
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>/controllers/<%= (@ name) %>-controller
+  (:use #:cl
+        #:clails/controller/base-controller)
+  (:export #:<<%= (@ name) %>-controller>))
+
+(in-package #:<%= (@ project-name ) %>/controllers/<%= (@ name) %>-controller)
+
+(defclass <<%= (@ name ) %>-controller> (<web-controller>)
+  ())
+
+
+(defmethod do-get ((controller <<%= (@ name ) %>-controller>))
+  (set-view controller "<%= (@ name ) %>/show.html"))
+
+(defmethod do-post ((controller <<%= (@ name ) %>-controller>))
+  (set- view controller "<%= (@ name ) %>/new.html"))
+
+(defmethod do-put ((controller <<%= (@ name ) %>-controller>))
+  (set-view controller "<%= (@ name ) %>/edit.html"))
+
+(defmethod do-delete ((controller <<%= (@ name ) %>-controller>))
+  (set-view controller "<%= (@ name ) %>/delete.html"))
+

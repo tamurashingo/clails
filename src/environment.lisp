@@ -40,6 +40,5 @@
 
 (defparameter *routing-tables*
   '((:path "/"
-     :controller "clails/controller/base-controller:<default-controller>"
-     :type all)))
+     :controller "clails/controller/base-controller:<default-controller>")))
 

@@ -1,0 +1,17 @@
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>/config/environment
+  (:use #:cl)
+  (:import-from #:clails/environment
+                #:*project-environment*
+                #:*routing-tables*))
+
+(in-package #:<%= (@ project-name ) %>/config/environment)
+
+;; project name
+(setf clails/environment:*project-name* "<%= (@ project-name ) %>")
+
+(setf *routing-tables*
+  '((:path "/"
+     :controller "<%= (@ project-name )%>/controllers/application-controller:<application-controller>")))
+

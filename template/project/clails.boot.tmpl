@@ -1,0 +1,4 @@
+;;;; boot from clails cli
+
+(ql:quickload :<%= (@ project-name ) %>)
+(setf clails/environment:*project-dir* (uiop/os:getcwd))

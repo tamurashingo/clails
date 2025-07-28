@@ -20,7 +20,9 @@
                "cl-dbi-connection-pool"
                "cl-ppcre"
                "cl-template"
+               "clack"
                "getcmd"
+               "lack"
                "local-time"
                "str"
                "clails/main"))

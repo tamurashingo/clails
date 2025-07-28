@@ -50,6 +50,9 @@
   (or (uiop:getenv env-name)
       default-value))
 
+(defun env (env-name)
+  (uiop:getenv env-name))
+
 
 
 
