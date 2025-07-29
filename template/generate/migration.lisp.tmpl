@@ -1,0 +1,10 @@
+; -*- mode: lisp -*-
+(in-package #:<%= (@ project-name ) %>/model/db)
+
+(defmigration "<%= (@ name ) %>"
+  (:up #'(lambda (connection)
+           ;;
+           nil)
+   :down #'(lambda (connection)
+             ;;
+             nil)))

@@ -1,0 +1,16 @@
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>-system
+  (:use #:asdf #:cl))
+(in-package #:<%= (@ project-name ) %>-system)
+
+(defsystem <%= (@ project-name ) %>
+  :class :package-inferred-system
+  :description ""
+  :version "0.0.1"
+  :author ""
+  :license ""
+  :pathname "app"
+  :depends-on ("clails"
+               "<%= (@ project-name ) %>/application"))
+

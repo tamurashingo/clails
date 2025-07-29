@@ -1,0 +1,20 @@
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:<%= (@ project-name) %>/config/database
+  (:use #:cl)
+  (:import-from #:clails/environment
+                #:*project-environment*)
+  (:import-from #:clails/util
+                #:env-or-default
+                #:env)
+  (:import-from #:clails/model/impl/sqlite3))
+(in-package #:<%= (@ project-name ) %>/config/database)
+
+(setf clails/environment:*database-config*
+      `(:database :sqlite3
+        :develop (:database-name ,(env-or-default "CLAILS_DB_NAME" "<%= (@ project-dir ) %>/tmp/<%= (@ project-name ) %>-develop.sqlite3"))
+        :test (:database-name ,(env-or-default "CLAILS_DB_NAME" "<%= (@ project-dir ) %>/tmp/<%= (@ project-name ) %>-test.sqlite3"))
+        :production (:database-name ,(env "CLAILS_DB_NAME"))))
+
+(setf clails/environment:*database-type*
+      (make-instance 'clails/environment::<database-type-sqlite3>))

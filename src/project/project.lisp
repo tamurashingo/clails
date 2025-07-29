@@ -5,7 +5,7 @@
                 #:<template>
                 #:template
                 #:path)
-  (:export #:%create-project))
+  (:export #:create-project))
 
 (in-package #:clails/project/project)
 
@@ -14,12 +14,17 @@
     "app/controllers"
     "app/models"
     "app/views"
-    "config"
+    "app/config"
     "db"
     "db/migrate"
     "tmp"))
 
-(defun %create-project (project-name project-dir database)
+(defun create-project (project-name project-dir database)
+  (format t "---------------------------------~%")
+  (format t "rpoject-dir: ~A~%" project-dir)
+  (format t "---------------------------------~%")
+
+
   (create-directories project-dir)
   (create-initial-files project-name (namestring project-dir) database))
 
@@ -32,96 +37,91 @@
              (format T "create directory: ~A~%" dir)
              (ensure-directories-exist dir))))
 
-(defun create-file-with-template (project-name project-dir database target-dir target-file template)
-  (let ((filename (pathname (format NIL "~A/~A" target-dir target-file))))
-    (format T "create initial files: ~A~%" filename)
-    (with-open-file (out filename
-                         :direction :output)
-      (format out "~A" (funcall (cl-template:compile-template (template template))
-                                `(:project-name ,project-name
-                                  :project-dir ,project-dir
-                                  :database ,database))))))
+
+(defun create-file-with-template (filename project-name project-dir database template &key (start-delimiter "<%") (start-echo-delimiter "<%=") (end-delimiter "%>"))
+  (format T "create initial files: ~A~%" filename)
+  (with-open-file (out (format nil "~A~A" project-dir filename)
+                       :direction :output)
+    (format out "~A" (funcall (cl-template:compile-template template
+                                                            :start-delimiter start-delimiter
+                                                            :start-echo-delimiter start-echo-delimiter
+                                                            :end-delimiter end-delimiter)
+                              `(:project-name ,project-name
+                                :project-dir ,project-dir
+                                :database ,database)))))
+
 
 (defun create-initial-files (project-name project-dir database)
-  (flet ((%dirname (template)
-            (pathname (format NIL "~A/~A" project-dir (path template)))))
+  (flet ((read-template (filename)
+           (let ((fullpath (asdf:system-relative-pathname
+                            :clails
+                            (format nil "template/project/~A" filename))))
+             (uiop:read-file-string fullpath
+                                    :external-format :utf-8))))
 
-    ;; project file
-    (create-file-with-template project-name
+    ;; boot
+    (create-file-with-template "clails.boot"
+                               project-name
                                project-dir
                                database
-                               (%dirname clails/project/template::project-template)
-                               "clails.boot"
-                               clails/project/template::project-template)
+                               (read-template "clails.boot.tmpl"))
 
-    ;; asd file
-    (create-file-with-template project-name
+    ;; asdf file
+    (create-file-with-template (format nil "~A.asd" project-name)
+                               project-name
                                project-dir
                                database
-                               (%dirname clails/project/template::asd-template)
-                               (format NIL "~A.asd" project-name)
-                               clails/project/template::asd-template)
-    ;; package
-    (create-file-with-template project-name
-                               project-dir
-                               database
-                               (%dirname clails/project/template::package-template)
-                               "package.lisp"
-                               clails/project/template::package-template)
+                               (read-template "base.asd.tmpl"))
 
-    ;; controller package
-    (create-file-with-template project-name
+    ;; appliation
+    (create-file-with-template "app/application.lisp"
+                               project-name
                                project-dir
                                database
-                               (%dirname clails/project/template::app/controller/package-template)
-                               "package.lisp"
-                               clails/project/template::app/controller/package-template)
-
-    ;; model package
-    (create-file-with-template project-name
-                               project-dir
-                               database
-                               (%dirname clails/project/template::app/model/package-template)
-                               "package.lisp"
-                                clails/project/template::app/model/package-template)
-
-    ;; view package
-    (create-file-with-template project-name
-                               project-dir
-                               database
-                               (%dirname clails/project/template::app/view/package-template)
-                               "package.lisp"
-                               clails/project/template::app/view/package-template)
+                               (read-template "app/application.lisp.tmpl"))
 
     ;; config
-    (create-file-with-template project-name
+    (create-file-with-template "app/config/environment.lisp"
+                               project-name
                                project-dir
                                database
-                               (%dirname clails/project/template::config/package-template)
-                               "package.lisp"
-                               clails/project/template::config/package-template)
+                               (read-template "app/config/environment.lisp.tmpl"))
 
-    ;; config/environment
-    (create-file-with-template project-name
-                               project-dir
-                               database
-                               (%dirname clails/project/template::config/environment-template)
-                               "environment.lisp"
-                               clails/project/template::config/environment-template)
-
-    ;; config/database
+    ;; database
     (let ((db-template (cond ((eq database :sqlite3)
-                               clails/project/template::config/database-sqlite-template)
+                              "app/config/database-sqlite3.lisp.tmpl")
                              ((eq database :mysql)
-                               clails/project/template::config/database-mysql-template)
+                              "app/config/database-mysql.lisp.tmpl")
                              ((eq database :postgresql)
-                               clails/project/template::config/database-postgresql-template)
+                              "app/config/database-postgresql.lisp.tmpl")
                              (t (error "unsupported database: ~A" database)))))
-      (create-file-with-template project-name
+      (create-file-with-template "app/config/database.lisp"
+                                 project-name
                                  project-dir
                                  database
-                                 (%dirname db-template)
-                                 "database.lisp"
-                                 db-template))
-  ))
+                                 (read-template db-template)))
+
+    ;; controller
+    (create-file-with-template "app/controllers/application-controller.lisp"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "app/controllers/application-controller.lisp.tmpl"))
+
+    ;; view
+    (create-file-with-template "app/views/index.html"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "app/views/index.html.tmpl")
+                               :start-delimiter "<%%"
+                               :start-echo-delimiter "<%%="
+                               :end-delimiter "%%>")
+
+    ;; migration package
+    (create-file-with-template "db/package.lisp"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "db/package.lisp.tmpl"))))
 

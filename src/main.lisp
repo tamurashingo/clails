@@ -2,6 +2,7 @@
 (defpackage #:clails/main
   (:use #:cl)
   (:nicknames #:clails)
+  (:import-from #:clails/project/project)
   (:import-from #:clails/cmd
                 #:create-project
                 #:generate/model

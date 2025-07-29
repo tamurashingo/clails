@@ -1,0 +1,11 @@
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>/models/<%= (@ name ) %>
+  (:use #:cl
+        #:clails/model/base-model)
+  (:export #:<<%= (@ name ) %>>))
+
+(in-package #:<%= (@ project-name ) %>/models/<%= (@ name ) %>)
+
+(defmodel <<%= (@ name ) %>> (<base-model>)
+  (:table "<%= (@ name ) %>"))
