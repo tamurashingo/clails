@@ -72,8 +72,7 @@ exec ros -Q -- $0 "$@"
 
 (defun server ()
   (load-project)
-  (clails/cmd:server)
-  (loop))
+  (clails/cmd:server))
 
 (defun stop ()
   (load-project)

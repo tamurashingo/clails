@@ -75,8 +75,9 @@
   (setf *app*
         *lack-middleware-clails-controller*)
   (setf *handler*
-    (clack:clackup *app*
-                   :debug nil)))
+        (clack:clackup *app*
+                       :debug nil
+                       :use-thread nil)))
 
 (defun stop ()
   (when *handler*
