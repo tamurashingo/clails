@@ -22,25 +22,24 @@
 
 (defparameter *lack-middleware-clails-controller*
   (lambda (env)
-    (handler-bind ((404/not-found
-                     (lambda (c)
-                       (let ((controller (make-instance '<error-handle-controller>
-                                                        :exception c)))
-                         (resolve-view controller)))))
-      (let* ((controller (make-controller env))
-             (method (request-method (request controller))))
-        (cond ((eq method :get)
-               (do-get controller))
-              ((eq method :post)
-               (do-post controller))
-              ((eq method :put)
-               (do-put controller))
-              ((eq method :delete)
-               (do-delete controller))
-              (t
-               nil))
-        (resolve-view controller)))))
-
+    (handler-case
+        (let* ((controller (make-controller env))
+               (method (request-method (request controller))))
+          (cond ((eq method :get)
+                 (do-get controller))
+                ((eq method :post)
+                 (do-post controller))
+                ((eq method :put)
+                 (do-put controller))
+                ((eq method :delete)
+                 (do-delete controller))
+                (t
+                 nil))
+          (resolve-view controller))
+      (404/not-found (c)
+        (let ((controller (make-instance '<error-handle-controller>
+                                         :exception c)))
+          (resolve-view controller))))))
 
 
 (defun make-controller (env)
