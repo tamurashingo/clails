@@ -48,6 +48,14 @@
                                   :name ,name
                                   :current-datetime ,(current-datetime)))))))
 
+(defun add-load (name)
+  (let ((outfile (format nil "~A/app/application.lisp" *project-dir*)))
+    (with-open-file (out outfile
+                         :direction :output
+                         :if-exists :append)
+      (format out ";-- ~A : add ~A controller~%" (current-datetime) name)
+      (format out "(asdf:load-system :~A/controllers/~A-controller)~%~%" *project-name* name))))
+
 ;; ----------------------------------------
 ;; model
 (defun gen/model (model-name &key (overwrite T))
@@ -90,7 +98,8 @@
 (defun gen/controller (controller-name &key (overwrite T))
   (let ((filename (format nil "~A-controller.lisp" controller-name)))
     (gen/template controller-name filename "/app/controllers/" "template/generate/controller.lisp.tmpl" overwrite))
-  (add-routing controller-name))
+  (add-routing controller-name)
+  (add-load controller-name))
 
 ;; ----------------------------------------
 ;; scaffold
