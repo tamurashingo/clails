@@ -7,7 +7,9 @@
            #:*database-config*
            #:*database-type*
            #:*connection-pool*
-           #:*routing-tables*))
+           #:*routing-tables*
+           #:*startup-hooks*
+           #:*shutdown-hooks*))
 (in-package #:clails/environment)
 
 (defclass <database-type> ()
@@ -42,3 +44,8 @@
   '((:path "/"
      :controller "clails/controller/base-controller:<default-controller>")))
 
+(defparameter *startup-hooks*
+  '("clails/model/connection:startup-connection-pool"))
+
+(defparameter *shutdown-hooks*
+  '("clails/model/connection:shutdown-connection-pool"))
