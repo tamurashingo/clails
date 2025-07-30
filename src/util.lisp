@@ -4,7 +4,8 @@
   (:export #:kebab->snake
            #:mandatory-check
            #:env-or-default
-           #:plist-exists))
+           #:plist-exists
+           #:function-from-string))
 (in-package #:clails/util)
 
 (defun kebab->snake (s)
@@ -84,3 +85,14 @@ Return t if key exists in plist. otherwise, returns nil.
   (loop for (k . rest) on plist by #'cddr
         when (eq k key)
           return t))
+
+
+(defun function-from-string (str)
+  (let* ((parts (ppcre:split #\: str))
+         (package-name (if (= (length parts) 2) (first parts) nil))
+         (function-name (if (= (length parts) 2) (second parts) (first parts)))
+         (package (if package-name (find-package (string-upcase package-name)) *package*)))
+    (when package
+      (let ((symbol (find-symbol (string-upcase function-name) package)))
+        (when (and symbol (fboundp symbol))
+          (symbol-function symbol))))))

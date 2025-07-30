@@ -17,6 +17,8 @@
                 #:initialize-routing-tables)
   (:import-from #:clails/middleware/clails-middleware
                 #:*lack-middleware-clails-controller*)
+  (:import-from #:clails/util
+                #:function-from-string)
   (:export #:create-project
            #:generate/model
            #:generate/migration
@@ -77,10 +79,33 @@
   (setf *handler*
         (clack:clackup *app*
                        :debug nil
-                       :use-thread nil)))
+                       :use-thread T))
+
+  (call-startup-hooks)
+  (clack::with-handle-interrupt
+      (lambda ()
+        (stop))
+    (loop)))
 
 (defun stop ()
   (when *handler*
+    (call-shutdown-hooks)
     (clack:stop *handler*)
     (setf *handler* nil)))
+
+(defun call-startup-hooks ()
+  (loop for fn in clails/environment:*startup-hooks*
+        do (format t "running startup hook...~A~%" fn)
+        do (funcall (etypecase fn
+                      (string
+                       (function-from-string fn))
+                      (function fn)))))
+
+(defun call-shutdown-hooks ()
+  (loop for fn in clails/environment:*shutdown-hooks*
+        do (format t "running shutdown hook...~A~%" fn)
+        do (funcall (etypecase fn
+                      (string
+                       (function-from-string fn))
+                      (function fn)))))
 
