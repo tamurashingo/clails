@@ -18,7 +18,8 @@
                #:clails-test/model/query/sqlite3
                #:clails-test/model/query/mysql
                #:clails-test/model/query/postgresql
-               #:clails-test/controller/base-controller)
+               #:clails-test/controller/base-controller
+               #:clails-test/helper/date-helper)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 

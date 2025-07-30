@@ -1,6 +1,7 @@
 (in-package #:cl-user)
 (defpackage #:clails/helper/date-helper
-  (:use #:cl))
+  (:use #:cl)
+  (:export view/datetime))
 
 (in-package #:clails/helper/date-helper)
 
@@ -78,7 +79,8 @@
                 do (write-char c s)
                    (setf percent-p nil)
               else
-                do (write-char c s)
+                do (write-char #\% s)
+                   (write-char c s)
                    (setf percent-p nil)
               end
             end))))
