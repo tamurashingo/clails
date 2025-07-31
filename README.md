@@ -8,22 +8,25 @@ web framework inspired by Ruby on Rails
 - qlot
 - sbcl 
 
-# install (not implemented)
+# install
 
-clone clails
+clails is alpha version. so you will need to manually configure various settings.
+
+
+**clone clails**
 
 ```bash
 git clone https://github.com/tamurashingo/clails.git
 ```
 
-install dependencies
+**install dependencies**
 
 ```bash
 cd clails
 qlot install
 ```
 
-add environment variables
+**add environment variables**
 
 path
 
@@ -31,7 +34,7 @@ path
 export PATH=$PATH:$PWD/roswell
 ```
 
-and asdf's source path
+asdf's source path
 
 ```bash
 export CL_SOURCE_REGISTRY=$PWD
@@ -47,10 +50,10 @@ clails.ros new project-name
 
 ### options
 
-- `-p` ~~pathname~~ | `--path` ~~pathname~~
+- `-p` <em>pathname</em> | `--path` <em>pathname</em>
     - set root directory when creating a project
 
-- `-d` ~~database-type~~ | `--database` ~~database-type~~
+- `-d` <em>database-type</em> | `--database` <em>database-type</em>
     - set database type
     - database types are
          - `sqlite3`
@@ -82,6 +85,12 @@ clails.ros generate model todo
 clails.ros generate view todo
 clails.ros generate controller todo
 clails.ros generate migration todo
+```
+
+here is the command to generate all of the above files at once.
+
+```bash
+clails.ros generate scaffold todo
 ```
 
 ### options
@@ -119,6 +128,7 @@ visit `http://localhost:5000/`
 
 you'll see
 
+![clails initial page](document/img/startup.png)
 
 # example
 
@@ -307,8 +317,11 @@ clails.ros server
 
 visit 'http://localhost:5000/todo'
 
+you'll see
 
-and get server log.
+![todo](document/img/todo-initial.png)
+
+and you'll get server log.
 
 ```
 Loaded 0 system files.
