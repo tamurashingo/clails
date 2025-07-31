@@ -11,18 +11,20 @@
 
 (defsystem clails
   :class :package-inferred-system
-  :version "0.1"
+  :version "0.0.1"
   :author "tamura shingo"
   :license "MIT"
   :pathname "src"
   :depends-on ("anaphora"
                "babel"
+               "cl-fad"
                "cl-dbi-connection-pool"
                "cl-ppcre"
                "cl-template"
                "clack"
                "getcmd"
                "lack"
+               "lack/middleware/static"
                "local-time"
                "str"
                "clails/main"))
