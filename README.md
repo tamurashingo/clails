@@ -405,7 +405,7 @@ add save method to model.
 
 + (defun add-task (taskname)
 +   (save (make-record '<todo> :title taskname)))
-``
+```
 
 ## edit controller
 
