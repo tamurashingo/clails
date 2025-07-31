@@ -2,5 +2,5 @@
 ;;;; boot from clails cli
 
 (push (uiop/os:getcwd) asdf:*central-registry*)
-(adf:load-system :<%= (@ project-name ) %>)
+(asdf:load-system :<%= (@ project-name ) %>)
 (setf clails/environment:*project-dir* (uiop/os:getcwd))

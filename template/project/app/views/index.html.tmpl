@@ -1,12 +1,206 @@
 <% in-package :<%%= (@ project-name ) %%>/controllers/application-controller %>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title><%%= (@ project-name ) %%></title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to clails framework</title>
+  <link rel="icon" href="/favicon.svg" sizes="any" type="image/svg+xml">
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body>
-    <h1>hello, this is clails</h1>
-    <div>Implementation Type: <%= lisp-type (@ controller ) %></div>
-    <div>Implementation Version: <%= lisp-version (@ controller) %></div>
+  <!-- Header -->
+  <div class="bg-primary text-white p-4 text-center">
+    <h1>Welcome to clails framework!</h1>
+    <p class="lead">Your application is running successfully</p>
+  </div>
+
+  <div class="container mt-4">
+    <!-- Alert -->
+    <div class="alert alert-success" role="alert">
+      <h4 class="alert-heading">Well done!</h4>
+      <p>clails framework installation is complete. You can now start building your web application.</p>
+      <hr>
+      <p class="mb-0">Don't forget to read the documentation.</p>
+  </div>
+
+  <div class="row">
+     <div class="col-md-8">
+       <!-- Getting Started -->
+       <div class="card mb-4">
+         <div class="card-header">
+           <h5 class="card-title">Getting Started</h5>
+         </div>
+         <div class="card-body">
+           <p class="card-text">Follow these steps to start developing with clails framework:</p>
+           <ol>
+             <li>Create a new controller</li>
+             <li>Add your routes</li>
+             <li>Create view templates</li>
+             <li>Configure your database</li>
+           </ol>
+           <h6>Example Commands:</h6>
+           <pre class="bg-light p-2"><code>$ clails generate controller home
+$ clails generate model user
+$ clails server</code></pre>
+           <a href="#" class="btn btn-primary">View Documentation</a>
+         </div>
+       </div>
+
+       <!-- Features -->
+       <div class="card">
+         <div class="card-header">
+           <h5 class="card-title">Framework Features</h5>
+         </div>
+         <div class="card-body">
+           <div class="row">
+             <div class="col-sm-6">
+               <ul class="list-group list-group-flush">
+                 <li class="list-group-item">MVC Architecture</li>
+                 <li class="list-group-item">RESTful Routing</li>
+                 <li class="list-group-item">Database ORM</li>
+               </ul>
+             </div>
+             <div class="col-sm-6">
+               <ul class="list-group list-group-flush">
+                 <li class="list-group-item"><strike>Template Engine</strike></li>
+                 <li class="list-group-item"><strike>Asset Pipeline</strike></li>
+                 <li class="list-group-item"><strike>Testing Framework</strike></li>
+               </ul>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+
+     <!-- Sidebar -->
+     <div class="col-md-4">
+       <!-- System Info -->
+       <div class="card mb-3">
+         <div class="card-header">
+           System Information
+         </div>
+         <div class="card-body">
+           <table class="table table-sm">
+             <tbody>
+               <tr>
+                 <td><strong>Implementation Type:</string></td>
+                 <td><span class="badge bg-success"><%= lisp-type (@ controller ) %></span></td>
+               </tr>
+               <tr>
+                 <td><strong>Implementation Version:</string></td>
+                 <td><span class="badge bg-info"><%= lisp-version (@ controller ) %></span></td>
+               </tr>
+               <tr>
+                 <td><strong>Framework Version:</strong></td>
+                 <td><span class="badge bg-info"><%= (asdf:component-version (asdf:find-system :clails)) %></span></td>
+               </tr>
+               <tr>
+                 <td><strong>Environment:</strong></td>
+                 <td><span class="badge bg-success">development</span></td>
+               </tr>
+               <tr>
+                 <td><strong>Clack Version:</strong></td>
+                 <td><span class="badge bg-info"><%= (asdf:component-version (asdf:find-system :clack)) %></span></td>
+               </tr>
+               <!-- tr>
+                 <td><strong>Port:</strong></td>
+                 <td></td>
+               </tr>
+               <tr>
+                 <td><strong>Started at:</strong></td>
+                 <td></td>
+               </tr -->
+             </tbody>
+           </table>
+         </div>
+         </div>
+
+         <!-- Quick Links -->
+         <div class="card mb-3">
+           <div class="card-header">
+             Quick Links
+           </div>
+           <div class="card-body">
+             <div class="list-group">
+               <a href="#" class="list-group-item list-group-item-action">
+                 Documentation
+               </a>
+               <a href="#" class="list-group-item list-group-item-action">
+                 API Reference
+               </a>
+               <a href="#" class="list-group-item list-group-item-action">
+                 Tutorials
+               </a>
+               <a href="#" class="list-group-item list-group-item-action">
+                 Community Forum
+               </a>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+
+     <!-- Additional Info -->
+     <div class="row mt-4">
+       <div class="col-12">
+         <div class="card">
+           <div class="card-header">
+             <h5 class="card-title">About clails framework</h5>
+           </div>
+           <div class="card-body">
+             <p class="card-text">
+               clails framework is a modern web application framework designed to help developers build
+               applications quickly and efficiently. It follows the Model-View-Controller (MVC)
+               architectural pattern and provides many convenient features out of the box.
+             </p>
+             <div class="row">
+               <div class="col-md-4">
+                 <h6>Getting Help</h6>
+                 <ul>
+                   <li><a href="#">Documentation</a></li>
+                   <li><a href="#">GitHub Issues</a></li>
+                   <li><a href="#">Stack Overflow</a></li>
+                 </ul>
+               </div>
+               <div class="col-md-4">
+                 <h6>Community</h6>
+                 <ul>
+                   <li><a href="#">Discord Server</a></li>
+                   <li><a href="#">Reddit Community</a></li>
+                   <li><a href="#">Twitter</a></li>
+                 </ul>
+               </div>
+               <div class="col-md-4">
+                 <h6>Contributing</h6>
+                 <ul>
+                   <li><a href="#">Contribution Guide</a></li>
+                   <li><a href="#">Code of Conduct</a></li>
+                   <li><a href="#">Roadmap</a></li>
+                 </ul>
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+     </div>
+   </div>
+
+   <!-- Footer -->
+   <footer class="bg-light text-center py-4 mt-5">
+     <div class="container">
+       <div class="row">
+         <div class="col-12">
+           <p class="text-muted mb-0">
+             &copy; 2024-2025 clails framework v<%= (asdf:component-version (asdf:find-system :clails)) %> - Built with Bootstrap
+           </p>
+         </div>
+       </div>
+     </div>
+   </footer>
+
+   <!-- Bootstrap JS -->
+   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

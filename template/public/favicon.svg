@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="256"
+   height="256"
+   viewBox="0 0 256 256"
+   fill="none"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="favicon.svg"
+   inkscape:version="1.4 (e7c3feb1, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="3.9414062"
+     inkscape:cx="127.87314"
+     inkscape:cy="128"
+     inkscape:window-width="1200"
+     inkscape:window-height="1186"
+     inkscape:window-x="1378"
+     inkscape:window-y="118"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg1" />
+  <rect
+     width="256"
+     height="256"
+     rx="32"
+     fill="#77ce64"
+     id="rect1" />
+  <polyline
+     points="60,60 60,196 196,196"
+     stroke="white"
+     stroke-width="32"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     fill="none"
+     id="polyline1" />
+  <path
+     d="m 153.2048,62.217544 a 40,40 0 1 0 40,59.999996"
+     stroke="#ffffff"
+     stroke-width="32"
+     stroke-linecap="round"
+     fill="none"
+     id="path1" />
+</svg>

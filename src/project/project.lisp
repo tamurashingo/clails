@@ -17,16 +17,13 @@
     "app/config"
     "db"
     "db/migrate"
-    "tmp"))
+    "tmp"
+    "public"))
 
 (defun create-project (project-name project-dir database)
-  (format t "---------------------------------~%")
-  (format t "rpoject-dir: ~A~%" project-dir)
-  (format t "---------------------------------~%")
-
-
   (create-directories project-dir)
-  (create-initial-files project-name (namestring project-dir) database))
+  (create-initial-files project-name (namestring project-dir) database)
+  (copy-asset-files project-dir))
 
 (defun create-directories (project-dir)
   ;; TODO: log here
@@ -125,3 +122,26 @@
                                database
                                (read-template "db/package.lisp.tmpl"))))
 
+
+(defun copy-asset-files (project-dir)
+  (let ((src (asdf:system-relative-pathname :clails "template/public/"))
+        (dst (merge-pathnames "public/" project-dir)))
+    (copy-recursive src dst)))
+
+
+(defun copy-recursive (src dst)
+  "cp -r src dst"
+  (format t "copy ~A -> ~A~%" src dst)
+  (cond
+    ((cl-fad:directory-pathname-p src)
+     (ensure-directories-exist dst)
+     (dolist (item (cl-fad:list-directory src))
+       (let ((relative-name (enough-namestring item src)))
+         (copy-recursive item (merge-pathnames relative-name dst)))))
+
+    ((probe-file src)
+     (ensure-directories-exist dst)
+     (cl-fad:copy-file src dst))
+
+    (t
+     (error "Source ~A does not exist" src))))

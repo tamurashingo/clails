@@ -11,7 +11,7 @@
 
 (defsystem clails
   :class :package-inferred-system
-  :version "0.1"
+  :version "0.0.1"
   :author "tamura shingo"
   :license "MIT"
   :pathname "src"
@@ -23,6 +23,7 @@
                "clack"
                "getcmd"
                "lack"
+               "lack/middleware/static"
                "local-time"
                "str"
                "clails/main"))

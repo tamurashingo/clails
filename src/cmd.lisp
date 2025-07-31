@@ -75,7 +75,11 @@
 (defun server ()
   (initialize-routing-tables)
   (setf *app*
-        *lack-middleware-clails-controller*)
+    (lack:builder
+      *lack-middleware-clails-controller*
+      (:static :path "/"
+               :root #P"./public/")
+      *app*))
   (setf *handler*
         (clack:clackup *app*
                        :debug nil
