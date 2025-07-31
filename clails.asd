@@ -17,6 +17,7 @@
   :pathname "src"
   :depends-on ("anaphora"
                "babel"
+               "cl-fad"
                "cl-dbi-connection-pool"
                "cl-ppcre"
                "cl-template"
