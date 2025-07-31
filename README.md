@@ -1,106 +1,162 @@
 # clails
-framework?
 
-## usage (repl)
+web framework inspired by Ruby on Rails
 
-### create project
+# requirement
 
-```lisp
-(clails:create-project "todoapp")
+- roswell
+- qlot
+- sbcl 
+
+# install (not implemented)
+
+clone clails
+
+```bash
+git clone https://github.com/tamurashingo/clails.git
 ```
 
+install dependencies
 
-### load project
-
-```lisp
-(ql:quickload :todoapp)
+```bash
+cd clails
+qlot install
 ```
 
+add environment variables
 
-### create database
+path
 
-
-```lisp
-(clails:db/create)
+```bash
+export PATH=$PATH:$PWD/roswell
 ```
 
-### create model
-
-```lisp
-(clails:generate/model "todo")
-```
-
-
-edit migration file: db/migrate/yyyymmddhhmmss_todo.lisp
-
-```lisp
-(in-package #:todoapp/model/db)
-
-(defmigration "yyyymmddhhmmss_todo"
-  (:up #'(lambda (connection)
-           (create-table connection :table "todo"
-                                    :columns '(("title" :type :string
-                                                        :not-null T)
-                                               ("done" :type :boolean
-                                                       :default-value nil)))
-           (add-index connection :table "todo"
-                                 :index "idx-title"
-                                 :columns '("title")))
-   :down #'(lambda (connection)
-             (drop-table connection :table "todo"))))
-```
-
-### apply migration
-
-
-```lisp
-(clails:db/migrate)
-```
-
-
-## usage (cli)
-
-Environment variables must be set at runtime.
-
-Run the following command in the `clails` directory.
+and asdf's source path
 
 ```bash
 export CL_SOURCE_REGISTRY=$PWD
 ```
 
+# usage
 
-### create project
+## create project
 
 ```bash
-clails.ros new todoapp --path /cl-projects
+clails.ros new project-name
 ```
 
-### create database
+### options
 
-in project directory,
+- `-p` ~~pathname~~ | `--path` ~~pathname~~
+    - set root directory when creating a project
+
+- `-d` ~~database-type~~ | `--database` ~~database-type~~
+    - set database type
+    - database types are
+         - `sqlite3`
+         - `mysql`
+         - `postgresql`
+
+## generate scaffold
+
+generate model, view, controller and migration file.
+
+```bash
+clails.ros generate scaffold todo
+```
+
+generates
+
+- `app/models/todo.lisp`
+- `app/views/todo/show.html`
+- `app/views/todo/new.html`
+- `app/views/todo/edit.html`
+- `app/views/todo/delete.html`
+- `app/controllers/todo-controller.lisp`
+- `db/migrate/yyyymmddhhmmss_todo.lisp`
+
+## generate model, view, controller and migration
+
+```bash
+clails.ros generate model todo
+clails.ros generate view todo
+clails.ros generate controller todo
+clails.ros generate migration todo
+```
+
+### options
+
+- `--no-overwrite`
+    - if file already exists, stop generateing.
+
+
+- `-n` | `--no-migration`
+    - when generating model, generate no migration files.
+
+
+## create new database
+
+execute `create database` command
 
 ```bash
 clails.ros db create
 ```
 
-### create model
+
+## migrate database
 
 ```bash
-clails.ros generate model todo
+clails.ros db migrate up
 ```
 
-edit migration file: db/migrate/yyyymmddhhmmss_todo.lisp
+## startup server
 
-```lisp
-(in-package #:todoapp/model/db)
+```bash
+clails.ros server
+```
 
-(defmigration "yyyymmddhhmmss_todo"
+visit `http://localhost:5000/`
+
+you'll see
+
+
+# example
+
+## create new project
+
+create todo applicaton project
+
+```bash
+clails.ros new todoapp
+```
+
+## create database
+
+```bash
+cd todoapp
+clails.ros db create
+```
+
+
+## generate model, view, controller and migration files.
+
+```bash
+clails.ros generate scaffold todo
+```
+
+edit migration file (at db/migrate/yyyymmddhhmmss_todo.lisp)
+
+```common-lisp
+; -*- mode: lisp -*-
+(in-package #:todoapp/db)
+
+(defmigration "todo"
   (:up #'(lambda (connection)
            (create-table connection :table "todo"
                                     :columns '(("title" :type :string
-                                                        :not-null T)
+                                                        :not-null t)
                                                ("done" :type :boolean
-                                                       :default-value nil)))
+                                                       :default-value 0)))
            (add-index connection :table "todo"
                                  :index "idx-title"
                                  :columns '("title")))
@@ -109,94 +165,168 @@ edit migration file: db/migrate/yyyymmddhhmmss_todo.lisp
 ```
 
 
-### apply migration
+## apply migration
 
 ```bash
 clails.ros db migrate up
 ```
 
 
-## how to develop
+## edit model
 
-Run setup only once.
+add `show-all` method to model file (app/models/todo.lisp)
 
-```sh
-make setup
+```common-lisp
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:todoapp/models/todo
+  (:use #:cl
+        #:clails/model/base-model
+        #:clails/model/query)
+  (:export #:<todo>
+           #:show-all))
+
+(in-package #:todoapp/models/todo)
+
+(defmodel <todo> (<base-model>)
+  (:table "todo"))
+
+(defun show-all ()
+  (select '<todo> :order-by '((id :desc))))
 ```
 
-### develop clails
+## edit controller
 
-Startup components.
+edit todo controller (app/controllers/todo-controller.lisp).
 
-```sh
-make dev.up
+add `records` slot and define accessor.
+
+```common-lisp
+(defclass <todo-controller> (<web-controller>)
+  ((records :accessor records)))
+```
+
+in `do-get` method, fetch records and stuff it to controller.
+
+```common-lisp
+(defmethod do-get ((controller <todo-controller>))
+  (setf (records controller) (show-all))
+  (set-view controller "todo/show.html"))
+```
+
+the final controller code is as follows.
+
+```common-lisp
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:todoapp/controllers/todo-controller
+  (:use #:cl
+        #:clails/controller/base-controller)
+  (:import-from #:todoapp/models/todo
+                #:show-all)
+  (:import-from #:clails/model/base-model
+                #:ref)
+  (:import-from #:clails/helper/date-helper
+                #:view/datetime)
+  (:import-from #:todoapp/models/todo
+                #:show-all)
+  (:export #:<todo-controller>))
+
+(in-package #:todoapp/controllers/todo-controller)
+
+(defclass <todo-controller> (<web-controller>)
+  ((records :accessor records)))
+
+
+(defmethod do-get ((controller <todo-controller>))
+  (setf (records controller) (show-all))
+  (set-view controller "todo/show.html"))
+
+;(defmethod do-post ((controller <todo-controller>))
+;  (set- view controller "todo/new.html"))
+
+;(defmethod do-put ((controller <todo-controller>))
+;  (set-view controller "todo/edit.html"))
+
+;(defmethod do-delete ((controller <todo-controller>))
+;  (set-view controller "todo/delete.html"))
 ```
 
 
-Connect slime.
-(with Emacs)
+## edit view
 
-```
-M-x slime-connect 127.0.0.1 4005
-```
+edit todo view (app/views/todo/show.html).
 
+switching to the controller's package to directly reference its values from the view.
 
-Set up Quicklisp
+note: Please convert the value to a string when outputting it.
 
-```lisp
-(push #P"/app" ql:*local-project-directories*)
-```
+```html
+<% in-package :todoapp/controllers/todo-controller %>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>todo</title>
+</head>
+<body>
+  <h1>todo</h1>
 
+  <table border="1">
+    <thead>
+      <tr>
+        <th>id</th>
+        <th>title</th>
+        <th>created_at</th>
+        <th>updated_at</th>
+        <th>done?</th>
+      </tr>
+    </thead>
+      <tr>
+        <% loop for r in (records (@ controller)) do %>
+          <td><%= (write-to-string (ref r :id)) %></td>
+          <td><%= (ref r :title) %></td>
+          <td><%= (view/datetime (ref r :created-at)) %></td>
+          <td><%= (view/datetime (ref r :updated-at)) %></td>
+          <td><%= (ref r :done) %></td>
+        <% end %>
+      </tr>
+    <tbody>
+    </tbody>
+  </table>
 
-Load `clails`
-
-```lisp
-(ql:quickload :clails)
-```
-
-
-When it's finished, shutdown components.
-
-
-```sh
-make dev.down
-```
-
-
-### test clails
-
-
-Run test.
-
-```sh
-make test
-```
-
-
-Shutdown components.
-
-```sh
-make test.down
-```
-
-If you want to connect to the database inside the container after the test is finished, type this
-
-```sh
-make console.test
+</body>
+</html>
 ```
 
-and then run script
 
-```sh
-./script/conn-mysql.sh
+## run server
 
-# or
-
-./script/conn-postgresql.sh
+```bash
+clails.ros server
 ```
 
-password is `password`
+visit 'http://localhost:5000/todo'
+
+
+and get server log.
+
+```
+Loaded 0 system files.
+WARNING:
+   Deprecated recursive use of (ASDF/OPERATE:OPERATE 'ASDF/LISP-ACTION:LOAD-OP
+   '("todoapp/controllers/todo-controller")) while visiting
+   (ASDF/LISP-ACTION:LOAD-OP "todoapp/application" "lisp") - please use proper
+   dependencies instead
+Hunchentoot server is started.
+Listening on 127.0.0.1:5000.
+running startup hook...clails/model/connection:startup-connection-pool
+debug: query: SELECT ID, CREATED_AT, UPDATED_AT, TITLE, DONE FROM todo   ORDER BY ID DESC
+debug: params: NIL
+```
+
+## edit view
+
 
 
 ---
-Copyright 2024 tamura shingo
+Copyright 2024-2025 tamura shingo
