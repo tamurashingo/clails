@@ -291,15 +291,15 @@ note: Please convert the value to a string when outputting it.
         <th>done?</th>
       </tr>
     </thead>
-      <tr>
-        <% loop for r in (records (@ controller)) do %>
+      <% loop for r in (records (@ controller)) do %>
+        <tr>
           <td><%= (write-to-string (ref r :id)) %></td>
           <td><%= (ref r :title) %></td>
           <td><%= (view/datetime (ref r :created-at)) %></td>
           <td><%= (view/datetime (ref r :updated-at)) %></td>
-          <td><%= (ref r :done) %></td>
-        <% end %>
-      </tr>
+          <td><%= (if (ref r :done) "done" "") %></td>
+        </tr>
+      <% end %>
     <tbody>
     </tbody>
   </table>
@@ -337,9 +337,146 @@ debug: query: SELECT ID, CREATED_AT, UPDATED_AT, TITLE, DONE FROM todo   ORDER B
 debug: params: NIL
 ```
 
-## edit view
+## add post form
+
+edit `app/views/todo/show.html` and add form to add your todo.
+
+```diff
+***************
+*** 28,34 ****
+--- 28,44 ----
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+
++   <br />
++
++   <h1>add your task</h1>
++
++   <form action="/todo" method="POST">
++     <label for="name">task</label>
++     <input type="text" name="name" id="name" required />
++     <input type="submit" value="add" />
++   </form>
++
+  </body>
+  </html>
+```
+
+## edit model
+
+add save method to model.
+
+```diff
+***************
+*** 3,17 ****
+  (defpackage #:todoapp/models/todo
+    (:use #:cl
+          #:clails/model/base-model
+          #:clails/model/query)
+    (:export #:<todo>
+!            #:show-all))
+
+  (in-package #:todoapp/models/todo)
+
+  (defmodel <todo> (<base-model>)
+    (:table "todo"))
+
+  (defun show-all ()
+    (select '<todo> :order-by '((id :desc))))
+
+--- 3,20 ----
+  (defpackage #:todoapp/models/todo
+    (:use #:cl
+          #:clails/model/base-model
+          #:clails/model/query)
+    (:export #:<todo>
+!            #:show-all
+!            #:add-task))
+
+  (in-package #:todoapp/models/todo)
+
+  (defmodel <todo> (<base-model>)
+    (:table "todo"))
+
+  (defun show-all ()
+    (select '<todo> :order-by '((id :desc))))
+
++ (defun add-task (taskname)
++   (save (make-record '<todo> :title taskname)))
+``
+
+## edit controller
+
+edit `do-post`
 
 
+```diff
+***************
+*** 8,18 ****
+    (:import-from #:clails/model/base-model
+                  #:ref)
+    (:import-from #:clails/helper/date-helper
+                  #:view/datetime)
+    (:import-from #:todoapp/models/todo
+!                 #:show-all)
+    (:export #:<todo-controller>))
+
+  (in-package #:todoapp/controllers/todo-controller)
+
+  (defclass <todo-controller> (<web-controller>)
+--- 8,19 ----
+    (:import-from #:clails/model/base-model
+                  #:ref)
+    (:import-from #:clails/helper/date-helper
+                  #:view/datetime)
+    (:import-from #:todoapp/models/todo
+!                 #:show-all
+!                 #:add-task)
+    (:export #:<todo-controller>))
+
+  (in-package #:todoapp/controllers/todo-controller)
+
+  (defclass <todo-controller> (<web-controller>)
+***************
+*** 21,32 ****
+
+  (defmethod do-get ((controller <todo-controller>))
+    (setf (records controller) (show-all))
+    (set-view controller "todo/show.html"))
+
+! ;(defmethod do-post ((controller <todo-controller>))
+! ;  (set-view controller "todo/new.html"))
+
+  ;(defmethod do-put ((controller <todo-controller>))
+  ;  (set-view controller "todo/edit.html"))
+
+  ;(defmethod do-delete ((controller <todo-controller>))
+--- 22,35 ----
+
+  (defmethod do-get ((controller <todo-controller>))
+    (setf (records controller) (show-all))
+    (set-view controller "todo/show.html"))
+
+! (defmethod do-post ((controller <todo-controller>))
+!   (add-task (gethash "name" (params controller)))
+!   (setf (records controller) (show-all))
+!   (set-view controller "todo/show.html"))
+
+  ;(defmethod do-put ((controller <todo-controller>))
+  ;  (set-view controller "todo/edit.html"))
+
+  ;(defmethod do-delete ((controller <todo-controller>))
+```
+
+## run !!
+
+run server and visit 'http://localhost:5000/todo'
+
+you'll see
+
+![add form](document/img/todo-add.png)
 
 ---
 Copyright 2024-2025 tamura shingo
