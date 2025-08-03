@@ -50,6 +50,16 @@
         do (let ((col (getf column :name)))
               (setf (gethash col (slot-value m 'data)) nil))))
 
+(defmethod print-object ((obj <base-model>) stream)
+  (print-unreadable-object (obj stream :type t)
+    (format stream "table: ~a, value: " (slot-value obj 'table-name))
+    (format stream "~{~{~a -> ~a~}~^, ~}"
+            (loop for column in (slot-value obj 'columns)
+                  for colname = (getf column :name)
+                  with hash = (slot-value obj 'data)
+                  collect (list colname (gethash colname hash))))))
+
+
 (defgeneric validate (inst)
   (:documentation "validate mode before save")
   (:method ((inst <base-model>))
@@ -63,12 +73,12 @@
       (error "not found slot name: ~A" key))
     value))
 
-(defun (setf ref) (new-value inst key)
+(defmethod (setf ref) (new-value (inst <base-model>) key)
   (multiple-value-bind (value present-p)
       (gethash key (slot-value inst 'data))
     (declare (ignorable value))
-    (when (not present-p)
-      (error "not found slot name: ~A" key)))
+    (unless present-p
+      (error "not found slot name: ~A in model ~A" key (class-name (class-of inst)))))
   (setf (gethash key (slot-value inst 'data))
         new-value))
 

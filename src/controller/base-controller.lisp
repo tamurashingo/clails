@@ -13,9 +13,12 @@
            #:<rest-controller>
            #:request
            #:env
+           #:code
+           #:header
            #:params
            #:view
            #:set-view
+           #:set-redirect
            #:do-get
            #:do-post
            #:do-put
@@ -33,11 +36,27 @@
 (defclass <base-controller> ()
   ((request :reader request)
    (env :reader env)
+   (code :initform 200
+         :reader code)
+   (header :initform '()
+           :reader header)
    (params :initform (make-hash-table :test 'equal)
            :reader params)))
 
+(defmethod initialize-instance :after ((c <base-controller>) &rest initargs)
+  "set default values"
+  (declare (ignore initargs))
+  (setf (slot-value c 'code) 200))
+
+
 (defclass <web-controller> (<base-controller>)
   ((view :accessor view)))
+
+(defmethod initialize-instance :after ((c <web-controller>) &rest initargs)
+  (declare (ignore initargs))
+  (let ((header (header c)))
+    (setf (slot-value c 'header) (append header '(:content-type "text/html")))))
+
 
 (defclass <rest-controller> (<base-controller>)
   ((resopnse :accessor response)))
@@ -78,6 +97,26 @@
 (defmethod set-view ((controller <web-controller>) viewname)
   (setf (view controller) (merge-pathnames (format nil "app/views/~A" viewname)
                                            *project-dir*)))
+
+
+(defmethod set-redirect ((controller <web-controller>) path)
+  (let* ((redirect-url (if (ppcre:scan "^https?://.*" path)
+                           path
+                           (let* ((env (env controller))
+                                  (uri (quri:make-uri :scheme (getf env :url-scheme)
+                                                      :host (getf env :server-name)
+                                                      :port (getf env :server-port)
+                                                      :path path)))
+                             (quri:render-uri uri))))
+         (header (header controller)))
+    (setf (slot-value controller 'header)
+          `(:content-type "text/html"
+            :content-length 0
+            :location ,redirect-url))
+    (setf (slot-value controller 'code)
+          302))
+  (setf (view controller) nil))
+
 
 (defclass <default-controller> (<web-controller>)
   ((lisp-type :accessor lisp-type)

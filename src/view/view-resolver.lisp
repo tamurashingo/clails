@@ -4,12 +4,13 @@
   (:import-from #:clails/controller/base-controller
                 #:<web-controller>
                 #:<rest-controller>
+                #:code
+                #:header
                 #:view)
   (:import-from #:clails/controller/error-handle-controller
                 #:<error-handle-controller>
                 #:exception)
   (:import-from #:clails/condition
-                #:code
                 #:message
                 #:path)
   (:export #:resolve-view))
@@ -21,29 +22,36 @@
   (:documentation ""))
 
 (defmethod resolve-view ((controller <web-controller>))
-  (view/html-template controller (view controller)))
+  (let ((content (if (view controller)
+                     (extract-template controller (view controller))
+                     "")))
+    (view/html-template controller content)))
 
 (defmethod resolve-view ((controller <rest-controller>))
   "json")
 
 (defmethod resolve-view ((controller <error-handle-controller>))
   (let* ((exception (exception controller))
-         (code (code exception)))
+         (code (clails/condition:code exception)))
     `(,code
       (:content-type "text/html")
       ("error"))))
 
 
-
-(defun view/html-template (controller template-name)
+(defun extract-template (controller template-name)
   ;; A hack to avoid having to specify package names within cl-template.
   (let ((*package* (symbol-package (class-name (class-of controller)))))
     (let ((tmpl (uiop:read-file-string template-name
                                        :external-format :utf-8)))
-      `(200
-        (:content-type "text/html")
-        (,(funcall (cl-template:compile-template tmpl)
-                   `(:controller ,controller)))))))
+      (funcall (cl-template:compile-template tmpl)
+               `(:controller ,controller)))))
+
+
+(defun view/html-template (controller content)
+  `(,(code controller)
+    ,(header controller)
+    (,content)))
+
 
 (defun view/json (plist)
   "json")

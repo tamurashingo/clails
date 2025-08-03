@@ -56,7 +56,7 @@
     " '2024-10-01 12:34:45', " ; :type :datetime
     " '2024-10-01', " ; :type :date
     " '12:34:45', " ; :type :time
-    " true " ; :type :boolean
+    " 1 " ; :type :boolean
     ")"))
 
 
