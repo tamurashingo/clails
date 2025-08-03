@@ -9,7 +9,8 @@
                 #:do-post
                 #:do-put
                 #:do-delete
-                #:request)
+                #:request
+                #:params)
   (:import-from #:clails/view/view-resolver
                 #:resolve-view)
   (:import-from #:clails/condition
@@ -28,12 +29,18 @@
                  (method (request-method (request controller))))
             (cond ((eq method :get)
                    (do-get controller))
+                  ((or (eq method :put)
+                       (and (eq method :post)
+                            (string-equal "put"
+                                     (gethash "_method" (params controller)))))
+                   (do-put controller))
+                  ((or (eq method :delete)
+                       (and (eq method :post)
+                            (string-equal "delete"
+                                     (gethash "_method" (params controller)))))
+                   (do-delete controller))
                   ((eq method :post)
                    (do-post controller))
-                  ((eq method :put)
-                   (do-put controller))
-                  ((eq method :delete)
-                   (do-delete controller))
                   (t
                    nil))
             (resolve-view controller))
@@ -58,7 +65,6 @@
       ;; path parmeter
       (loop for path-param in (getf controller-info :keys)
             for idx from 0
-            do (format t "path-param:~S~%" path-param)
             do (setf (gethash path-param param-hash) (aref (getf controller-info :parameters) idx)))
 
       (setf (slot-value controller 'clails/controller/base-controller::request) req)

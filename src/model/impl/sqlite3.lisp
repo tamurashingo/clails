@@ -67,7 +67,11 @@
                                      (parse-integer (subseq v 8 10))
                                      (parse-integer (subseq v 5 7))
                                      (parse-integer (subseq v 0 4)))))
-                   :cl-db-fn ,#'identity))
+                   :cl-db-fn ,#'(lambda (ut)
+                                  (when ut
+                                    (multiple-value-bind (sec min hour date month year day daylight-p zone)
+                                        (decode-universal-time ut)
+                                      (format nil "~4,\'0d-~2,\'0d-~2,\'0d ~2,\'0d:~2,\'0d:~2,\'0d" year month date hour min sec))))))
     ("date" . (:type :date
                :db-cl-fn ,#'(lambda (v)
                               (when v
@@ -91,8 +95,13 @@
                                    (parse-integer (subseq v 6 8)))))
                :cl-db-fn ,#'identity))
     ("boolean" . (:type :boolean
-                  :db-cl-fn ,#'identity
-                  :cl-db-fn ,#'identity))))
+                  :db-cl-fn ,#'(lambda (v)
+                                 (if (or (null v)
+                                         (eq v 0)) nil
+                                                   t))
+                  :cl-db-fn ,#'(lambda (v)
+                                 (if v 1
+                                       0))))))
 
 (defparameter *sqlite3-type-convert-unknown-type* :string)
 (defparameter *sqlite3-type-convert-unknown-function* #'identity)

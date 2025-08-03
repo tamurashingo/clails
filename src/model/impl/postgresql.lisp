@@ -64,7 +64,12 @@
                   :cl-db-fn ,#'identity-null))
     ("timestamp without time zone" . (:type :datetime
                                       :db-cl-fn ,#'identity
-                                      :cl-db-fn ,#'identity-null))
+                                      :cl-db-fn ,#'(lambda (ut)
+                                                     (if ut
+                                                         (multiple-value-bind (sec min hour date month year day daylight-p zone)
+                                                             (decode-universal-time ut)
+                                                           (format nil "~4,\'0d-~2,\'0d-~2,\'0d ~2,\'0d:~2,\'0d:~2,\'0d" year month date hour min sec))
+                                                         :null))))
     ("date" . (:type :date
                :db-cl-fn ,#'identity
                :cl-db-fn ,#'identity-null))

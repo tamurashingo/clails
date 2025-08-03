@@ -27,6 +27,7 @@
                "lack/middleware/static"
                "local-time"
                "str"
+               "quri"
                "clails/main"))
 
 

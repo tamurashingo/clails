@@ -103,19 +103,19 @@
       (ok (= (encode-universal-time 0 0 13 2 1 2024) (ref 1st :updated-at)))
       (ok (eq T (ref 1st :done)))
       (ok (= (encode-universal-time 0 0 13 2 1 2024) (ref 1st :done-at)))
-                        
+
       (ok (string= "create pull request" (ref 2nd :title)))
       (ok (= (encode-universal-time 1 0  0 1 1 2024) (ref 2nd :created-at)))
       (ok (= (encode-universal-time 0 0 13 2 1 2024) (ref 2nd :updated-at)))
       (ok (null (ref 2nd :done)))
       (ok (null (ref 2nd :done-at)))
-                        
+
       (ok (string= "merge pr" (ref 3rd :title)))
       (ok (= (encode-universal-time 2 0  0 1 1 2024) (ref 3rd :created-at)))
       (ok (= (encode-universal-time 1 0 13 2 1 2024) (ref 3rd :updated-at)))
       (ok (null (ref 3rd :done)))
       (ok (null (ref 3rd :done-at)))))
-         
+
   (testing "single condition"
     (let* ((result (select 'clails-test-model::<todo> :where '(= done 0) :order-by '(id)))
            (1st (first result))
@@ -124,6 +124,23 @@
 
       (ok (string= "create pull request" (ref 1st :title)))
       (ok (string= "merge pr" (ref 2nd :title)))))
+
+  (testing "is null condition"
+    (let* ((result (select 'clails-test-model::<todo> :where '(null done-at) :order-by '(id)))
+           (1st (first result))
+           (2nd (second result)))
+      (ok (= 2 (length result)))
+
+      (ok (string= "create pull request" (ref 1st :title)))
+      (ok (string= "merge pr" (ref 2nd :title)))))
+
+
+  (testing "not null condition"
+    (let* ((result (select 'clails-test-model::<todo> :where '(not-null done-at) :order-by '(id)))
+           (1st (first result)))
+      (ok (= 1 (length result)))
+
+      (ok (string= "create program" (ref 1st :title)))))
 
   (testing "and condition"
     (let* ((result (select 'clails-test-model::<todo> :where '(and (= done 0)
