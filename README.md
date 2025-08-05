@@ -48,61 +48,6 @@ export CL_SOURCE_REGISTRY=$PWD
 clails.ros new project-name
 ```
 
-### options
-
-- `-p` <em>pathname</em> | `--path` <em>pathname</em>
-    - set root directory when creating a project
-
-- `-d` <em>database-type</em> | `--database` <em>database-type</em>
-    - set database type
-    - database types are
-         - `sqlite3`
-         - `mysql`
-         - `postgresql`
-
-## generate scaffold
-
-generate model, view, controller and migration file.
-
-```bash
-clails.ros generate scaffold todo
-```
-
-generates
-
-- `app/models/todo.lisp`
-- `app/views/todo/show.html`
-- `app/views/todo/new.html`
-- `app/views/todo/edit.html`
-- `app/views/todo/delete.html`
-- `app/controllers/todo-controller.lisp`
-- `db/migrate/yyyymmddhhmmss_todo.lisp`
-
-## generate model, view, controller and migration
-
-```bash
-clails.ros generate model todo
-clails.ros generate view todo
-clails.ros generate controller todo
-clails.ros generate migration todo
-```
-
-here is the command to generate all of the above files at once.
-
-```bash
-clails.ros generate scaffold todo
-```
-
-### options
-
-- `--no-overwrite`
-    - if file already exists, stop generateing.
-
-
-- `-n` | `--no-migration`
-    - when generating model, generate no migration files.
-
-
 ## create new database
 
 execute `create database` command
@@ -110,14 +55,11 @@ execute `create database` command
 ```bash
 clails.ros db create
 ```
-
-
 ## migrate database
 
 ```bash
 clails.ros db migrate up
 ```
-
 ## startup server
 
 ```bash
@@ -133,6 +75,24 @@ you'll see
 # example
 
 see: https://github.com/tamurashingo/clails/wiki/create-todo-application
+
+# feature
+**model**
+- [x] select from single table
+- [x] update
+- [x] insert
+- [ ] delete
+- [ ] select from many tables
+
+**view**
+- [x] template-based HTML rendering
+- [ ] JSON rendering
+
+**controller**
+- [x] accept query parameter
+- [x] accept path parameter
+- [ ] rest controller
+
 
 ---
 Copyright 2024-2025 tamura shingo
