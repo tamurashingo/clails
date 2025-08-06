@@ -63,8 +63,9 @@
     (gen/template model-name filename "/app/models/" "template/generate/model.lisp.tmpl" overwrite)))
 
 (defun gen/migration (migration-name &key (overwrite T))
-  (let ((filename (format nil "~A.lisp" (gen-unique-name migration-name))))
-    (gen/template migration-name filename "/db/migrate/" "template/generate/migration.lisp.tmpl" overwrite)))
+  (let* ((unique-name (gen-unique-name migration-name))
+         (filename (format nil "~A.lisp" unique-name)))
+    (gen/template unique-name filename "/db/migrate/" "template/generate/migration.lisp.tmpl" overwrite)))
 
 
 ;; ----------------------------------------
