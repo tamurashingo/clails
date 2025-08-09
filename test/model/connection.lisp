@@ -30,12 +30,15 @@
                                                       :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
                                                       :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
   (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+  (uiop:setup-temporary-directory)
+  (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
+  (setf clails/environment::*project-dir* uiop:*temporary-directory*)
   (clails/model/migration::db-create)
   (clails/model/migration::db-migrate *migration-dir*)
   (startup-connection-pool))
 
-
 (teardown
+  (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t)
   (shutdown-connection-pool))
 
 

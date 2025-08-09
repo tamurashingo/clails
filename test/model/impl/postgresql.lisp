@@ -25,15 +25,20 @@
 (defvar todo-pg nil)
 
 (setup
-   (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-postgresql>))
-   (setf clails/environment:*project-environment* :test)
-   (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_POSTGRESQL_DATABASE" "clails_test")
-                                                       :user ,(env-or-default "CLAILS_POSTGRESQL_USERNAME" "clails")
-                                                       :password ,(env-or-default "CLAILS_POSTGRESQL_PASSWORD" "password")
-                                                       :host ,(env-or-default "CLAILS_POSTGRESQL_HOST" "postgresql-test")
-                                                       :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "5432"))))
-   (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
-)
+  (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-postgresql>))
+  (setf clails/environment:*project-environment* :test)
+  (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_POSTGRESQL_DATABASE" "clails_test")
+                                                      :user ,(env-or-default "CLAILS_POSTGRESQL_USERNAME" "clails")
+                                                      :password ,(env-or-default "CLAILS_POSTGRESQL_PASSWORD" "password")
+                                                      :host ,(env-or-default "CLAILS_POSTGRESQL_HOST" "postgresql-test")
+                                                      :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "5432"))))
+  (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+  (uiop:setup-temporary-directory)
+  (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
+  (setf clails/environment::*project-dir* uiop:*temporary-directory*))
+
+(teardown
+  (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t))
 
 
 (deftest create-database-postgresql

@@ -25,15 +25,20 @@
 (defvar todo-my nil)
 
 (setup
-   (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
-   (setf clails/environment:*project-environment* :test)
-   (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
-                                                       :user ,(env-or-default "CLAILS_MYSQL_USERNAME" "root")
-                                                       :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
-                                                       :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
-                                                       :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
-    (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
-)
+  (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
+  (setf clails/environment:*project-environment* :test)
+  (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
+                                                      :user ,(env-or-default "CLAILS_MYSQL_USERNAME" "root")
+                                                      :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
+                                                      :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
+                                                      :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
+  (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+  (uiop:setup-temporary-directory)
+  (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
+  (setf clails/environment::*project-dir* uiop:*temporary-directory*))
+
+(teardown
+  (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t))
 
 
 (deftest create-database-mysql

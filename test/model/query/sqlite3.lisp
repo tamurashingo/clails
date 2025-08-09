@@ -66,6 +66,9 @@
    (setf clails/environment:*project-environment* :test)
    (setf clails/environment:*database-config* `(:test (:database-name ,(format NIL "~A/volumes/clails_test.sqlite3" (env-or-default "CLAILS_SQLITE3_DATABASE" "/app")))))
    (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+   (uiop:setup-temporary-directory)
+   (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
+   (setf clails/environment::*project-dir* uiop:*temporary-directory*)
    (clails/model/migration::db-create)
    (clails/model/migration::db-migrate *migration-dir*)
    (clails/model/connection::with-db-connection-direct (connection)
@@ -74,6 +77,7 @@
    (clails/model/connection:startup-connection-pool))
 
 (teardown
+  (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t)
   (clails/model/connection:shutdown-connection-pool))
 
 

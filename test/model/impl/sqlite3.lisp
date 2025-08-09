@@ -29,8 +29,12 @@
    (setf clails/environment:*project-environment* :test)
    (setf clails/environment:*database-config* `(:test (:database-name ,(format NIL "~A/volumes/clails_test.sqlite3" (env-or-default "CLAILS_SQLITE3_DATABASE" "/app")))))
    (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
-)
+   (uiop:setup-temporary-directory)
+   (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
+   (setf clails/environment::*project-dir* uiop:*temporary-directory*))
 
+(teardown
+   (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t))
 
 (deftest create-database-sqlite3
   (clails/model/migration::db-create)
@@ -77,7 +81,6 @@
       (ok (string= "done_at" (getf done-at :|name|)))
       (ok (string= "datetime" (getf done-at :|type|)))
       (ok (equal 0 (getf done-at :|notnull|))))))
-
 
 
 (deftest defmodel-sqlite3
