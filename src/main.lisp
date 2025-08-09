@@ -16,6 +16,7 @@
   (:import-from #:clails/model/impl/sqlite3)
   (:import-from #:clails/model/impl/mysql)
   (:import-from #:clails/model/impl/postgresql)
+  (:import-from #:clails/model/impl/dummy)
   (:import-from #:clails/middleware/clails-middleware)
   (:export #:create-project
            #:generate/model
