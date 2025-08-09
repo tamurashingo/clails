@@ -1,0 +1,10 @@
+; -*- mode: lisp -*-
+(in-package #:todoapp/db)
+
+(lambda (connection)<% loop for tbl in (@ tables ) do %>
+  (create-table connection :table <%= (format nil "~S" (getf tbl :table)) %>
+                           :columns '(<% loop for col in (getf tbl :columns) do %>
+                                      <%= (format nil "~S" col) %><% end %>
+                                     )
+<% end %>  )
+; ok

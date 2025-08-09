@@ -13,14 +13,17 @@
 (in-package #:clails/environment)
 
 (defclass <database-type> ()
-    ((database-type :initform nil
-                    :accessor database-type)))
+  ((database-type :initform nil
+                  :accessor database-type)))
 (defclass <database-type-mysql> (<database-type>)
-    ((database-type :initform :mysql)))
+  ((database-type :initform :mysql)))
 (defclass <database-type-postgresql> (<database-type>)
-    ((database-type :initform :postgresql)))
+  ((database-type :initform :postgresql)))
 (defclass <database-type-sqlite3> (<database-type>)
-    ((database-type :initform :sqlite3)))
+  ((database-type :initform :sqlite3)))
+(defclass <database-type-dummy> (<database-type>)
+  ((database-type :initform :dummy)))
+
 
 (defparameter *project-name* ""
   "project name")

@@ -29,9 +29,16 @@
 ;;; migration list
 (defparameter *migrations* '())
 
+;; tables
+(defparameter *tables* '())
+
 ;;; Types used in migration
 (defparameter *type-list*
   '(:string :text :integer :float :decimal :datetime :date :time :boolean))
+
+;;; dummy connection
+(defparameter *dummy-connection*
+  (make-instance 'clails/environment::<database-type-dummy>))
 
 ;;;
 ;;; Migration DSL
@@ -54,7 +61,7 @@
 ;;;
 (defmacro defmigration (migration-name body)
   "Migration DSL"
-  `(uiop:appendf *migrations*
+  `(uiop:appendf clails/model/migration::*migrations*
                  (list (list :migration-name ,migration-name
                              :up ,(getf body :up)
                              :down ,(getf body :down)))))
@@ -95,10 +102,20 @@
 
 (defun create-table (conn &rest args &key &allow-other-keys)
   "Run create table query according to the database implementation"
+  (push `(:table ,(getf args :table)
+          :columns ,(getf args :columns))
+        *tables*)
   (apply #'create-table-impl *database-type* conn args))
 
 (defun add-column (conn &rest args &key &allow-other-keys)
   "Run add column query according to the database implementation"
+  (let ((table-name (getf args :table)))
+    (loop for table in *tables*
+          when (string= table-name
+                        (getf table :table))
+            do (uiop:appendf (getf table :columns)
+                             (getf args :columns))
+               (return nil)))
   (apply #'add-column-impl *database-type* conn args))
 
 (defun add-index (conn &rest args &key &allow-other-keys)
@@ -107,10 +124,29 @@
 
 (defun drop-table (conn &rest args &key &allow-other-keys)
   "Run drop table query according to the database implementation"
+  (let ((table-name (getf args :table)))
+    (setf *tables*
+          (remove-if #'(lambda (r)
+                         (string-equal (getf r :table)
+                                       table-name))
+                     *tables*)))
   (apply #'drop-table-impl *database-type* conn args))
 
 (defun drop-column (conn &rest args &key &allow-other-keys)
   "Run drop column query according to the database implementation"
+  (let* ((table-name (getf args :table))
+         (column-name (getf args :column))
+         (table (find-if #'(lambda (e)
+                             (string-equal (getf e :table)
+                                           table-name))
+                         *tables*))
+         (columns (getf table :columns)))
+    (setf columns
+          (remove-if #'(lambda (c)
+                         (string-equal (car c)
+                                       column-name))
+                     columns))
+    (setf (getf table :columns) columns))
   (apply #'drop-column-impl *database-type* conn args))
 
 (defun drop-index (conn &rest args &key &allow-other-keys)
@@ -127,7 +163,11 @@
   (ensure-migration-table)
   (setf *migrations* nil)
   (load-migration-files basedir)
-  (migrate-all))
+  (migrate-all)
+  (export-schema-file))
+
+(defun db-status (basedir)
+  '())
 
 (defun check-type-valid (type)
   (when (not (find type *type-list*))
@@ -156,8 +196,10 @@
 (defun migrate-all ()
   (with-db-connection-direct (connection)
     (loop for migration in *migrations*
-        when (not-migrated-p connection (getf migration :migration-name))
-        do (apply-migration connection migration))))
+          do (let ((*database-type* (if (not-migrated-p connection (getf migration :migration-name))
+                                        *database-type*
+                                        *dummy-connection*)))
+               (apply-migration connection migration)))))
 
 (defun apply-migration (connection migration)
   (let* ((migration-name (getf migration :migration-name))
@@ -172,5 +214,10 @@
     (null (dbi:fetch result))))
 
 (defun insert-migration (connection migration-name)
-  (dbi:do-sql connection "insert into migration (migration_name) values (?)" (list migration-name)))
+  (when (not (eq *database-type* *dummy-connection*))
+    (dbi:do-sql connection "insert into migration (migration_name) values (?)" (list migration-name))))
+
+
+(defun export-schema-file ()
+  (clails/project/generate:gen/schema *tables*))
 

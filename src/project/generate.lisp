@@ -8,7 +8,8 @@
            #:gen/migration
            #:gen/view
            #:gen/controller
-           #:gen/scaffold))
+           #:gen/scaffold
+           #:gen/schema))
 (in-package #:clails/project/generate)
 
 
@@ -120,3 +121,19 @@
   (multiple-value-bind (sec min hour day mon year)
       (get-decoded-time)
     (format NIL "~4,'0d~2,'0d~2,'0d~2,'0d~2,'0d~2,'0d" year mon day hour min sec)))
+
+
+;; ----------------------------------------
+;; schema
+(defun gen/schema (tables)
+  (let* ((outfile (format nil "~A/db/schema.lisp" *project-dir*))
+         (template-file (asdf:system-relative-pathname :clails "template/generate/db/schema.lisp.tmpl"))
+         (template-content (uiop:read-file-string template-file
+                                                  :external-format :utf-8)))
+
+    (format T "output: ~A~%" outfile)
+    (with-open-file (out outfile
+                         :direction :output
+                         :if-exists :supersede)
+      (format out "~A" (funcall (cl-template:compile-template template-content)
+                                `(:tables ,tables))))))
