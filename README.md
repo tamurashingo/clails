@@ -53,12 +53,12 @@ clails.ros new project-name
 execute `create database` command
 
 ```bash
-clails.ros db create
+clails.ros db:create
 ```
 ## migrate database
 
 ```bash
-clails.ros db migrate up
+clails.ros db:migrate:up
 ```
 ## startup server
 
