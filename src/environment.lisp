@@ -6,10 +6,12 @@
            #:*project-environment*
            #:*database-config*
            #:*database-type*
+           #:*migration-base-dir*
            #:*connection-pool*
            #:*routing-tables*
            #:*startup-hooks*
-           #:*shutdown-hooks*))
+           #:*shutdown-hooks*
+           #:set-environment))
 (in-package #:clails/environment)
 
 (defclass <database-type> ()
@@ -26,19 +28,22 @@
 
 
 (defparameter *project-name* ""
-  "project name")
+  "Project name. Set in app/config/environment.lisp.")
 
 (defparameter *project-dir* ""
-  "Project directory, Used whengenerating migration files, etc.")
+  "Project directory. Set at startup.")
 
 (defparameter *project-environment* :develop
-  ":develop, :test, :production")
+  "Specify one of :develop, :test, or :production. Can be overridden in app/config/environment.lisp.")
 
 (defparameter *database-config* nil
-  "Database configuration. Set when the application server starts.")
+  "Holds database connection information, etc. Set in app/config/database.lisp.")
 
 (defparameter *database-type* nil
-  "Type of database class")
+  "Holds an instance of <database-type> to specify the database in use. Set in app/config/database.lisp.")
+
+(defparameter *migration-base-dir* ""
+  "The base path for directories where migration files are placed. Usually set to *project-dir*. (May be set to a different directory for testing, etc.)")
 
 (defparameter *connection-pool* nil
   "Database connection pool. Created when the application server statts and destroyed when it shuts down.")
@@ -52,3 +57,14 @@
 
 (defparameter *shutdown-hooks*
   '("clails/model/connection:shutdown-connection-pool"))
+
+
+(defparameter +ENVIRONMENT-NAMES+ '("DEVELOP" "TEST" "PRODUCTION"))
+
+(defun check-environment-name (env-name)
+  (not (null (member env-name +ENVIRONMENT-NAMES+ :test #'string-equal))))
+
+(defun set-environment (env-name)
+  (let ((env (string-upcase env-name)))
+    (when (check-environment-name env)
+      (setf *project-environment* (intern env :KEYWORD)))))

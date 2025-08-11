@@ -19,7 +19,6 @@
 
 (in-package #:clails-test/model/connection)
 
-(defvar *migration-dir* nil)
 
 (setup
   (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
@@ -29,12 +28,12 @@
                                                       :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
                                                       :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
                                                       :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
-  (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
   (uiop:setup-temporary-directory)
   (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
   (setf clails/environment::*project-dir* uiop:*temporary-directory*)
   (clails/model/migration::db-create)
-  (clails/model/migration::db-migrate *migration-dir*)
+  (clails/model/migration::db-migrate)
   (startup-connection-pool))
 
 (teardown
