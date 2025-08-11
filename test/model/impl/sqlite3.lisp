@@ -21,14 +21,13 @@
                 #:drop-index))
 (in-package #:clails-test/model/impl/sqlite3)
 
-(defvar *migration-dir* nil)
 (defvar todo nil)
 
 (setup
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-sqlite3>))
    (setf clails/environment:*project-environment* :test)
    (setf clails/environment:*database-config* `(:test (:database-name ,(format NIL "~A/volumes/clails_test.sqlite3" (env-or-default "CLAILS_SQLITE3_DATABASE" "/app")))))
-   (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+   (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
    (uiop:setup-temporary-directory)
    (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
    (setf clails/environment::*project-dir* uiop:*temporary-directory*))
@@ -45,7 +44,7 @@
       (ok (string= "migration" (getf (dbi:fetch result) :|tbl_name|))))))
 
 (deftest migration-sqlite3
-  (clails/model/migration::db-migrate *migration-dir*)
+  (clails/model/migration::db-migrate)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
     (let* ((result (dbi:fetch-all (dbi:execute (dbi:prepare connection "pragma table_info('todo')")

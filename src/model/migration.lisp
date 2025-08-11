@@ -3,7 +3,7 @@
   (:use #:cl)
   (:import-from #:clails/environment
                 #:*database-type*
-                #:*project-dir*)
+                #:*migration-base-dir*)
   (:import-from #:clails/util
                 #:kebab->snake)
   (:import-from #:clails/model/connection
@@ -192,7 +192,7 @@
     (ensure-migration-table-impl *database-type* connection)))
 
 (defun load-migration-files ()
-  (let ((files (directory (format NIL "~A/db/migrate/**/*.lisp" *project-dir*))))
+  (let ((files (directory (format NIL "~A/db/migrate/**/*.lisp" *migration-base-dir*))))
     (dolist (file files)
       (format T "loading migration file: ~A" file)
       (load file)

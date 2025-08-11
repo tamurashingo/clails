@@ -6,6 +6,7 @@
            #:*project-environment*
            #:*database-config*
            #:*database-type*
+           #:*migration-base-dir*
            #:*connection-pool*
            #:*routing-tables*
            #:*startup-hooks*
@@ -40,6 +41,9 @@
 
 (defparameter *database-type* nil
   "Holds an instance of <database-type> to specify the database in use. Set in app/config/database.lisp.")
+
+(defparameter *migration-base-dir* ""
+  "The base path for directories where migration files are placed. Usually set to *project-dir*. (May be set to a different directory for testing, etc.)")
 
 (defparameter *connection-pool* nil
   "Database connection pool. Created when the application server statts and destroyed when it shuts down.")

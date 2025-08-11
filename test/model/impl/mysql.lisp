@@ -21,7 +21,6 @@
                 #:drop-index))
 (in-package #:clails-test/model/impl/mysql)
 
-(defvar *migration-dir* nil)
 (defvar todo-my nil)
 
 (setup
@@ -32,7 +31,7 @@
                                                       :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
                                                       :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
                                                       :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
-  (setf *migration-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
   (uiop:setup-temporary-directory)
   (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
   (setf clails/environment::*project-dir* uiop:*temporary-directory*))
@@ -54,7 +53,7 @@
       (ok (string= "migration" (getf (dbi:fetch result) :|Tables_in_clails_test (migration)|))))))
 
 (deftest migration-mysql
-  (clails/model/migration::db-migrate *migration-dir*)
+  (clails/model/migration::db-migrate)
   (clails/model/connection::with-db-connection-direct (connection)
     ;; check schema
     (let* ((result (dbi:fetch-all (dbi:execute (dbi:prepare connection
