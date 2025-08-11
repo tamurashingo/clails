@@ -4,3 +4,7 @@
 (push (uiop/os:getcwd) asdf:*central-registry*)
 (asdf:load-system :<%= (@ project-name ) %>)
 (setf clails/environment:*project-dir* (uiop/os:getcwd))
+
+(let ((envname (uiop:getenv "CLAILS_ENV")))
+  (when envname
+    (clails/environment:set-environment envname)))

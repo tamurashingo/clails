@@ -2,7 +2,8 @@
 (defpackage #:clails/model/migration
   (:use #:cl)
   (:import-from #:clails/environment
-                #:*database-type*)
+                #:*database-type*
+                #:*project-dir*)
   (:import-from #:clails/util
                 #:kebab->snake)
   (:import-from #:clails/model/connection
@@ -158,16 +159,20 @@
   (ensure-database)
   (ensure-migration-table))
 
-(defun db-migrate (basedir)
+(defun db-migrate ()
   "implementation of `db/migrate`. load migration files and apply migrations"
   (ensure-migration-table)
   (setf *migrations* nil)
-  (load-migration-files basedir)
+  (load-migration-files)
   (migrate-all)
   (export-schema-file))
 
-(defun db-status (basedir)
-  '())
+(defun db-status ()
+  (setf *migrations* nil)
+  (load-migration-files)
+  (format t " STATUS    MIGRATION NAME~%")
+  (format t "-----------------------------------------~%")
+  (format t "~{~{ ~A~11T~A~}~%~}" (migrated-status)))
 
 (defun check-type-valid (type)
   (when (not (find type *type-list*))
@@ -186,17 +191,25 @@
   (with-db-connection-direct (connection)
     (ensure-migration-table-impl *database-type* connection)))
 
-(defun load-migration-files (basedir)
-  (let ((files (directory (format NIL "~A/db/migrate/**/*.lisp" basedir))))
+(defun load-migration-files ()
+  (let ((files (directory (format NIL "~A/db/migrate/**/*.lisp" *project-dir*))))
     (dolist (file files)
       (format T "loading migration file: ~A" file)
       (load file)
       (format T " ... done~%"))))
 
+(defun migrated-status ()
+  (with-db-connection-direct (connection)
+    (loop for migration in *migrations*
+          for migration-name = (getf migration :migration-name)
+          collect (if (not-migrated-p connection migration-name)
+                      `("DOWN" ,migration-name)
+                      `("UP" ,migration-name)))))
+
 (defun migrate-all ()
   (with-db-connection-direct (connection)
     (loop for migration in *migrations*
-          do (let ((*database-type* (if (not-migrated-p connection (getf migration :migration-name))
+          do (let ((*database-type* (if (not-migrated-p connection (getf migration :migration-name) t)
                                         *database-type*
                                         *dummy-connection*)))
                (apply-migration connection migration)))))
@@ -207,8 +220,9 @@
     (funcall up-fn connection)
     (insert-migration connection migration-name)))
 
-(defun not-migrated-p (connection migration-name)
-  (format T "checking migration: ~A~%" migration-name)
+(defun not-migrated-p (connection migration-name &optional verbose)
+  (when verbose
+    (format T "checking migration: ~A~%" migration-name))
   (let* ((query (dbi:prepare connection "select * from migration where migration_name = ?"))
          (result (dbi:execute query (list migration-name))))
     (null (dbi:fetch result))))

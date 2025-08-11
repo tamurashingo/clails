@@ -14,7 +14,6 @@ exec ros -Q -- $0 "$@"
 (in-package :ros.script.clails.3961085205.boot)
 
 (defparameter CLAILS_CONF_DIR (format NIL "~A/.clails/" (user-homedir-pathname)))
-
 (progn
   (setf qlot/logger:*logger-message-stream* (make-broadcast-stream))
   (ensure-directories-exist CLAILS_CONF_DIR)
@@ -41,14 +40,27 @@ exec ros -Q -- $0 "$@"
   (push (uiop/os:getcwd) ql:*local-project-directories*)
   (load "clails.boot"))
 
+(defun environment/show ()
+  (load-project)
+  (format t "environment:~A~%" clails/environment:*project-environment*))
+
 (defun db/create ()
   (load-project)
   (clails/cmd:db/create))
 
-(defun db/migrate/up ()
+(defun db/migrate/up (&optional version)
   (load-project)
   (load "db/package.lisp")
-  (clails/cmd:db/migrate))
+  (clails/cmd:db/migrate)
+  (format t "migrations:~SA~%" clails/model/migration::*migrations*))
+
+(defun db/migrate/down (&optional version)
+  (format t "down~%"))
+
+(defun db/status ()
+  (load-project)
+  (load "db/package.lisp")
+  (clails/cmd:db/status))
 
 (defun generate/model (model-name &key no-overwrite no-migration)
   (load-project)
@@ -95,37 +107,43 @@ exec ros -Q -- $0 "$@"
                            :consume T
                            :converter ,#'(lambda (s)
                                            (intern (string-upcase s) :KEYWORD)))))
-               (:command "db"
-                :commands ((:command "create"
-                            :function ,#'db/create)
-                           (:command "migrate"
-                            :commands ((:command "up"
-                                        :function ,#'db/migrate/up)))))
-               (:command "generate"
-                :commands ((:command "model"
-                            :function ,#'generate/model
-                            :options ((:long-option "no-overwrite"
-                                       :keyword :no-overwrite)
-                                      (:short-option "n"
-                                       :long-option "no-migration"
-                                       :keyword :no-migration)))
-                           (:command "migration"
-                            :function ,#'generate/migration)
-                           (:command "view"
-                            :function ,#'generate/view
-                            :options ((:long-option "no-overwrite"
-                                       :keyword :no-overwrite)))
-                           (:command "controller"
-                            :function ,#'generate/controller
-                            :options ((:long-option "no-overwrite"
-                                       :keyword :no-overwrite)))
-                           (:command "scaffold"
-                            :function ,#'generate/scaffold
-                            :options ((:long-option "no-overwrite"
-                                       :keyword :no-overwrite)))))
+               (:command "environment"
+                :function ,#'environment/show)
+               (:command "db:create"
+                :function ,#'db/create)
+               (:command "db:migrate"
+                :function ,#'db/migrate/up)
+               (:command "db:migrate:up"
+                :function ,#'db/migrate/up)
+               (:command "db:migrate:down"
+                :function ,#'db/migrate/down)
+               (:command "db:status"
+                :function ,#'db/status)
+               (:command "generate:model"
+                :function ,#'generate/model
+                :options ((:long-option "no-overwrite"
+                           :keyword :no-overwrite)
+                          (:short-option "n"
+                           :long-option "no-migration"
+                           :keyword :no-migration)))
+               (:command "generate:migration"
+                :function ,#'generate/migration
+                :options ((:long-option "no-overwrite"
+                           :keyword :no-overwrite)))
+               (:command "generate:view"
+                :function ,#'generate/view
+                :options ((:long-option "no-overwrite"
+                           :keyword :no-overwrite)))
+               (:command "generate:controller"
+                :function ,#'generate/controller
+                :options ((:long-option "no-overwrite"
+                           :keyword :no-overwrite)))
+               (:command "generate:scaffold"
+                :function ,#'generate/scaffold
+                :options ((:long-option "no-overwrite"
+                           :keyword :no-overwrite)))
                (:command "server"
                 :function ,#'server))))
-
 
 
 (defun main (&rest argv)

@@ -11,6 +11,9 @@
 ;; project name
 (setf clails/environment:*project-name* "<%= (@ project-name ) %>")
 
+;; project environment
+(setf clails/environment:*project-environment* :develop)
+
 (setf *routing-tables*
   '((:path "/"
      :controller "<%= (@ project-name )%>/controllers/application-controller:<application-controller>")))

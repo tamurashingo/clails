@@ -12,7 +12,8 @@
                 #:gen/scaffold)
   (:import-from #:clails/model/migration
                 #:db-create
-                #:db-migrate)
+                #:db-migrate
+                #:db-status)
   (:import-from #:clails/controller/base-controller
                 #:initialize-routing-tables)
   (:import-from #:clails/middleware/clails-middleware
@@ -27,6 +28,7 @@
            #:generate/scaffold
            #:db/create
            #:db/migrate
+           #:db/status
            #:console
            #:server
            #:stop))
@@ -45,9 +47,9 @@
 
 
 (defun generate/model (model-name &key (no-overwrite T) (no-migration NIl))
-  (gen/model model-name :overwrite (not overwrite))
+  (gen/model model-name :overwrite (not no-overwrite))
   (when (not no-migration)
-    (gennerate/migration model-name)))
+    (generate/migration model-name)))
 
 (defun generate/migration (migration-name)
   (gen/migration migration-name))
@@ -62,11 +64,17 @@
   (gen/scaffold name :overwrite (not no-overwrite)))
 
 
-(defun db/create ()
+(defun db/create (&key (env :development))
   (db-create))
 
-(defun db/migrate ()
-  (db-migrate *project-dir*))
+(defun db/migrate (&key (env :development))
+  (db-migrate))
+
+(defun db/status ()
+  (db-status))
+
+(defun db/rollback ()
+  nil)
 
 
 (defun console ()
