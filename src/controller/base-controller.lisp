@@ -118,8 +118,8 @@
           302))
   (setf (view controller) nil))
 
-(defmethod set-response ((controller <rest-controller>) response)
-  (setf (response controller) response))
+(defmethod set-response ((controller <rest-controller>) alist)
+  (setf (response controller) alist))
 
 
 (defclass <default-controller> (<web-controller>)
