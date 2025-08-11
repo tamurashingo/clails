@@ -6,7 +6,8 @@
                 #:<rest-controller>
                 #:code
                 #:header
-                #:view)
+                #:view
+                #:response)
   (:import-from #:clails/controller/error-handle-controller
                 #:<error-handle-controller>
                 #:exception)
@@ -28,7 +29,9 @@
     (view/html-template controller content)))
 
 (defmethod resolve-view ((controller <rest-controller>))
-  "json")
+  (let ((response (jonathan:to-json (response controller) :from :alist)))
+    (view/json controller response)))
+
 
 (defmethod resolve-view ((controller <error-handle-controller>))
   (let* ((exception (exception controller))
@@ -53,6 +56,8 @@
     (,content)))
 
 
-(defun view/json (plist)
-  "json")
+(defun view/json (controller content)
+  `(,(code controller)
+    ,(header controller)
+    (,content)))
 
