@@ -83,9 +83,9 @@ exec ros -Q -- $0 "$@"
   (load-project)
   (clails/cmd:generate/scaffold name :no-overwrite no-overwrite))
 
-(defun server ()
+(defun server (&key (port "5000") (bind "127.0.0.1"))
   (load-project)
-  (clails/cmd:server))
+  (clails/cmd:server :port port :bind bind))
 
 (defun stop ()
   (load-project)
@@ -144,7 +144,15 @@ exec ros -Q -- $0 "$@"
                 :options ((:long-option "no-overwrite"
                            :keyword :no-overwrite)))
                (:command "server"
-                :function ,#'server))))
+                :function ,#'server
+                :options ((:short-option "p"
+                           :long-option "port"
+                           :keyword :port
+                           :consume T)
+                          (:short-option "b"
+                           :long-option "bind"
+                           :keyword :bind
+                           :consume T))))))
 
 
 (defun main (&rest argv)

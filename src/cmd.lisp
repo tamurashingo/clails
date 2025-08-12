@@ -46,7 +46,7 @@
     (clails/project/project:create-project project-name project-dir database)))
 
 
-(defun generate/model (model-name &key (no-overwrite T) (no-migration NIl))
+(defun generate/model (model-name &key (no-overwrite T) (no-migration nil))
   (gen/model model-name :overwrite (not no-overwrite))
   (when (not no-migration)
     (generate/migration model-name)))
@@ -80,7 +80,7 @@
 (defun console ()
   (error "Not yet implemented"))
 
-(defun server ()
+(defun server (&key (port "5000") (bind "127.0.0.1"))
   (initialize-routing-tables)
   (setf *app*
     (lack:builder
@@ -91,7 +91,9 @@
   (setf *handler*
         (clack:clackup *app*
                        :debug nil
-                       :use-thread T))
+                       :use-thread T
+                       :port (parse-integer port)
+                       :address bind))
 
   (call-startup-hooks)
   (clack::with-handle-interrupt
