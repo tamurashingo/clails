@@ -9,3 +9,5 @@
 (let ((envname (uiop:getenv "CLAILS_ENV")))
   (when envname
     (clails/environment:set-environment envname)))
+
+(<%= (@ project-name) %>/config/database:initialize-database-config)
