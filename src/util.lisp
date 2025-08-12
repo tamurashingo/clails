@@ -5,7 +5,8 @@
            #:mandatory-check
            #:env-or-default
            #:plist-exists
-           #:function-from-string))
+           #:function-from-string
+           #:now))
 (in-package #:clails/util)
 
 (defun kebab->snake (s)
@@ -96,3 +97,7 @@ Return t if key exists in plist. otherwise, returns nil.
       (let ((symbol (find-symbol (string-upcase function-name) package)))
         (when (and symbol (fboundp symbol))
           (symbol-function symbol))))))
+
+
+(defun now ()
+  (get-universal-time))

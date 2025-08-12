@@ -19,6 +19,7 @@
            #:view
            #:set-view
            #:set-redirect
+           #:set-response
            #:do-get
            #:do-post
            #:do-put
@@ -116,6 +117,9 @@
     (setf (slot-value controller 'code)
           302))
   (setf (view controller) nil))
+
+(defmethod set-response ((controller <rest-controller>) alist)
+  (setf (response controller) alist))
 
 
 (defclass <default-controller> (<web-controller>)

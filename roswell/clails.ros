@@ -51,8 +51,7 @@ exec ros -Q -- $0 "$@"
 (defun db/migrate/up (&optional version)
   (load-project)
   (load "db/package.lisp")
-  (clails/cmd:db/migrate)
-  (format t "migrations:~SA~%" clails/model/migration::*migrations*))
+  (clails/cmd:db/migrate))
 
 (defun db/migrate/down (&optional version)
   (format t "down~%"))
