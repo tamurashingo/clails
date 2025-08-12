@@ -236,7 +236,7 @@
          (database-name (getf config :database-name))
          (host (getf config :host))
          (port (parse-integer (getf config :port)))
-         (username (getf config :user))
+         (username (getf config :username))
          (password (getf config :password)))
     (if no-database
         (dbi:connect :postgres
@@ -258,7 +258,7 @@
          (database-name (getf config :database-name))
          (host (getf config :host))
          (port (parse-integer (getf config :port)))
-         (username (getf config :user))
+         (username (getf config :username))
          (password (getf config :password)))
     (dbi-cp:make-dbi-connection-pool :postgres
                                      :database-name database-name
