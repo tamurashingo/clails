@@ -27,7 +27,7 @@
   (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
   (setf clails/environment:*project-environment* :test)
   (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
-                                                      :user ,(env-or-default "CLAILS_MYSQL_USERNAME" "root")
+                                                      :username ,(env-or-default "CLAILS_MYSQL_USERNAME" "root")
                                                       :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
                                                       :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
                                                       :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))

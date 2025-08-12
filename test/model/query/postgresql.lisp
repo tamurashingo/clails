@@ -65,7 +65,7 @@
   (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-postgresql>))
   (setf clails/environment:*project-environment* :test)
   (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_POSTGRESQL_DATABASE" "clails_test")
-                                                       :user ,(env-or-default "CLAILS_POSTGRESQL_USERNAME" "clails")
+                                                       :username ,(env-or-default "CLAILS_POSTGRESQL_USERNAME" "clails")
                                                        :password ,(env-or-default "CLAILS_POSTGRESQL_PASSWORD" "password")
                                                        :host ,(env-or-default "CLAILS_POSTGRESQL_HOST" "postgresql-test")
                                                        :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "5432"))))
