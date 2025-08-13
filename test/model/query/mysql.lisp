@@ -125,3 +125,22 @@
     (let ((result (select 'clails-test-model::<debug> :where `(= id ,(ref record :id)))))
       (ok (= (length result) 1))
       (ok (string= "updated mysql record" (ref (first result) :col-1))))))
+
+(deftest mysql-null-check
+    (let ((record (make-record 'clails-test-model::<debug>)))
+      (save record)
+
+      (let ((result (select 'clails-test-model::<debug> :where `(= id ,(ref record :id)))))
+        (ok (= (length result) 1))
+        (defvar r (car result))
+
+        (ok (null (ref r :col-1)))
+        (ok (null (ref r :col-2)))
+        (ok (null (ref r :col-3)))
+        (ok (null (ref r :col-4)))
+        (ok (null (ref r :col-5)))
+        (ok (null (ref r :col-6)))
+        (ok (null (ref r :col-7)))
+        (ok (null (ref r :col-8)))
+        (ok (null (ref r :col-9))))))
+

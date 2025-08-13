@@ -44,18 +44,23 @@
       :null
       v))
 
+(defun keyword-null (v)
+  (if (eq v :null)
+      nil
+      v))
+
 (defparameter *postgresql-type-convert-functions*
   `(("character varying" . (:type :string
-                            :db-cl-fn ,#'identity
-                            :cl-db-fn ,#'identity))
+                            :db-cl-fn ,#'keyword-null
+                            :cl-db-fn ,#'identity-null))
     ("text" . (:type :text
-               :db-cl-fn ,#'identity
+               :db-cl-fn ,#'keyword-null
                :cl-db-fn ,#'identity-null))
     ("integer" . (:type :integer
-                  :db-cl-fn ,#'identity
+                  :db-cl-fn ,#'keyword-null
                   :cl-db-fn ,#'identity-null))
     ("double precision" . (:type :float
-                           :db-cl-fn ,#'identity
+                           :db-cl-fn ,#'keyword-null
                            :cl-db-fn ,#'identity-null))
     ("numeric" . (:type :decimal
                   :db-cl-fn ,#'(lambda (v)
@@ -63,7 +68,10 @@
                                    (coerce v 'double-float)))
                   :cl-db-fn ,#'identity-null))
     ("timestamp without time zone" . (:type :datetime
-                                      :db-cl-fn ,#'identity
+                                      :db-cl-fn ,#'(lambda (ut)
+                                                     (if (eq ut :null)
+                                                         nil
+                                                         ut))
                                       :cl-db-fn ,#'(lambda (ut)
                                                      (if ut
                                                          (multiple-value-bind (sec min hour date month year day daylight-p zone)
@@ -71,7 +79,7 @@
                                                            (format nil "~4,\'0d-~2,\'0d-~2,\'0d ~2,\'0d:~2,\'0d:~2,\'0d" year month date hour min sec))
                                                          :null))))
     ("date" . (:type :date
-               :db-cl-fn ,#'identity
+               :db-cl-fn ,#'keyword-null
                :cl-db-fn ,#'identity-null))
     ("time without time zone" . (:type :time
                                  :db-cl-fn ,#'(lambda (v)
@@ -93,6 +101,8 @@
                                                  (string= v "off")))
                                         nil)
                                        ((eq v :null)
+                                        nil)
+                                       ((null v)
                                         nil)
                                        (t t)))
                   :cl-db-fn ,#'(lambda (v)
