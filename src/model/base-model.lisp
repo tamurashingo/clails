@@ -7,6 +7,11 @@
                 #:with-db-connection-direct)
   (:import-from #:clails/util
                 #:kebab->snake)
+  (:import-from #:clails/helper/date-helper
+                #:view/datetime)
+  (:import-from #:jonathan
+                #:with-object
+                #:write-key-value)
   (:export #:<base-model>
            #:validate
            #:defmodel
@@ -58,6 +63,29 @@
                   for colname = (getf column :name)
                   with hash = (slot-value obj 'data)
                   collect (list colname (gethash colname hash))))))
+
+
+(defmethod jonathan:%to-json ((obj <base-model>))
+  (with-object
+    (loop for column in (slot-value obj 'columns)
+          for colname = (getf column :name)
+          for key = (getf column :access)
+          for type = (getf column :type)
+          with hash = (slot-value obj 'data)
+          for val = (gethash colname hash)
+          do (write-key-value key
+                           (cond ((eq type :datetime)
+                                  (if (null val)
+                                      :null
+                                      (view/datetime val)))
+                                 ((eq type :boolean)
+                                  (if (null val)
+                                      :false
+                                      t))
+                                 (t
+                                  (if (null val)
+                                      :null
+                                      val)))))))
 
 
 (defgeneric validate (inst)
