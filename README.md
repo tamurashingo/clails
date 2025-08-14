@@ -74,7 +74,11 @@ you'll see
 
 # example
 
-see: https://github.com/tamurashingo/clails/wiki/create-todo-application
+It contains instructions on how to create an application using commands:\
+https://github.com/tamurashingo/clails/wiki/create-todo-application
+
+Implementation examples for various databases, Docker, and REST:\
+https://github.com/tamurashingo/clails-sample-apps
 
 # feature
 **model**
@@ -86,12 +90,12 @@ see: https://github.com/tamurashingo/clails/wiki/create-todo-application
 
 **view**
 - [x] template-based HTML rendering
-- [ ] JSON rendering
+- [x] JSON rendering
 
 **controller**
 - [x] accept query parameter
 - [x] accept path parameter
-- [ ] rest controller
+- [x] rest controller
 
 
 ---
