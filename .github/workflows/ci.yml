@@ -66,6 +66,7 @@ jobs:
         CLAILS_POSTGRESQL_PASSWORD: password
         CLAILS_POSTGRESQL_HOST: 127.0.0.1
         CLAILS_POSTGRESQL_PORT: 5432
+        CLAILS_MIGRATION_DIR: "/home/runner/work/clails/clails/migration-test"
         TMPDIR: ${{ runner.temp }}
 
 
