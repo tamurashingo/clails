@@ -16,7 +16,8 @@
            #:validate
            #:defmodel
            #:fetch-columns-and-types-impl
-           #:ref))
+           #:ref
+           #:initialize-table-information))
 (in-package #:clails/model/base-model)
 
 
@@ -134,20 +135,55 @@
          "")
       "")))
 
-(defmacro defmodel (cls-name superclass &optional options)
-  (let ((table-name (anaphora:aif (getf options :table)
-                                  anaphora:it
-                                  (model->tbl cls-name)))
-        (fn-name (intern (format NIL "%MAKE-~A-INITFORM" cls-name))))
+(defparameter *table-information* (make-hash-table))
+
+(defun initialize-table-information ()
+  (with-db-connection-direct (conn)
+    (loop for key being each hash-key of *table-information*
+            using (hash-value value)
+          do (progn
+               (format t "initializing ~A ... " key)
+               (setf (getf value :columns)
+                     (funcall (getf value :columns-fn) conn))
+               (format t "done~%")))))
+
+(defun debug-table-information ()
+  (loop for key being each hash-key of *table-information*
+          using (hash-value value)
+        do (format t "key:~A, value:~A" key value)))
+
+
+(defun get-columns (model-name)
+  (getf (gethash model-name clails/model/base-model::*table-information*)
+        :columns))
+
+
+(defmacro defmodel (class-name superclass options)
+  (let* ((cls-name (intern (string `,class-name) *package*))
+         (table-name (anaphora:aif (getf options :table)
+                                   anaphora:it
+                                   (model->tbl `,class-name)))
+         (fn-name (intern (format NIL "%MAKE-~A-INITFORM" `,class-name))))
     `(progn
        (defun ,fn-name ()
          (let ((result
                  (with-db-connection-direct (conn)
                    (fetch-columns-and-types-impl *database-type* conn ,table-name))))
            result))
+
        (defclass ,cls-name ,superclass
          ((table-name :initform ,table-name)
-          (columns :initform (,fn-name)))))))
+          (columns :initform (clails/model/base-model::get-columns ',cls-name))))
+
+       (setf (gethash  ',cls-name clails/model/base-model::*table-information*)
+             (list :table-name ,table-name
+                   :columns-fn #'(lambda (conn)
+                                   (clails/model/base-model::fetch-columns-and-types-impl clails/environment:*database-type*  conn ,table-name))
+                   :columns nil
+                   :belongs-to ',(getf options :belongs-to)
+                   :has-one ',(getf options :has-one)
+                   :has-many ',(getf options :has-many))))))
+
 
 (defgeneric fetch-columns-and-types-impl (database-type connection tabole)
   (:documentation "Implemantation of fetch column and its type"))

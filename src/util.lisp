@@ -11,8 +11,7 @@
 
 (defun kebab->snake (s)
   "convert KEBAB-CASE to SNAKE_CASE"
-  (assert (or (and (symbolp s)
-                   (not (keywordp s)))
+  (assert (or (symbolp s)
               (stringp s)))
 
   (let ((str (if (symbolp s)
@@ -22,8 +21,7 @@
 
 (defun snake->kebab (s)
   "convert SNAKE_CASE to KEBAB-CASE"
-  (assert (or (and (symbolp s)
-                   (not (keywordp s)))
+  (assert (or (symbolp s)
               (stringp s)))
 
   (let ((str (if (symbolp s)
