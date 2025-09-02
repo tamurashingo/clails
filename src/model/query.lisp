@@ -512,12 +512,12 @@ query example:
 (defun parse-exp2 (op exp)
   (let (x y keywords)
     (multiple-value-bind (col1 param1)
-        (lexer (car exp))
+        (lexer2 (car exp))
       (setf x col1)
       (when param1
         (appendf keywords (ensure-list param1))))
     (multiple-value-bind (col2 param2)
-        (lexer (cadr exp))
+        (lexer2 (cadr exp))
       (setf y col2)
       (when param2
         (appendf keywords (ensure-list param2))))
