@@ -60,6 +60,12 @@
  (setf clails/environment::*project-dir* uiop:*temporary-directory*)
  (clails/model/migration::db-create)
  (clails/model/migration::db-migrate)
+ (clails/model/connection::with-db-connection-direct (connection)
+   (dbi-cp:do-sql connection "insert into account (created_at, updated_at, username) values ('2024-01-01 00:00:00', '2024-01-01 00:00:00', 'user1')")
+   (dbi-cp:do-sql connection "insert into blog (created_at, updated_at, title, content, account_id, star) values ('2024-01-01 00:00:00', '2024-01-01 00:00:00', 'first blog', 'this is my first blog', 1, 0)")
+   (dbi-cp:do-sql connection "insert into blog (created_at, updated_at, title, content, account_id, star) values ('2024-01-02 00:00:00', '2024-01-02 00:00:00', 'second blog', 'this is my second blog', 1, 10)")
+   (dbi-cp:do-sql connection "insert into comment (created_at, updated_at, comment, blog_id) values ('2024-01-02 00:00:00', '2024-01-02 00:00:00', 'hi', 1)")
+   (dbi-cp:do-sql connection "insert into comment (created_at, updated_at, comment, blog_id) values ('2024-01-02 00:00:01', '2024-01-02 00:00:01', 'good', 1)"))
  (clails/model/connection:startup-connection-pool))
 
 
@@ -102,6 +108,23 @@
            :offset :page2))
 
   (format t "qury2:~S~%" (clails/model/query::generate-query *blog2*))
+
+
+  (defvar *query*
+    (clails/model/query::query clails-test-model-joinquery::<blog>
+       :as blog
+       :joins ((:inner-join clails-test-model-joinquery::<account>
+                :as account
+                :on (:and (= (account :id)
+                             (blog :account-id))))
+               (:left-join clails-test-model-joinquery::<comment>
+                :as comment
+                :on (= (blog :id)
+                       (comment :blog-id))))
+       :order-by ((blog :id :desc))))
+
+  (format t "result:~S~%"
+          (clails/model/query::execute-query *query* '()))
 
 
 )
