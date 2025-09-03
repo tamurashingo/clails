@@ -391,11 +391,23 @@ query example:
                     :offset ',offset)))
 
 
+(defmethod execute-query ((query <query>) named-values &key connection)
+  (let* ((q (generate-query query))
+         (sql (getf q :query))
+         (named-params (getf q :keywords)))
+    (clails/model/connection:with-db-connection (connection)
+      (dbi-cp:fetch-all
+       (dbi-cp:execute
+        (dbi-cp:prepare connection sql)
+        (generate-values named-params named-values))))))
+
+
 
 (defmethod generate-query ((query <query>))
   (let ((table-name (slot-value (slot-value query 'inst) 'clails/model/base-model::table-name))
         (alias (slot-value query 'alias))
-        (columns (mapcar #'column-pair-to-name
+        (columns (mapcar #'(lambda (c)
+                             (column-pair-to-name c T))
                          (generate-query-columns query)))
         (joins-keywords (loop for join in (slot-value query 'joins)
                               with joins and keywords
@@ -476,37 +488,39 @@ query example:
 
 
 (defun parse-where-claude (where)
-  (let ((elm (car where)))
-    (cond ((find elm '(= < <= > >= <> !=))
-           (parse-exp2 elm (cdr where)))
-          ((eq elm :like)
-           (parse-exp2 "LIKE" (cdr where)))
-          ((eq elm :not-like)
-           (parse-exp2 "NOT LIKE" (cdr where)))
-          ((eq elm :null)
-           (parse-null2 :null (cdr where)))
-          ((eq elm :not-null)
-           (parse-null2 :not-null (cdr where)))
-          ((eq elm :and)
-           (loop for expression in (cdr where)
-                 with exp and keywords
-                 do (multiple-value-setq (exp keywords) (parse-where-claude expression))
-                 collect exp into exp-list
-                 when keywords
-                   collect keywords into keywords-list
-                 finally (return (values (format nil "(~{~A~^ AND ~})" exp-list)
-                                         keywords-list))))
-          ((eq elm :or)
-           (loop for expression in (cdr where)
-                 with exp and keywords
-                 do (multiple-value-setq (exp keywords) (parse-where-claude expression))
-                 collect exp into exp-list
-                 when keywords
-                   collect keywords into keywords-list
-                 finally (return (values (format nil "(~{~A~^ OR ~})" exp-list)
-                                         keywords-list))))
-          (t
-           (error "where claude: parse error `~A`" elm)))))
+  (if (not where)
+      nil
+      (let ((elm (car where)))
+        (cond ((find elm '(= < <= > >= <> !=))
+               (parse-exp2 elm (cdr where)))
+              ((eq elm :like)
+               (parse-exp2 "LIKE" (cdr where)))
+              ((eq elm :not-like)
+               (parse-exp2 "NOT LIKE" (cdr where)))
+              ((eq elm :null)
+               (parse-null2 :null (cdr where)))
+              ((eq elm :not-null)
+               (parse-null2 :not-null (cdr where)))
+              ((eq elm :and)
+               (loop for expression in (cdr where)
+                     with exp and keywords
+                     do (multiple-value-setq (exp keywords) (parse-where-claude expression))
+                     collect exp into exp-list
+                     when keywords
+                       collect keywords into keywords-list
+                     finally (return (values (format nil "(~{~A~^ AND ~})" exp-list)
+                                             keywords-list))))
+              ((eq elm :or)
+               (loop for expression in (cdr where)
+                     with exp and keywords
+                     do (multiple-value-setq (exp keywords) (parse-where-claude expression))
+                     collect exp into exp-list
+                     when keywords
+                       collect keywords into keywords-list
+                     finally (return (values (format nil "(~{~A~^ OR ~})" exp-list)
+                                             keywords-list))))
+              (t
+               (error "where claude: parse error `~A`" elm))))))
 
 ;; TODO: rename
 (defun parse-exp2 (op exp)
@@ -558,8 +572,9 @@ query example:
          t
          (values param nil))))
 
-(defun column-pair-to-name (pair)
-  (format nil "~A.~A" (kebab->snake (car pair)) (kebab->snake (cadr pair))))
+(defun column-pair-to-name (pair &optional as)
+  (if as (format nil "~A.~A as \"~A.~A\"" (kebab->snake (car pair)) (kebab->snake (cadr pair)) (kebab->snake (car pair)) (kebab->snake (cadr pair)))
+         (format nil "~A.~A" (kebab->snake (car pair)) (kebab->snake (cadr pair)))))
 
 
 (defun generate-order-by (params &optional order)
