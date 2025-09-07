@@ -16,6 +16,7 @@
            #:validate
            #:defmodel
            #:fetch-columns-and-types-impl
+           #:fetch-columns-and-types-plist-impl
            #:ref
            #:initialize-table-information))
 (in-package #:clails/model/base-model)
@@ -47,6 +48,17 @@
        :access \"TITLE\"
        :type :text
        :function #'babel:octets-to-string))")
+   (columns2 :documentation "property list
+ex: (:id (:name :id
+          :access \"ID\"
+          :type :integer
+          :db-cl-fn #'identity
+          :cl-db-fn #'identity)
+     :created-at (:name :created-at
+                  :access \"CREATED_AT\"
+                  :type :datetime
+                  :db-cl-fn #'identity
+                  :cl-db-fn #'identity))")
    (table-name :documentation "database table name")
    (save-p :initform nil)))
 
@@ -145,6 +157,8 @@
                (format t "initializing ~A ... " key)
                (setf (getf value :columns)
                      (funcall (getf value :columns-fn) conn))
+               (setf (getf value :columns2)
+                     (funcall (getf value :columns-fn2) conn))
                (format t "done~%")))))
 
 (defun debug-table-information ()
@@ -156,6 +170,10 @@
 (defun get-columns (model-name)
   (getf (gethash model-name clails/model/base-model::*table-information*)
         :columns))
+
+(defun get-columns-plist (model-name)
+  (getf (gethash model-name clails/model/base-model::*table-information*)
+        :columns2))
 
 
 (defmacro defmodel (class-name superclass options)
@@ -173,20 +191,39 @@
 
        (defclass ,cls-name ,superclass
          ((table-name :initform ,table-name)
-          (columns :initform (clails/model/base-model::get-columns ',cls-name))))
+          (columns :initform (clails/model/base-model::get-columns ',cls-name))
+          (columns2 :initform (clails/model/base-model::get-columns ',cls-name))))
 
        (setf (gethash  ',cls-name clails/model/base-model::*table-information*)
              (list :table-name ,table-name
                    :columns-fn #'(lambda (conn)
                                    (clails/model/base-model::fetch-columns-and-types-impl clails/environment:*database-type*  conn ,table-name))
+                   :columns-fn2 #'(lambda (conn)
+                                    (clails/model/base-model::fetch-columns-and-types-plist-impl clails/environment:*database-type* conn ,table-name))
                    :columns nil
+                   :columns2 nil
                    :belongs-to ',(getf options :belongs-to)
                    :has-one ',(getf options :has-one)
                    :has-many ',(getf options :has-many))))))
 
 
-(defgeneric fetch-columns-and-types-impl (database-type connection tabole)
+(defgeneric fetch-columns-and-types-impl (database-type connection table)
   (:documentation "Implemantation of fetch column and its type"))
+
+(defgeneric fetch-columns-and-types-plist-impl (database-type connection table)
+  (:documentation "Implemantation of fetch column and its type plist
+ex: (:id (:name :id
+          :access \"ID\"
+          :type :integer
+          :db-cl-fn #'identity
+          :cl-db-fn #'identity)
+     :created-at (:name :created-at
+                  :access \"CREATED_AT\"
+                  :type :datetime
+                  :db-cl-fn #'db-datetime->cl-datetime
+                  :cl-db-fn #'cl-datetime->db-datetime)
+     .....)
+"))
 
 
 ;;

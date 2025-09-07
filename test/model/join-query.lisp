@@ -123,10 +123,16 @@
                        (comment :blog-id))))
        :order-by ((blog :id :desc))))
 
-  (format t "result:~S~%"
+  (format t "result raw:~S~%"
           (clails/model/query::execute-query *query* '()))
 
 
+  (maphash #'(lambda (k v)
+               (format t "key:~A, val:~S~%" k v))
+           (clails/model/query::collect-result *query*
+                                               (clails/model/query::execute-query *query* '())))
+
+
+
+
 )
-
-

@@ -13,6 +13,7 @@
                 #:ref)
   (:import-from #:clails/util
                 #:kebab->snake
+                #:snake->kebab
                 #:plist-exists)
   (:export #:select
            #:make-record
@@ -187,6 +188,16 @@
   (let ((inst (make-instance model-name)))
     (loop for (key value) on values by #'cddr
           do (setf (ref inst key) value))
+    inst))
+
+(defun make-record-from (model-name &rest db-values)
+  (let ((inst (make-instance model-name))
+        (columns-plist (clails/model/base-model::get-columns-plist model-name)))
+    (loop for (key db-value) on db-values by #'cddr
+          do (let* ((key (intern (snake->kebab key) :KEYWORD))
+                    (fn (getf (getf columns-plist key) :DB-CL-FN))
+                    (cl-val (funcall fn db-value)))
+              (setf (ref inst key) cl-val)))
     inst))
 
 
@@ -622,3 +633,62 @@ query example:
         (t
          (list :limit limit
                :keyword nil))))
+
+
+(defmethod collect-result ((query <query>) result)
+  (let ((all-table-records (make-hash-table))
+    #|
+       all-table-records
+         key: alias table name (keyword)
+         value: property list (key: id, value: record instance)
+       (:account (1 <account>)
+        :blog    (1 <blog>
+                  2 <blo>)
+        :comment (1 <comment>
+                  2 <comment>))
+     |#
+        (alias->model (flatten (list (intern (symbol-name (slot-value query 'alias)) :keyword) (slot-value query 'model)
+                                     (loop for join in (slot-value query 'joins)
+                                           collect (list (intern (symbol-name (slot-value (cadr join) 'alias)) :KEYWORD)
+                                                         (slot-value (cadr join) 'model)))))))
+
+
+    (labels ((split-keyword (keyword)
+               "split :TABLE.COLUMN into :TABLE and :COLUMN"
+               (let* ((kw-str (string keyword))
+                      (dot-pos (position #\. kw-str)))
+                 (if dot-pos
+                     (values (intern (subseq kw-str 0 dot-pos) :keyword)
+                             (intern (subseq kw-str (1+ dot-pos)) :keyword))
+                     keyword)))
+             (group-table (row)
+               "group the results of the select statement by table
+              returns hashmap
+                      key: table alias name (KEYWORD)
+                      value: property list (:id 1 :username \"taro\")"
+               (let ((tables (make-hash-table)))
+                 (loop for (column value) on row by #'cddr
+                       do (let (tbl-name
+                                col-name)
+                            (multiple-value-setq (tbl-name col-name) (split-keyword column))
+
+                            (let ((current-table (gethash tbl-name tables)))
+                              (setf (getf current-table col-name) value)
+                              (setf (gethash tbl-name tables) current-table))))
+                 tables)))
+
+      (loop for record in result
+            as one-record = (group-table record)
+            do (maphash #'(lambda (tbl rec)
+                            ;; check id is not null, to exclude records that could not be retrieved via outer join
+                            (when (getf rec :id)
+                              (let* ((table (gethash tbl all-table-records))
+                                     (record (getf table :id)))
+                                (unless record
+                                  (setf record (apply #'make-record-from (getf alias->model tbl) rec))
+                                  (setf (getf table (getf rec :id)) record)
+                                  (setf (gethash tbl all-table-records) table)))))
+                        one-record))
+      all-table-records)))
+
+

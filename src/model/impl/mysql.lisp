@@ -16,7 +16,8 @@
                 #:ensure-migration-table-impl
                 #:check-type-valid)
   (:import-from #:clails/model/base-model
-                #:fetch-columns-and-types-impl)
+                #:fetch-columns-and-types-impl
+                :fetch-columns-and-types-plist-impl)
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl
                 #:create-connection-pool-impl)
@@ -156,6 +157,29 @@
                           :type type
                           :db-cl-fn db-cl-fn
                           :cl-db-fn cl-db-fn)))))
+
+(defmethod fetch-columns-and-types-plist-impl ((database-type <database-type-mysql>) connection table)
+  (declare (ignore database-type))
+  ;; select column_name, column_type, data_type, character_maximum_length, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION from information_schema.columns where table_name = 'todo'
+  (let* ((query (dbi:prepare connection "select column_name, data_type from information_schema.columns where table_name = ? order by ordinal_position"))
+         (result (dbi:execute query (list table))))
+    (loop for row = (dbi:fetch result)
+          while row
+;;          collect (intern (snake->kebab (string-upcase (getf row :COLUMN_NAME))) :KEYWORD))))
+          append (let* ((name (intern (snake->kebab (string-upcase (getf row :COLUMN_NAME))) :KEYWORD))
+                         (access (intern (string-upcase (getf row :COLUMN_NAME)) :KEYWORD))
+                         (inv (cdr (assoc (string-downcase (babel:octets-to-string (getf row :DATA_TYPE))) *mysql-type-convert-functions* :test #'string=)))
+                         (type (if inv (getf inv :type)
+                                        *mysql-type-convert-unknown-type*))
+                         (db-cl-fn (if inv (getf inv :db-cl-fn)
+                                           *mysql-type-convert-unknown-function*))
+                         (cl-db-fn (if inv (getf inv :cl-db-fn)
+                                           *mysql-type-convert-unknown-function*)))
+                    (list name (list :name name
+                                     :access access
+                                     :type type
+                                     :db-cl-fn db-cl-fn
+                                     :cl-db-fn cl-db-fn))))))
 
 (defun gen-create-table (table columns)
   (format NIL "CREATE TABLE ~A (~{~A~^, ~})" (kebab->snake table)
