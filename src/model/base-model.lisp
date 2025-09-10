@@ -275,7 +275,7 @@ ex: (:id (:name :id
                                when check
                                  append check))
          (belongs-to-errors (loop for belongs-to in (getf options :belongs-to)
-                                 as check = (vlaidate-belongs-to belongs-to)
+                                 as check = (validate-belongs-to belongs-to)
                                  when check
                                    append check)))
 
