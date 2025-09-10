@@ -6,7 +6,8 @@
   (:import-from #:clails/model/connection
                 #:with-db-connection-direct)
   (:import-from #:clails/util
-                #:kebab->snake)
+                #:kebab->snake
+                #:symbol-from-string)
   (:import-from #:clails/helper/date-helper
                 #:view/datetime)
   (:import-from #:jonathan
@@ -159,6 +160,21 @@ ex: (:id (:name :id
                      (funcall (getf value :columns-fn) conn))
                (setf (getf value :columns2)
                      (funcall (getf value :columns-fn2) conn))
+
+               ;; has-many
+               (loop for has-many in (getf value :has-many)
+                     as model = (getf has-many :model)
+                     when (stringp model)
+                       do (setf (getf has-many :model)
+                                (symbol-from-string model)))
+
+               ;; belongs-to
+               (loop for belongs-to in (getf value :belongs-to)
+                     as model = (getf belongs-to :model)
+                     when (stringp model)
+                       do (setf (getf belongs-to :model)
+                                (symbol-from-string model)))
+
                (format t "done~%")))))
 
 (defun debug-table-information ()
@@ -176,12 +192,96 @@ ex: (:id (:name :id
         :columns2))
 
 
+
+#|
+
+(defmodel <account> (<base-model>)
+  (:table "account"
+   :has-many ((:model "<blog>"
+               :as :blogs
+               :foreign-key :account-id)
+              (:model "<comment>"
+               :as :comments
+               :foreign-key :account-id)
+              (:model "<comment>"
+               :as :approved-comments
+               :foreign-key :approved-id))))
+
+
+
+(defmodel <blog> (<base-model>)
+  (:table "blog"
+   :belongs-to ((:model "<account>"
+                 :column :account
+                 :key :account-id))
+   :has-many ((:model "<comment>"
+               :as comments
+               :foreign-key :blog-id))))
+
+(defmodel <comment> (<base-model>)
+  (:table "comment"
+   :belongs-to ((:model "<account>"
+                 :column :account
+                 :key :account-id)
+                (:model "<blog>"
+                 :column :blog
+                 :key :blog-id)
+                (:model "<account>"
+                 :column :approved-account
+                 :key :approved-id))))
+
+
+(query <blog>
+  :as :blog
+  :join ((:inner-join :account)
+         (:left-join :comments)
+         (:left-join :account :through :comments :as :comment-user)
+         (:left-join :approved-account :through :comments))
+|#
+
+
+(defun validate-has-many (val)
+  "returns missing mandatory keys"
+  (let (errors)
+    (unless (getf val :model)
+      (push :model errors))
+    (unless (getf val :as)
+      (push :as errors))
+    (unless (getf val :foreign-key)
+      (push :foreign-key errors))
+    errors))
+
+(defun validate-belongs-to (val)
+  "return missing madatory keys"
+  (let (errors)
+    (unless (getf val :model)
+      (push :model errors))
+    (unless (getf val :column)
+      (push :column errors))
+    (unless (getf val :key)
+      (push :key errors))
+    errors))
+
+
+
 (defmacro defmodel (class-name superclass options)
   (let* ((cls-name (intern (string `,class-name) *package*))
          (table-name (anaphora:aif (getf options :table)
                                    anaphora:it
                                    (model->tbl `,class-name)))
-         (fn-name (intern (format NIL "%MAKE-~A-INITFORM" `,class-name))))
+         (fn-name (intern (format NIL "%MAKE-~A-INITFORM" `,class-name)))
+         (has-many-errors (loop for has-many in (getf options :has-many)
+                               as check = (validate-has-many has-many)
+                               when check
+                                 append check))
+         (belongs-to-errors (loop for belongs-to in (getf options :belongs-to)
+                                 as check = (vlaidate-belongs-to belongs-to)
+                                 when check
+                                   append check)))
+
+    (when (or has-many-errors belongs-to-errors)
+      (error "defmodel ~A:~@[ :has-many not found following parameter: ~{~A~^, ~}~]~@[ :belongs-to not found following parameter: ~{~A~^, ~}~]" class-name has-many-errors belongs-to-errors))
+
     `(progn
        (defun ,fn-name ()
          (let ((result
