@@ -12,7 +12,9 @@
                                         ("star" :type :integer)))
           (create-table conn :table "comment"
                              :columns '(("comment" :type :string)
-                                        ("blog-id" :type :integer))))
+                                        ("blog-id" :type :integer)
+                                        ("comment-id" :type :integer)
+                                        ("approved-id" :type :integer))))
   :down #'(lambda (conn)
             (drop-table conn :table "comment")
             (drop-table conn :table "blog")

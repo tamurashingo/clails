@@ -113,5 +113,5 @@ returns the symbol. signals an error if a specified package is not found."
                         (find-package (string-upcase package-name))
                         *package*)))
       (if package
-          (intern (string-upbase symbol-name) package)
+          (intern (string-upcase symbol-name) package)
           (error "package ~S not found." package-name)))))

@@ -18,7 +18,8 @@
   (:export #:select
            #:make-record
            #:save
-           #:get-last-id-impl))
+           #:get-last-id-impl
+           #:build-model-instances))
 (in-package #:clails/model/query)
 
 
@@ -72,7 +73,7 @@
                          (parse-where where params)
                          nil))
          (sort (if order-by
-                   (parse-order-by order-by)
+                  (parse-order-by order-by)
                    nil)))
     (list :query (format NIL "SELECT ~{~A~^, ~} FROM ~A ~@[ WHERE ~A ~] ~@[ ORDER BY ~{~{~A~^ ~}~^, ~}~]" columns table-name conditions sort)
           :params (coerce params 'list))))
@@ -123,7 +124,7 @@
 
 (defun parse-exp (op exp params)
   (assert (= 2 (length exp)))
-  (let (x y)
+  (let (x y))
     (multiple-value-bind (col1 param1)
         (lexer (car exp))
       (setf x col1)
@@ -134,7 +135,7 @@
       (setf y col2)
       (when param2
         (vector-push param2 params)))
-    (format NIL "~A ~A ~A" x op y)))
+    (format NIL "~A ~A ~A" x op y))
 
 (defun parse-null (op exp params)
   (let (x)
@@ -195,9 +196,9 @@
         (columns-plist (clails/model/base-model::get-columns-plist model-name)))
     (loop for (key db-value) on db-values by #'cddr
           do (let* ((key (intern (snake->kebab key) :KEYWORD))
-                    (fn (getf (getf columns-plist key) :DB-CL-FN))
-                    (cl-val (funcall fn db-value)))
-              (setf (ref inst key) cl-val)))
+                    (fn (getf (getf columns-plist key) :DB-CL-FN)))
+              (setf (ref inst key)
+                    (funcall fn db-value))))
     inst))
 
 
@@ -345,25 +346,64 @@ query example:
           :initform nil)
    (offset :initarg :offset
            :initform nil)
-   ;; TODO: use *table-information* instead of make-instance
-   (inst :type 'clails/model/base-model::<base-model>)))
+   (inst :type 'clails/model/base-model::<base-model>)
+   (alias->model :initform (make-hash-table)
+                 :documentation "alias name to model symbol")))
 
-(defclass <join-query> (<query>)
-  ((join-type :initarg :join-type
-              :type keyword)))
+(defclass <join-query> ()
+  ((join-type :initarg :join-type :reader join-type)
+   (relation :initarg :relation :reader relation)
+   (through :initarg :through :initform nil :reader through)
+   (previous :initform nil :accessor previous-join)))
+
 
 
 (defmethod initialize-instance :after ((q <query>) &rest initargs)
   (declare (ignore initargs))
+  ;; Set up base instance and alias
   (let ((inst (make-instance (slot-value q 'model))))
     (setf (slot-value q 'inst) inst)
-
     (unless (slot-value q 'alias)
       (setf (slot-value q 'alias)
-            (slot-value inst 'clails/model/base-model::table-name)))))
+            (intern (symbol-name (slot-value q 'model)) :KEYWORD))))
+
+  ;; Link up :through joins
+  (let ((joins (slot-value q 'joins))
+        (join-objects (make-hash-table)))
+    (loop for j in joins do (setf (gethash (relation j) join-objects) j)))
+
+  ;; build alias->model maphash
+  (build-alias-map q))
+
+
+(defmethod build-alias-map ((query <query>))
+  (let* ((alias->model (slot-value query 'alias->model))
+         (base-alias (slot-value query 'alias))
+         (base-model (slot-value query 'model)))
+
+    (setf (gethash base-alias alias->model) base-model)
+
+    (loop for join-obj in (slot-value query 'joins)
+          do (let* ((target-alias (relation join-obj))
+                    (source-alias (or (through join-obj) base-alias))
+                    (source-model (gethash source-alias alias->model)))
+               (unless source-model
+                 (error "Could not resolve join source alias: ~A. Ensure joins are ordered correctly." source-alias))
+               (let* ((relations (getf (gethash source-model clails/model/base-model::*table-information*) :relations))
+                      (rel-info (gethash target-alias relations)))
+                 (unless rel-info
+                   (error "Relation `~A' not found for model `~A'" target-alias source-model))
+                 (let ((target-model (getf rel-info :model)))
+                   (setf (gethash target-alias alias->model) target-model)))))))
+
 
 
 (defmacro query (model &key as columns joins where order-by limit offset)
+  (unless as
+    (error ":as keyword is required for query macro."))
+  (unless (keywordp as)
+    (error "The value for :as must be a keyword (e.g., :blog)."))
+
   (labels ((expand-columns (grouped-columns)
              ;; ((blog :id :title :content)
              ;;  (use :id))
@@ -378,18 +418,11 @@ query example:
 
            (expand-joins (joins-list)
              (mapcar #'(lambda (join-spec)
-                         ;; join-spec (:inner-join <user> :as user :on ....)
-                         (let ((join-type (first join-spec))
-                               (details (rest join-spec)))
-                           ;; details -> (<user> :as user :on ...)
-                           (destructuring-bind (join-model &key as on) details
-                             ;; make `(list :inner-join (make-instance...))`
-                             `(list ',join-type
-                                    (make-instance '<join-query>
-                                                   :join-type ',join-type
-                                                   :model ',join-model
-                                                   :alias ',as
-                                                   :where ',on)))))
+                         (destructuring-bind (join-type relation &key through) join-spec
+                           `(make-instance '<join-query>
+                                           :join-type ',join-type
+                                           :relation ',relation
+                                           :through ',through)))
                      joins-list)))
     `(make-instance '<query>
                     :model ',model
@@ -406,49 +439,99 @@ query example:
   (let* ((q (generate-query query))
          (sql (getf q :query))
          (named-params (getf q :keywords)))
-    (clails/model/connection:with-db-connection (connection)
-      (dbi-cp:fetch-all
-       (dbi-cp:execute
-        (dbi-cp:prepare connection sql)
-        (generate-values named-params named-values))))))
+          ;; TODO: debug
+    (format t "debug: query: ~A~%" sql)
+    (format t "debug: params: ~A~%" named-params)
+    (let ((result (clails/model/connection:with-db-connection (connection)
+                    (dbi-cp:fetch-all
+                     (dbi-cp:execute
+                      (dbi-cp:prepare connection sql)
+                      (generate-values named-params named-values))))))
+      (build-model-instances query result))))
 
 
+(defmethod generate-join-sql ((join-obj <join-query>) base-model-alias alias->model)
+  (let* ((through-relation (through join-obj))
+         (source-alias (if through-relation
+                           through-relation
+                           base-model-alias))
+         (source-model (gethash source-alias alias->model)))
+    (unless source-model
+      (error "Could not determine source model for join: ~A" (relation join-obj)))
+    (let* ((relations (getf (gethash source-model clails/model/base-model::*table-information*) :relations)))
+      (unless relations
+        (error "Table information not found for model: ~A" source-model))
+      (let* ((rel-info (gethash (relation join-obj) relations)))
+        (unless rel-info
+          (error "Relation `~A` not found for model `~A`" (relation join-obj) source-model))
+        (let* ((target-model (getf rel-info :model))
+               (target-alias (relation join-obj))
+               (target-table-name (getf (gethash target-model clails/model/base-model::*table-information*) :table-name))
+               (on-clause (case (getf rel-info :type)
+                            (:belongs-to
+                             (format nil "~A.~A = ~A.id"
+                                     (kebab->snake source-alias)
+                                     (kebab->snake (getf rel-info :key))
+                                     (kebab->snake target-alias)))
+                            (:has-many
+                             (format nil "~A.id = ~A.~A"
+                                     (kebab->snake source-alias)
+                                     (kebab->snake target-alias)
+                                     (kebab->snake (getf rel-info :foreign-key)))))))
+          (format nil "~A ~A as ~A ON ~A"
+                   (case (join-type join-obj)
+                     (:inner-join "INNER JOIN")
+                     (:left-join "LEFT JOIN"))
+                   target-table-name
+                   (kebab->snake target-alias)
+                   on-clause))))))
+
+(defmethod resolve-joins ((query <query>))
+  (let ((base-model-alias (slot-value query 'alias))
+        (alias->model (slot-value query 'alias->model)))
+    (loop for join-obj in (slot-value query 'joins)
+          with joins-sql and keywords
+          do (let ((sql (generate-join-sql join-obj base-model-alias alias->model)))
+               (push sql joins-sql))
+          finally (return (nreverse joins-sql)))))
+
+(defmethod generate-query-columns ((query <query>) alias->model)
+  (if (slot-value query 'columns)
+      (slot-value query 'columns)
+      (loop for alias being the hash-key of (slot-value query 'alias->model)
+              using (hash-value model)
+            append (let ((inst (make-instance model)))
+                     (loop for column in (slot-value inst 'clails/model/base-model::columns)
+                           collect (list alias (getf column :name)))))))
 
 (defmethod generate-query ((query <query>))
-  (let ((table-name (slot-value (slot-value query 'inst) 'clails/model/base-model::table-name))
-        (alias (slot-value query 'alias))
-        (columns (mapcar #'(lambda (c)
-                             (column-pair-to-name c T))
-                         (generate-query-columns query)))
-        (joins-keywords (loop for join in (slot-value query 'joins)
-                              with joins and keywords
-                              do (multiple-value-bind (j kw)
-                                     (generate-join (cadr join))
-                                   (push j joins)
-                                   (push kw keywords))
-                              finally (return (list :joins (nreverse joins)
-                                                    :keywords  (flatten (nreverse keywords))))))
-        (where-keywords (multiple-value-bind (w kw)
-                            (parse-where-claude (slot-value query 'where))
-                          (list :where w
-                                :keywords kw)))
-        (order-by (generate-order-by (slot-value query 'order-by)))
-        (offset (generate-offset (slot-value query 'offset)))
-        (limit (generate-limit (slot-value query 'limit))))
+  (let* ((alias->model (slot-value query 'alias->model))
+         (base-alias (slot-value query 'alias))
+         (base-model (slot-value query 'model))
+         (base-table-name (getf (gethash base-model clails/model/base-model::*table-information*) :table-name)))
 
-    (list :query (format nil "SELECT ~{~A~^, ~} FROM ~A as ~A~@[ ~{~A~^ ~}~]~@[ WHERE ~A~]~@[ ORDER BY ~{~A~^, ~}~]~@[ LIMIT ~A~]~@[ OFFSET ~A~]"
-                         columns
-                         table-name
-                         alias
-                         (getf joins-keywords :joins)
-                         (getf where-keywords :where)
-                         order-by
-                         (getf limit :limit)
-                         (getf offset :offset))
-          :keywords (append (ensure-list (getf joins-keywords :keywords))
-                            (ensure-list (getf where-keywords :keywords))
-                            (ensure-list (getf limit :keyword))
-                            (ensure-list (getf offset :keyword))))))
+    (let* ((joins (resolve-joins query))
+           (columns (mapcar #'(lambda (c) (column-pair-to-name c T))
+                            (generate-query-columns query alias->model)))
+           (where-keywords (multiple-value-bind (w kw)
+                               (parse-where-claude (slot-value query 'where))
+                             (list :where w :keywords kw)))
+           (order-by (generate-order-by (slot-value query 'order-by)))
+           (offset (generate-offset (slot-value query 'offset)))
+           (limit (generate-limit (slot-value query 'limit))))
+
+      (list :query (format nil "SELECT ~{~A~^, ~} FROM ~A as ~A~@[ ~A~]~@[ WHERE ~A~]~@[ ORDER BY ~{~A~^, ~}~]~@[ LIMIT ~A~]~@[ OFFSET ~A~]"
+                           columns
+                           base-table-name
+                           (kebab->snake base-alias)
+                           (format nil "~{~A~^ ~}" joins)
+                           (getf where-keywords :where)
+                           order-by
+                           (getf limit :limit)
+                           (getf offset :offset))
+            :keywords (flatten (append (ensure-list (getf where-keywords :keywords))
+                                       (ensure-list (getf limit :keyword))
+                                       (ensure-list (getf offset :keyword))))))))
 
 
 (defun generate-values (named-params named-values)
@@ -460,49 +543,11 @@ query example:
         collect (getf named-values key)))
 
 
-(defmethod generate-query-columns ((query <query>))
-  (if (slot-value query 'columns)
-      (slot-value query 'columns)
-      (mapcan #'(lambda (q)
-                  (fetch-columns2 q))
-              (append
-               (ensure-list query)
-               (mapcar #'(lambda (j)
-                           ;; j -> (:inner-join (make-instance '<subquery> ...))
-                           (cadr j))
-                       (slot-value query 'joins))))))
-
-
-;; TODO: rename
-(defmethod fetch-columns2 ((query <query>))
-  (let ((inst (slot-value query 'inst))
-        (alias (slot-value query 'alias)))
-    (loop for column in (slot-value inst 'clails/model/base-model::columns)
-          collect (list alias (getf column :name)))))
-
-
-(defmethod generate-join ((join-query <join-query>))
-  (let ((join-type (slot-value join-query 'join-type))
-        (table-name (slot-value (slot-value join-query 'inst) 'clails/model/base-model::table-name))
-        (alias (kebab->snake (slot-value join-query 'alias))))
-    (multiple-value-bind (where-claude keywords)
-        (parse-where-claude (slot-value join-query 'where))
-      (values
-       (format nil "~A ~A as ~A on ~A"
-               (cond ((eq join-type :inner-join) "INNER JOIN")
-                     ((eq join-type :left-join) "LEFT JOIN")
-                     (t (error "not implement:~A" join-type)))
-               table-name
-               alias
-               where-claude)
-       keywords))))
-
-
 (defun parse-where-claude (where)
   (if (not where)
       nil
       (let ((elm (car where)))
-        (cond ((find elm '(= < <= > >= <> !=))
+        (cond ((find elm '(:= :< :<= :> :>= :<> :!=))
                (parse-exp2 elm (cdr where)))
               ((eq elm :like)
                (parse-exp2 "LIKE" (cdr where)))
@@ -520,7 +565,7 @@ query example:
                      when keywords
                        collect keywords into keywords-list
                      finally (return (values (format nil "(~{~A~^ AND ~})" exp-list)
-                                             keywords-list))))
+                                             (flatten keywords-list)))))
               ((eq elm :or)
                (loop for expression in (cdr where)
                      with exp and keywords
@@ -529,7 +574,7 @@ query example:
                      when keywords
                        collect keywords into keywords-list
                      finally (return (values (format nil "(~{~A~^ OR ~})" exp-list)
-                                             keywords-list))))
+                                             (flatten keywords-list)))))
               (t
                (error "where claude: parse error `~A`" elm))))))
 
@@ -593,8 +638,7 @@ query example:
     (blog :id))
    => (\"BLOG.STAR DESC\" \"BLOG.ID\")"
   (flet ((generate (p)
-           (when (not (and (symbolp (first p))
-                           (keywordp (second p))))
+           (when (not (and (listp p) (>= (length p) 2) (symbolp (first p)) (keywordp (second p))))
              (error "parse error: order-by: expect (symbol :keyword) but got ~S" p))
            (let ((sort-order (third p)))
              (when (not (or (null sort-order)
@@ -602,7 +646,7 @@ query example:
                             (eq sort-order :DESC)))
                (error "parse error: order-by: expect :ASC or :DESC but got ~S" sort-order))
              (format nil "~A~@[ ~A~]" (column-pair-to-name p)
-                                      sort-order))))
+                     sort-order))))
     (if (null params)
         (nreverse order)
         (let ((p (car params)))
@@ -634,61 +678,128 @@ query example:
          (list :limit limit
                :keyword nil))))
 
+;;;
+;;; New functions for processing query results
+;;;
 
-(defmethod collect-result ((query <query>) result)
-  (let ((all-table-records (make-hash-table))
-    #|
-       all-table-records
-         key: alias table name (keyword)
-         value: property list (key: id, value: record instance)
-       (:account (1 <account>)
-        :blog    (1 <blog>
-                  2 <blo>)
-        :comment (1 <comment>
-                  2 <comment>))
-     |#
-        (alias->model (flatten (list (intern (symbol-name (slot-value query 'alias)) :keyword) (slot-value query 'model)
-                                     (loop for join in (slot-value query 'joins)
-                                           collect (list (intern (symbol-name (slot-value (cadr join) 'alias)) :KEYWORD)
-                                                         (slot-value (cadr join) 'model)))))))
+(defun split-db-column-name (keyword-name)
+  "Splits a keyword like :|TABLE.COLUMN| into two keywords, :TABLE and :COLUMN.
+   The keyword comes from the database driver."
+  (let* ((str (string keyword-name))
+         (dot-pos (position #\. str)))
+    (if dot-pos
+        (values (intern (snake->kebab (string-upcase (subseq str 0 dot-pos))) :keyword)
+                (intern (snake->kebab (string-upcase (subseq str (1+ dot-pos)))) :keyword))
+        (error "Invalid column name from DB: ~A. Expected 'ALIAS.COLUMN' format." keyword-name))))
 
+(defun group-row-data-by-alias (row-plist)
+  "Groups a flat plist of results from the DB into a hash table where keys are
+   table aliases and values are plists of column data for that alias."
+  (let ((grouped (make-hash-table)))
+    ;; Group data into alists first to handle multiple columns for the same alias
+    (loop for (key val) on row-plist by #'cddr
+          do (multiple-value-bind (alias col) (split-db-column-name key)
+               (push (cons col val) (gethash alias grouped))))
+    ;; Convert the alists to plists for easier use with getf
+    (maphash #'(lambda (alias alist)
+                 (setf (gethash alias grouped) (alexandria:alist-plist (nreverse alist))))
+             grouped)
+    grouped))
 
-    (labels ((split-keyword (keyword)
-               "split :TABLE.COLUMN into :TABLE and :COLUMN"
-               (let* ((kw-str (string keyword))
-                      (dot-pos (position #\. kw-str)))
-                 (if dot-pos
-                     (values (intern (subseq kw-str 0 dot-pos) :keyword)
-                             (intern (subseq kw-str (1+ dot-pos)) :keyword))
-                     keyword)))
-             (group-table (row)
-               "group the results of the select statement by table
-              returns hashmap
-                      key: table alias name (KEYWORD)
-                      value: property list (:id 1 :username \"taro\")"
-               (let ((tables (make-hash-table)))
-                 (loop for (column value) on row by #'cddr
-                       do (let (tbl-name
-                                col-name)
-                            (multiple-value-setq (tbl-name col-name) (split-keyword column))
+(defun hydrate-instance (model-class data-plist record-cache)
+  "Creates a model instance from a plist of data, or retrieves it from cache if it
+   has already been created for the same ID."
+  (let ((id (getf data-plist :ID)))
+    (when id
+      (let* ((model-cache (or (gethash model-class record-cache)
+                              (setf (gethash model-class record-cache) (make-hash-table :test #'eql))))
+             (instance (gethash id model-cache)))
+        (unless instance
+          (setf instance (apply #'make-record-from model-class data-plist))
+          (setf (gethash id model-cache) instance))
+        instance))))
 
-                            (let ((current-table (gethash tbl-name tables)))
-                              (setf (getf current-table col-name) value)
-                              (setf (gethash tbl-name tables) current-table))))
-                 tables)))
+(defun hydrate-instances-for-row (grouped-data alias->model record-cache)
+  "For a single result row (grouped by alias), creates or retrieves all
+   corresponding model instances."
+  (let ((hydrated-row-instances (make-hash-table :test #'eq)))
+    (maphash
+     #'(lambda (alias data-plist)
+         (let ((model-class (gethash alias alias->model)))
+           (when model-class
+             (let ((instance (hydrate-instance model-class data-plist record-cache)))
+               (when instance
+                 (setf (gethash alias hydrated-row-instances) instance))))))
+     grouped-data)
+    hydrated-row-instances))
 
-      (loop for record in result
-            as one-record = (group-table record)
-            do (maphash #'(lambda (tbl rec)
-                            ;; check id is not null, to exclude records that could not be retrieved via outer join
-                            (when (getf rec :id)
-                              (let* ((table (gethash tbl all-table-records))
-                                     (record (getf table :id)))
-                                (unless record
-                                  (setf record (apply #'make-record-from (getf alias->model tbl) rec))
-                                  (setf (getf table (getf rec :id)) record)
-                                  (setf (gethash tbl all-table-records) table)))))
-                        one-record))
-      all-table-records)))
+(defmethod link-row-instances ((query <query>) hydrated-row-instances)
+  "Links the model instances for a single row together based on the query's
+   join definitions and the model's relation metadata.
+   ex: #{ :blog =>    <blog {:id 1, :account-id: 1001, :account => (unbound)>
+          :account => <account {:id 1001, :username \"user1\", :blogs => (unbound)>
+       =>
+       #{ :blog =>    <blog {:id 1, :account-id: 1001, :account => <instnact of account>
+          :account => <account {:id 1001, :username \"user1\", :blogs => (<instance of blog>)> }
+"
+  (let ((alias->model (slot-value query 'alias->model))
+        (base-alias (slot-value query 'alias)))
+    (loop for join-obj in (slot-value query 'joins)
+          do (let* ((target-alias (relation join-obj))
+                    (source-alias (or (through join-obj) base-alias))
+                    (source-inst (gethash source-alias hydrated-row-instances))
+                    (target-inst (gethash target-alias hydrated-row-instances))
+                    (source-model (gethash source-alias alias->model)))
+               (when (and source-inst target-inst source-model)
+                 (let* ((relations (getf (gethash source-model clails/model/base-model::*table-information*) :relations))
+                        (rel-info (gethash target-alias relations)))
+                   (when rel-info
+                     (case (getf rel-info :type)
+                       (:belongs-to
+                        (setf (ref source-inst (getf rel-info :column)) target-inst))
+                       (:has-many
+                        ;; pushnew avoids duplicates if the same child is joined multiple times
+                        (pushnew target-inst (ref source-inst (getf rel-info :as)) :test #'eq))))))))))
+
+(defun finalize-has-many-relations (instances)
+  "Ensures that for a list of instances, any :has-many relation slots that were not
+   populated during result processing are initialized to NIL instead of being unbound."
+  (loop for inst in instances
+        do (let* ((model (class-name (class-of inst)))
+                  (relations (getf (gethash model clails/model/base-model::*table-information*) :relations)))
+             (when relations
+               (maphash #'(lambda (alias rel-info)
+                            (when (eq (getf rel-info :type) :has-many)
+                              ;; Check if the slot is bound. If not, set it to nil.
+                              (multiple-value-bind (val foundp) (gethash alias (slot-value inst 'clails/model/base-model::data))
+                                (declare (ignore val))
+                                (unless foundp
+                                  (setf (ref inst alias) nil)))))
+                        relations))))
+  instances)
+
+(defun build-model-instances (query result)
+  "Processes a raw database result set for a given <query> object and constructs
+   a graph of nested model instances."
+  (let* ((record-cache (make-hash-table :test #'eq)) ; Cache for all instances across all rows {model-class -> {id -> instance}}
+         (main-instances (make-hash-table :test #'eql))) ; Cache for top-level instances {id -> instance}
+
+    ;; Process each row from the database result
+    (loop for row-plist in result
+          do (let* ((grouped-data (group-row-data-by-alias row-plist))
+                    (hydrated-row-instances (hydrate-instances-for-row grouped-data (slot-value query 'alias->model) record-cache)))
+
+               ;; Link the instances created/retrieved for this specific row
+               (link-row-instances query hydrated-row-instances)
+
+               ;; Identify the main instance for this row and add it to our final set
+               (let ((main-inst (gethash (slot-value query 'alias) hydrated-row-instances)))
+                 (when main-inst
+                   (setf (gethash (ref main-inst :ID) main-instances) main-inst)))))
+
+    ;; Collect the unique main instances into a list
+    (let ((final-results (loop for inst being the hash-value of main-instances collect inst)))
+      ;; Post-process to ensure has-many slots are initialized
+      (finalize-has-many-relations final-results))))
 
 
