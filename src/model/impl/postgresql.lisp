@@ -191,20 +191,20 @@
     (loop for row = (dbi:fetch result)
           while row
 ;;          collect (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))))
-          collect (let* ((name (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))
-                         (access (intern (string-downcase (getf row :|column_name|)) :KEYWORD))
-                         (inv (cdr (assoc (getf row :|data_type|) *postgresql-type-convert-functions* :test #'string=)))
-                         (type (if inv (getf inv :type)
-                                       *postgresql-type-convert-unknown-type*))
-                         (db-cl-fn (if inv (getf inv :db-cl-fn)
-                                           *postgresql-type-convert-unknown-function*))
-                         (cl-db-fn (if inv (getf inv :cl-db-fn)
-                                           *postgresql-type-convert-unknown-function*)))
-                    (list name (list :name name
-                                     :access access
-                                     :type type
-                                     :db-cl-fn db-cl-fn
-                                     :cl-db-fn cl-db-fn))))))
+          append (let* ((name (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))
+                        (access (intern (string-downcase (getf row :|column_name|)) :KEYWORD))
+                        (inv (cdr (assoc (getf row :|data_type|) *postgresql-type-convert-functions* :test #'string=)))
+                        (type (if inv (getf inv :type)
+                                  *postgresql-type-convert-unknown-type*))
+                        (db-cl-fn (if inv (getf inv :db-cl-fn)
+                                      *postgresql-type-convert-unknown-function*))
+                        (cl-db-fn (if inv (getf inv :cl-db-fn)
+                                      *postgresql-type-convert-unknown-function*)))
+                   (list name (list :name name
+                                    :access access
+                                    :type type
+                                    :db-cl-fn db-cl-fn
+                                    :cl-db-fn cl-db-fn))))))
 
 (defun gen-create-table (table columns)
   (format NIL "CREATE TABLE ~A (~{~A~^, ~})" (kebab->snake table)

@@ -116,7 +116,8 @@ ex: (:id (:name :id
          (relations-ht (getf table-info :relations)))
 
     ;; Check if the key is a DB column or a defined relation alias
-    (if (or (getf columns-plist key)
+    (if (or (find key '(:id :created-at :updated-at))
+            (getf columns-plist key)
             (and relations-ht (gethash key relations-ht)))
         ;; If it's a valid key, get the value from the instance's data hash-table
         ;; (gethash returns nil if the key doesn't exist)

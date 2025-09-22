@@ -186,22 +186,22 @@
     (loop for row = (dbi:fetch result)
           while row
 ;;          collect (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))))
-          collect (let* ((name (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))
-                         (access (intern (string-downcase (getf row :|name|)) :KEYWORD))
-                         ; ex: varcahr(255) -> varchar
-                         (column-type (car (str:split "(" (string-downcase (getf row :|type|)))))
-                         (inv (cdr (assoc column-type *sqlite3-type-convert-functions* :test #'string=)))
-                         (type (if inv (getf inv :type)
-                                       *sqlite3-type-convert-unknown-type*))
-                         (db-cl-fn (if inv (getf inv :db-cl-fn)
-                                           *sqlite3-type-convert-unknown-function*))
-                         (cl-db-fn (if inv (getf inv :cl-db-fn)
-                                           *sqlite3-type-convert-unknown-function*)))
-                    (list name (list :name name
-                                     :access access
-                                     :type type
-                                     :db-cl-fn db-cl-fn
-                                     :cl-db-fn cl-db-fn))))))
+          append (let* ((name (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))
+                        (access (intern (string-downcase (getf row :|name|)) :KEYWORD))
+                        ; ex: varcahr(255) -> varchar
+                        (column-type (car (str:split "(" (string-downcase (getf row :|type|)))))
+                        (inv (cdr (assoc column-type *sqlite3-type-convert-functions* :test #'string=)))
+                        (type (if inv (getf inv :type)
+                                  *sqlite3-type-convert-unknown-type*))
+                        (db-cl-fn (if inv (getf inv :db-cl-fn)
+                                      *sqlite3-type-convert-unknown-function*))
+                        (cl-db-fn (if inv (getf inv :cl-db-fn)
+                                      *sqlite3-type-convert-unknown-function*)))
+                   (list name (list :name name
+                                    :access access
+                                    :type type
+                                    :db-cl-fn db-cl-fn
+                                    :cl-db-fn cl-db-fn))))))
 
 (defun gen-create-table (table columns)
   (format NIL "CREATE TABLE ~A (~{~A~^, ~})" (kebab->snake table)
