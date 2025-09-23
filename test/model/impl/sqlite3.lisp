@@ -27,7 +27,7 @@
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-sqlite3>))
    (setf clails/environment:*project-environment* :test)
    (setf clails/environment:*database-config* `(:test (:database-name ,(format NIL "~A/volumes/clails_test.sqlite3" (env-or-default "CLAILS_SQLITE3_DATABASE" "/app")))))
-   (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+   (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test/migration-test"))
    (uiop:setup-temporary-directory)
    (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
    (setf clails/environment::*project-dir* uiop:*temporary-directory*))
@@ -83,11 +83,15 @@
 
 
 (deftest defmodel-sqlite3
-    (defmodel <todo> (<base-model>))
+  (defmodel <todo> (<base-model>)
+    ())
+
+  (clails/model/base-model:initialize-table-information)
+  (clails/model/base-model::debug-table-information)
 
   (setf todo (make-instance '<todo>))
 
-(clails/model/base-model::show-model-columns todo)
+  (clails/model/base-model::show-model-columns todo)
 
   ;; check member field
   (ok (null (ref todo :id)))

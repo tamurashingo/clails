@@ -6,7 +6,8 @@
   (:import-from #:clails/model/connection
                 #:with-db-connection-direct)
   (:import-from #:clails/util
-                #:kebab->snake)
+                #:kebab->snake
+                #:symbol-from-string)
   (:import-from #:clails/helper/date-helper
                 #:view/datetime)
   (:import-from #:jonathan
@@ -16,7 +17,10 @@
            #:validate
            #:defmodel
            #:fetch-columns-and-types-impl
-           #:ref))
+           #:fetch-columns-and-types-plist-impl
+           #:ref
+           #:ref-in
+           #:initialize-table-information))
 (in-package #:clails/model/base-model)
 
 
@@ -46,6 +50,17 @@
        :access \"TITLE\"
        :type :text
        :function #'babel:octets-to-string))")
+   (columns2 :documentation "property list
+ex: (:id (:name :id
+          :access \"ID\"
+          :type :integer
+          :db-cl-fn #'identity
+          :cl-db-fn #'identity)
+     :created-at (:name :created-at
+                  :access \"CREATED_AT\"
+                  :type :datetime
+                  :db-cl-fn #'identity
+                  :cl-db-fn #'identity))")
    (table-name :documentation "database table name")
    (save-p :initform nil)))
 
@@ -95,20 +110,62 @@
 
 
 (defmethod ref ((inst <base-model>) key)
-  (multiple-value-bind (value present-p)
-      (gethash key (slot-value inst 'data))
-    (when (not present-p)
-      (error "not found slot name: ~A" key))
-    value))
+  (let* ((class-name (class-name (class-of inst)))
+         (table-info (gethash class-name clails/model/base-model::*table-information*))
+         (columns-plist (getf table-info :columns2))
+         (relations-ht (getf table-info :relations)))
+
+    ;; Check if the key is a DB column or a defined relation alias
+    (if (or (find key '(:id :created-at :updated-at))
+            (getf columns-plist key)
+            (and relations-ht (gethash key relations-ht)))
+        ;; If it's a valid key, get the value from the instance's data hash-table
+        ;; (gethash returns nil if the key doesn't exist)
+        (gethash key (slot-value inst 'data))
+        ;; Otherwise, throw an error as intended
+        (error "not found slot name: `~A` is not a column or a defined relation in model `~A`"
+               key
+               class-name))))
 
 (defmethod (setf ref) (new-value (inst <base-model>) key)
-  (multiple-value-bind (value present-p)
-      (gethash key (slot-value inst 'data))
-    (declare (ignorable value))
-    (unless present-p
-      (error "not found slot name: ~A in model ~A" key (class-name (class-of inst)))))
   (setf (gethash key (slot-value inst 'data))
         new-value))
+
+
+(defmacro ref-in (instance &rest path)
+  "Deeply accesses nested model relations.
+Path segments can be:
+- a keyword for a relation (e.g., :comments)
+- a number for an index (e.g., 0)
+- a symbol bound to an index
+- a list for a function call (e.g., (nth 0))
+
+Example: (ref-in blog :comments 0 :approved-account)"
+  (let ((expansion instance))
+    (dolist (segment path)
+      (setf expansion
+            (cond
+              ((keywordp segment)
+               `(ref ,expansion ,segment))
+              ((listp segment)
+               `(,(car segment) ,expansion ,@(cdr segment)))
+              (t ;; Assume number or symbol for list index
+               `(nth ,segment ,expansion)))))
+    expansion))
+
+(defsetf ref-in (instance &rest path) (new-value)
+  "Setf expander for ref-in."
+  (let* ((last-segment (car (last path)))
+         (initial-path (butlast path))
+         ;; Recursively build the accessor for the second-to-last object
+         (second-to-last-obj `(ref-in ,instance ,@initial-path)))
+    (cond
+      ((keywordp last-segment)
+       `(setf (ref ,second-to-last-obj ,last-segment) ,new-value))
+      ((listp last-segment)
+       `(setf (,(car last-segment) ,second-to-last-obj ,@(cdr last-segment)) ,new-value))
+      (t
+       `(setf (nth ,last-segment ,second-to-last-obj) ,new-value)))))
 
 
 (defun show-model-data (model)
@@ -134,23 +191,172 @@
          "")
       "")))
 
-(defmacro defmodel (cls-name superclass &optional options)
-  (let ((table-name (anaphora:aif (getf options :table)
-                                  anaphora:it
-                                  (model->tbl cls-name)))
-        (fn-name (intern (format NIL "%MAKE-~A-INITFORM" cls-name))))
+(defparameter *table-information* (make-hash-table))
+
+(defun initialize-table-information ()
+  (with-db-connection-direct (conn)
+    (loop for key being each hash-key of *table-information*
+            using (hash-value value)
+          do (progn
+               (format t "initializing ~A ... " key)
+               (setf (getf value :columns)
+                     (funcall (getf value :columns-fn) conn))
+               (setf (getf value :columns2)
+                     (funcall (getf value :columns-fn2) conn))
+
+               ;; initialize relations
+               (let ((relations (getf value :relations)))
+                 (when relations
+                   (maphash (lambda (alias rel-info)
+                              (declare (ignore alias))
+                              (let ((model (getf rel-info :model)))
+                                (when (stringp model)
+                                  (setf (getf rel-info :model)
+                                        (symbol-from-string model)))))
+                            relations)))
+               (format t "done~%")))))
+
+(defun debug-table-information ()
+  (loop for key being each hash-key of *table-information*
+          using (hash-value value)
+        do (format t "key:~A, value:~A" key value)))
+
+
+(defun get-columns (model-name)
+  (getf (gethash model-name clails/model/base-model::*table-information*)
+        :columns))
+
+(defun get-columns-plist (model-name)
+  (getf (gethash model-name clails/model/base-model::*table-information*)
+        :columns2))
+
+
+
+#|
+
+(defmodel <account> (<base-model>)
+  (:table "account"
+   :relations ((:has-many "<blog>"
+                :as :blogs
+                :foreign-key :account-id)
+               (:has-many "<comment>"
+                :as :comments
+                :foreign-key :approved-id))))
+
+(defmodel <blog> (<base-model>)
+  (:table "blog"
+   :relations ((:belongs-to "<account>"
+                :column :account
+                :key :account-id)
+               (:has-many "<comment>"
+                :as :comments
+                :foreign-key :blog-id))))
+
+(defmodel <comment> (<base-model>)
+  (:table "comment"
+   :relations ((:belongs-to "<account>"
+               :column :approved-account
+               :key :approved-id)
+              (:belongs-to "<blog>"
+               :column :blog
+               :key :blog-id))))
+
+
+(query <blog>
+  :as :blog
+  :joins ((:inner-join :account)
+          (:left-join :comments)
+          (:left-join :approved-account :through :comments))
+  :where (> (:blog :star) 0))
+
+|#
+
+
+(defun validate-relation (val)
+  "returns missing mandatory keys"
+  (let (errors)
+    (unless (listp val) (return-from validate-relation '(:invalid-format)))
+    (let ((type (first val))
+          (model (second val))
+          (options (cddr val)))
+      (unless (stringp model) (push :model errors))
+      (case type
+        (:has-many
+         (unless (getf options :as) (push :as errors))
+         (unless (getf options :foreign-key) (push :foreign-key errors)))
+        (:belongs-to
+         (unless (getf options :column) (push :column errors))
+         (unless (getf options :key) (push :key errors)))
+        (otherwise (push :type errors))))
+    errors))
+
+
+(defmacro defmodel (class-name superclass options)
+  (let* ((cls-name (intern (string `,class-name) *package*))
+         (table-name (anaphora:aif (getf options :table)
+                                   anaphora:it
+                                   (model->tbl `,class-name)))
+         (fn-name (intern (format NIL "%MAKE-~A-INITFORM" `,class-name)))
+         (relations (getf options :relations))
+         (errors nil)
+         (relations-ht (make-hash-table :test #'eq)))
+
+    (loop for rel in relations
+          do (let* ((type (first rel))
+                    (validation-errors (validate-relation rel)))
+               (if validation-errors
+                   (push (format nil "Invalid relation ~S. Missing keys: ~A" rel validation-errors) errors)
+                   (let* ((options (cddr rel))
+                          (alias (case type
+                                   (:has-many (getf options :as))
+                                   (:belongs-to (getf options :column)))))
+                     (setf (gethash alias relations-ht)
+                           (list* :type type
+                                  :model (second rel)
+                                  options))))))
+    (when errors
+      (error "defmodel ~A:~{~%  ~A~}" class-name (reverse errors)))
+
     `(progn
        (defun ,fn-name ()
          (let ((result
                  (with-db-connection-direct (conn)
                    (fetch-columns-and-types-impl *database-type* conn ,table-name))))
            result))
+
        (defclass ,cls-name ,superclass
          ((table-name :initform ,table-name)
-          (columns :initform (,fn-name)))))))
+          (columns :initform (clails/model/base-model::get-columns ',cls-name))
+          (columns2 :initform (clails/model/base-model::get-columns ',cls-name))))
 
-(defgeneric fetch-columns-and-types-impl (database-type connection tabole)
+       (setf (gethash  ',cls-name clails/model/base-model::*table-information*)
+             (list :table-name ,table-name
+                   :columns-fn #'(lambda (conn)
+                                   (clails/model/base-model::fetch-columns-and-types-impl clails/environment:*database-type*  conn ,table-name))
+                   :columns-fn2 #'(lambda (conn)
+                                    (clails/model/base-model::fetch-columns-and-types-plist-impl clails/environment:*database-type* conn ,table-name))
+                   :columns nil
+                   :columns2 nil
+                   :relations ,relations-ht)))))
+
+
+(defgeneric fetch-columns-and-types-impl (database-type connection table)
   (:documentation "Implemantation of fetch column and its type"))
+
+(defgeneric fetch-columns-and-types-plist-impl (database-type connection table)
+  (:documentation "Implemantation of fetch column and its type plist
+ex: (:id (:name :id
+          :access \"ID\"
+          :type :integer
+          :db-cl-fn #'identity
+          :cl-db-fn #'identity)
+     :created-at (:name :created-at
+                  :access \"CREATED_AT\"
+                  :type :datetime
+                  :db-cl-fn #'db-datetime->cl-datetime
+                  :cl-db-fn #'cl-datetime->db-datetime)
+     .....)
+"))
 
 
 ;;

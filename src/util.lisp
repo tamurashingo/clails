@@ -11,8 +11,7 @@
 
 (defun kebab->snake (s)
   "convert KEBAB-CASE to SNAKE_CASE"
-  (assert (or (and (symbolp s)
-                   (not (keywordp s)))
+  (assert (or (symbolp s)
               (stringp s)))
 
   (let ((str (if (symbolp s)
@@ -22,8 +21,7 @@
 
 (defun snake->kebab (s)
   "convert SNAKE_CASE to KEBAB-CASE"
-  (assert (or (and (symbolp s)
-                   (not (keywordp s)))
+  (assert (or (symbolp s)
               (stringp s)))
 
   (let ((str (if (symbolp s)
@@ -101,3 +99,19 @@ Return t if key exists in plist. otherwise, returns nil.
 
 (defun now ()
   (get-universal-time))
+
+
+(defun symbol-from-string (str)
+  "finds or interns a symbol from a string.
+- \"package:symbol\" or \"package::symbol\": interns in the specified package.
+- \"symbol\": interns in the current package (*package*).
+returns the symbol. signals an error if a specified package is not found."
+  (let ((parts (cl-ppcre:split "::?" str)))
+    (let* ((package-name (if (= (length parts) 2) (first parts) nil))
+           (symbol-name (if package-name (second parts) (first parts)))
+           (package (if package-name
+                        (find-package (string-upcase package-name))
+                        *package*)))
+      (if package
+          (intern (string-upcase symbol-name) package)
+          (error "package ~S not found." package-name)))))
