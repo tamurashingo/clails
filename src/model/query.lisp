@@ -26,41 +26,6 @@
 (in-package #:clails/model/query)
 
 
-
-(defun select (model-name &key where order-by connection)
-  "Given a model name, returns instances that match the conditions
-(select '<todo>) => (#<TODO> #<TODO> #<TODO>)
-(select '<todo> :where '(= id 1)) => (#<TODO>)
-(select '<todo> :where '(or (= id 1)
-                            (= done false))) => (#<TODO> #<TODO>)
-(select '<todo> :order-by '(id))
-(select '<todo> :order-by '((id :desc) (created-at :asc)))
-"
-  (let* ((inst (make-instance model-name))
-         (select (generate-select-query inst where order-by))
-         (body #'(lambda (connection)
-                   (let ((result (dbi-cp:fetch-all
-                                  (dbi-cp:execute
-                                   (dbi-cp:prepare connection (getf select :query))
-                                   (getf select :params)))))
-                     (loop for row in result
-                           collect (let ((ret (make-instance model-name)))
-                                     (loop for column in (slot-value ret 'clails/model/base-model::columns)
-                                           do (let ((name (getf column :name))
-                                                    (access (getf column :access))
-                                                    (fn (getf column :db-cl-fn)))
-                                                (setf (ref ret name)
-                                                      (funcall fn (getf row access)))))
-                                     ret))))))
-    ;; TODO: debug
-    (format t "debug: query: ~A~%" (getf select :query))
-    (format t "debug: params: ~A~%" (getf select :params))
-    ;; TODO: get current thread connection
-    (if connection
-        (funcall body connection)
-        (clails/model/connection:with-db-connection (connection)
-          (funcall body connection)))))
-
 (defmethod save ((inst <base-model>) &key connection)
   (validate inst)
   (unless (has-error-p inst)
