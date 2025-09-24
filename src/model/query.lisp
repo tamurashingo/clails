@@ -10,7 +10,8 @@
   (:import-from #:clails/model/base-model
                 #:<base-model>
                 #:validate
-                #:ref)
+                #:ref
+                #:has-error-p)
   (:import-from #:clails/util
                 #:kebab->snake
                 #:snake->kebab
@@ -19,6 +20,8 @@
            #:make-record
            #:save
            #:get-last-id-impl
+           #:query
+           #:execute-query
            #:build-model-instances))
 (in-package #:clails/model/query)
 
@@ -59,9 +62,11 @@
           (funcall body connection)))))
 
 (defmethod save ((inst <base-model>) &key connection)
-  (if (ref inst :id)
-      (update1 inst :connection connection)
-      (insert1 inst :connection connection)))
+  (validate inst)
+  (unless (has-error-p inst)
+    (if (ref inst :id)
+        (update1 inst :connection connection)
+        (insert1 inst :connection connection))))
 
 (defun generate-select-query (inst where order-by)
   (let* ((params (make-array (length where)
@@ -634,12 +639,12 @@ query example:
 
 
 (defun generate-order-by (params &optional order)
-  "((blog :star :desc)
-    (blog :id))
+  "((:blog :star :desc)
+    (:blog :id))
    => (\"BLOG.STAR DESC\" \"BLOG.ID\")"
   (flet ((generate (p)
-           (when (not (and (listp p) (>= (length p) 2) (symbolp (first p)) (keywordp (second p))))
-             (error "parse error: order-by: expect (symbol :keyword) but got ~S" p))
+           (when (not (and (listp p) (>= (length p) 2) (keywordp (first p)) (keywordp (second p))))
+             (error "parse error: order-by: expect (:keyword :keyword) but got ~S" p))
            (let ((sort-order (third p)))
              (when (not (or (null sort-order)
                             (eq sort-order :ASC)
