@@ -19,7 +19,12 @@
            #:fetch-columns-and-types-impl
            #:fetch-columns-and-types-plist-impl
            #:ref
+           #:ref-error
            #:ref-in
+           #:has-dirty-p
+           #:has-error-p
+           #:clear-error
+           #:clear-dirty-flag
            #:initialize-table-information))
 (in-package #:clails/model/base-model)
 
@@ -27,6 +32,10 @@
 (defclass <base-model> ()
   ((data :initform (make-hash-table :test #'eq)
          :documentation "A hash table that holds the columns (:key) and their values for the table")
+   (dirty-flag :initform (make-hash-table :test #'eq)
+               :documentation "")
+   (has-dirty-p :initform nil
+                :reader has-dirty-p)
    (columns :documentation "Holds information about columns in the form of a plist. This value varies depending on the DB implementation.
 - :name - [string] the name of the column
 - :access - [keyword] the key used to retrieve values from the database (note: in PostgreSQL, keywords are converted to lowercase, so this is defined separately from :name)
@@ -62,6 +71,9 @@ ex: (:id (:name :id
                   :db-cl-fn #'identity
                   :cl-db-fn #'identity))")
    (table-name :documentation "database table name")
+   (errors :initform (make-hash-table))
+   (has-error-p :initform nil
+                :reader has-error-p)
    (save-p :initform nil)))
 
 (defmethod initialize-instance :after ((m <base-model>) &rest initargs)
@@ -108,10 +120,9 @@ ex: (:id (:name :id
   (:method ((inst <base-model>))
     t))
 
-
 (defmethod ref ((inst <base-model>) key)
   (let* ((class-name (class-name (class-of inst)))
-         (table-info (gethash class-name clails/model/base-model::*table-information*))
+         (table-info (gethash class-name *table-information*))
          (columns-plist (getf table-info :columns2))
          (relations-ht (getf table-info :relations)))
 
@@ -127,9 +138,54 @@ ex: (:id (:name :id
                key
                class-name))))
 
+(defmethod ref-error ((inst <base-model>) key)
+  (let* ((class-name (class-name (class-of inst)))
+         (table-info (gethash class-name *table-information*))
+         (columns-plist (getf table-info :columns2)))
+    (if (getf columns-plist key)
+        (gethash key (slot-value inst 'errors))
+        (error "not found slot-name: `~A` is not a column in model `~A`'"
+               key
+               class-name))))
+
 (defmethod (setf ref) (new-value (inst <base-model>) key)
-  (setf (gethash key (slot-value inst 'data))
-        new-value))
+  (let ((old-value (gethash key (slot-value inst 'data))))
+    (unless (value= old-value new-value)
+      (setf (gethash key (slot-value inst 'data))
+            new-value)
+      (setf (gethash key (slot-value inst 'dirty-flag))
+            t)
+      (setf (slot-value inst 'has-dirty-p) t))))
+
+(defmethod (setf ref-error) (error-value (inst <base-model>) key)
+  (setf (gethash key (slot-value inst 'errors))
+        error-value)
+  (setf (slot-value inst 'has-error-p) t))
+
+(defmethod clear-error ((inst <base-model>))
+  (clrhash (slot-value inst 'errors))
+  (setf (slot-value inst 'has-error-p) nil))
+
+(defmethod clear-dirty-flag ((inst <base-model>))
+  (clrhash (slot-value inst 'dirty-flag))
+  (setf (slot-value inst 'has-dirty-p) nil))
+
+
+
+(defun value= (old new)
+  (or (and (eq t old)
+           (eq t new))
+      (and (null old)
+           (null new))
+      (and (numberp old)
+           (numberp new)
+           (= old new))
+      (and (stringp old)
+           (stringp new)
+           (string= old new))
+      (and (symbolp old)
+           (symbolp new)
+           (eq old new))))
 
 
 (defmacro ref-in (instance &rest path)
@@ -152,20 +208,6 @@ Example: (ref-in blog :comments 0 :approved-account)"
               (t ;; Assume number or symbol for list index
                `(nth ,segment ,expansion)))))
     expansion))
-
-(defsetf ref-in (instance &rest path) (new-value)
-  "Setf expander for ref-in."
-  (let* ((last-segment (car (last path)))
-         (initial-path (butlast path))
-         ;; Recursively build the accessor for the second-to-last object
-         (second-to-last-obj `(ref-in ,instance ,@initial-path)))
-    (cond
-      ((keywordp last-segment)
-       `(setf (ref ,second-to-last-obj ,last-segment) ,new-value))
-      ((listp last-segment)
-       `(setf (,(car last-segment) ,second-to-last-obj ,@(cdr last-segment)) ,new-value))
-      (t
-       `(setf (nth ,last-segment ,second-to-last-obj) ,new-value)))))
 
 
 (defun show-model-data (model)

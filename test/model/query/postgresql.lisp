@@ -87,7 +87,9 @@
 
 
 (deftest postgresql-column-type-check
-  (let ((result (car (select 'clails-test-model::<debug>))))
+  (let* ((query (query clails-test-model::<debug>
+                       :as :debug))
+         (result (car (execute-query query '()))))
     (ok (string= "string" (ref result :col-1)))
     (ok (string= "text" (ref result :col-2)))
     (ok (eq 1 (ref result :col-3)))
@@ -113,7 +115,10 @@
     (ok (not (null (ref record :updated-at))))
 
     ; check inserted record
-    (let ((result (select 'clails-test-model::<debug> :where `(= id ,(ref record :id)))))
+    (let* ((query (query clails-test-model::<debug>
+                         :as :debug
+                         :where (:= (:debug :id) :target-id)))
+           (result (execute-query query `(:target-id ,(ref record :id)))))
       (ok (= (length result) 1))
       (ok (string= "new postgresql record" (ref (first result) :col-1))))
 
@@ -123,7 +128,10 @@
     (save record)
 
     ;; check updated record
-    (let ((result (select 'clails-test-model::<debug> :where `(= id ,(ref record :id)))))
+    (let* ((query (query clails-test-model::<debug>
+                         :as :debug
+                         :where (:= (:debug :id) :target-id)))
+           (result (execute-query query `(:target-id ,(ref record :id)))))
       (ok (= (length result) 1))
       (ok (string= "updated postgresql record" (ref (first result) :col-1))))))
 
@@ -131,7 +139,10 @@
   (let ((record (make-record 'clails-test-model::<debug>)))
     (save record)
 
-    (let ((result (select 'clails-test-model::<debug> :where `(= id ,(ref record :id)))))
+    (let* ((query (query clails-test-model::<debug>
+                         :as :debug
+                         :where (:= (:debug :id) :target-id)))
+           (result (execute-query query `(:target-id ,(ref record :id)))))
       (ok (= (length result) 1))
       (defvar r (car result))
 

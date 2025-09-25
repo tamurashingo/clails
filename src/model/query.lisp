@@ -10,7 +10,11 @@
   (:import-from #:clails/model/base-model
                 #:<base-model>
                 #:validate
-                #:ref)
+                #:ref
+                #:has-error-p
+                #:has-dirty-p
+                #:clear-error
+                #:clear-dirty-flag)
   (:import-from #:clails/util
                 #:kebab->snake
                 #:snake->kebab
@@ -19,49 +23,24 @@
            #:make-record
            #:save
            #:get-last-id-impl
+           #:query
+           #:execute-query
            #:build-model-instances))
 (in-package #:clails/model/query)
 
 
-
-(defun select (model-name &key where order-by connection)
-  "Given a model name, returns instances that match the conditions
-(select '<todo>) => (#<TODO> #<TODO> #<TODO>)
-(select '<todo> :where '(= id 1)) => (#<TODO>)
-(select '<todo> :where '(or (= id 1)
-                            (= done false))) => (#<TODO> #<TODO>)
-(select '<todo> :order-by '(id))
-(select '<todo> :order-by '((id :desc) (created-at :asc)))
-"
-  (let* ((inst (make-instance model-name))
-         (select (generate-select-query inst where order-by))
-         (body #'(lambda (connection)
-                   (let ((result (dbi-cp:fetch-all
-                                  (dbi-cp:execute
-                                   (dbi-cp:prepare connection (getf select :query))
-                                   (getf select :params)))))
-                     (loop for row in result
-                           collect (let ((ret (make-instance model-name)))
-                                     (loop for column in (slot-value ret 'clails/model/base-model::columns)
-                                           do (let ((name (getf column :name))
-                                                    (access (getf column :access))
-                                                    (fn (getf column :db-cl-fn)))
-                                                (setf (ref ret name)
-                                                      (funcall fn (getf row access)))))
-                                     ret))))))
-    ;; TODO: debug
-    (format t "debug: query: ~A~%" (getf select :query))
-    (format t "debug: params: ~A~%" (getf select :params))
-    ;; TODO: get current thread connection
-    (if connection
-        (funcall body connection)
-        (clails/model/connection:with-db-connection (connection)
-          (funcall body connection)))))
-
 (defmethod save ((inst <base-model>) &key connection)
-  (if (ref inst :id)
-      (update1 inst :connection connection)
-      (insert1 inst :connection connection)))
+  (clear-error inst)
+  (validate inst)
+  (unless (has-error-p inst)
+    (prog1
+        (if (ref inst :id)
+            (if (has-dirty-p inst)
+                (update1 inst :connection connection)
+                inst)
+            (insert1 inst :connection connection))
+      (clear-dirty-flag inst))))
+
 
 (defun generate-select-query (inst where order-by)
   (let* ((params (make-array (length where)
@@ -81,11 +60,15 @@
 
 (defun fetch-columns (inst &key insert update)
   (loop for column in (slot-value inst 'clails/model/base-model::columns)
+        as dirty-flag-hash = (slot-value inst 'clails/model/base-model::dirty-flag)
         when (or (and insert
                       (not (eq (getf column :name) :id)))
+                 ;; update column if dirty
                  (and update
-                      (or (not (eq (getf column :name) :id)))
-                          (not (eq (getf column :name) :created-at)))
+                      (not (eq (getf column :name) :id))
+                      (not (eq (getf column :name) :created-at))
+                      (or (eq (getf column :name) :updated-at)
+                          (gethash (getf column :name) dirty-flag-hash)))
                  (and (not insert)
                       (not update)))
           collect (string (getf column :name))))
@@ -199,6 +182,7 @@
                     (fn (getf (getf columns-plist key) :DB-CL-FN)))
               (setf (ref inst key)
                     (funcall fn db-value))))
+    (clear-dirty-flag inst)
     inst))
 
 
@@ -634,12 +618,12 @@ query example:
 
 
 (defun generate-order-by (params &optional order)
-  "((blog :star :desc)
-    (blog :id))
+  "((:blog :star :desc)
+    (:blog :id))
    => (\"BLOG.STAR DESC\" \"BLOG.ID\")"
   (flet ((generate (p)
-           (when (not (and (listp p) (>= (length p) 2) (symbolp (first p)) (keywordp (second p))))
-             (error "parse error: order-by: expect (symbol :keyword) but got ~S" p))
+           (when (not (and (listp p) (>= (length p) 2) (keywordp (first p)) (keywordp (second p))))
+             (error "parse error: order-by: expect (:keyword :keyword) but got ~S" p))
            (let ((sort-order (third p)))
              (when (not (or (null sort-order)
                             (eq sort-order :ASC)
