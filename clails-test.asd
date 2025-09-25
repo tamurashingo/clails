@@ -20,7 +20,8 @@
                #:clails-test/model/query/postgresql
                #:clails-test/controller/base-controller
                #:clails-test/helper/date-helper
-               #:clails-test/model/join-query)
+               #:clails-test/model/join-query
+               #:clails-test/model/save)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 

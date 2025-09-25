@@ -19,7 +19,12 @@
            #:fetch-columns-and-types-impl
            #:fetch-columns-and-types-plist-impl
            #:ref
+           #:ref-error
            #:ref-in
+           #:has-dirty-p
+           #:has-error-p
+           #:clear-error
+           #:clear-dirty-flag
            #:initialize-table-information))
 (in-package #:clails/model/base-model)
 
@@ -29,6 +34,8 @@
          :documentation "A hash table that holds the columns (:key) and their values for the table")
    (dirty-flag :initform (make-hash-table :test #'eq)
                :documentation "")
+   (has-dirty-p :initform nil
+                :reader has-dirty-p)
    (columns :documentation "Holds information about columns in the form of a plist. This value varies depending on the DB implementation.
 - :name - [string] the name of the column
 - :access - [keyword] the key used to retrieve values from the database (note: in PostgreSQL, keywords are converted to lowercase, so this is defined separately from :name)
@@ -64,6 +71,7 @@ ex: (:id (:name :id
                   :db-cl-fn #'identity
                   :cl-db-fn #'identity))")
    (table-name :documentation "database table name")
+   (errors :initform (make-hash-table))
    (has-error-p :initform nil
                 :reader has-error-p)
    (save-p :initform nil)))
@@ -112,7 +120,6 @@ ex: (:id (:name :id
   (:method ((inst <base-model>))
     t))
 
-
 (defmethod ref ((inst <base-model>) key)
   (let* ((class-name (class-name (class-of inst)))
          (table-info (gethash class-name *table-information*))
@@ -134,7 +141,7 @@ ex: (:id (:name :id
 (defmethod ref-error ((inst <base-model>) key)
   (let* ((class-name (class-name (class-of inst)))
          (table-info (gethash class-name *table-information*))
-         (columns-plist (get table-info :columns2)))
+         (columns-plist (getf table-info :columns2)))
     (if (getf columns-plist key)
         (gethash key (slot-value inst 'errors))
         (error "not found slot-name: `~A` is not a column in model `~A`'"
@@ -147,12 +154,22 @@ ex: (:id (:name :id
       (setf (gethash key (slot-value inst 'data))
             new-value)
       (setf (gethash key (slot-value inst 'dirty-flag))
-            t))))
+            t)
+      (setf (slot-value inst 'has-dirty-p) t))))
 
 (defmethod (setf ref-error) (error-value (inst <base-model>) key)
   (setf (gethash key (slot-value inst 'errors))
         error-value)
   (setf (slot-value inst 'has-error-p) t))
+
+(defmethod clear-error ((inst <base-model>))
+  (clrhash (slot-value inst 'errors))
+  (setf (slot-value inst 'has-error-p) nil))
+
+(defmethod clear-dirty-flag ((inst <base-model>))
+  (clrhash (slot-value inst 'dirty-flag))
+  (setf (slot-value inst 'has-dirty-p) nil))
+
 
 
 (defun value= (old new)

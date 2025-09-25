@@ -11,7 +11,10 @@
                 #:<base-model>
                 #:validate
                 #:ref
-                #:has-error-p)
+                #:has-error-p
+                #:has-dirty-p
+                #:clear-error
+                #:clear-dirty-flag)
   (:import-from #:clails/util
                 #:kebab->snake
                 #:snake->kebab
@@ -27,11 +30,17 @@
 
 
 (defmethod save ((inst <base-model>) &key connection)
+  (clear-error inst)
   (validate inst)
   (unless (has-error-p inst)
-    (if (ref inst :id)
-        (update1 inst :connection connection)
-        (insert1 inst :connection connection))))
+    (prog1
+        (if (ref inst :id)
+            (if (has-dirty-p inst)
+                (update1 inst :connection connection)
+                inst)
+            (insert1 inst :connection connection))
+      (clear-dirty-flag inst))))
+
 
 (defun generate-select-query (inst where order-by)
   (let* ((params (make-array (length where)
@@ -51,11 +60,15 @@
 
 (defun fetch-columns (inst &key insert update)
   (loop for column in (slot-value inst 'clails/model/base-model::columns)
+        as dirty-flag-hash = (slot-value inst 'clails/model/base-model::dirty-flag)
         when (or (and insert
                       (not (eq (getf column :name) :id)))
+                 ;; update column if dirty
                  (and update
-                      (or (not (eq (getf column :name) :id)))
-                          (not (eq (getf column :name) :created-at)))
+                      (not (eq (getf column :name) :id))
+                      (not (eq (getf column :name) :created-at))
+                      (or (eq (getf column :name) :updated-at)
+                          (gethash (getf column :name) dirty-flag-hash)))
                  (and (not insert)
                       (not update)))
           collect (string (getf column :name))))
@@ -169,6 +182,7 @@
                     (fn (getf (getf columns-plist key) :DB-CL-FN)))
               (setf (ref inst key)
                     (funcall fn db-value))))
+    (clear-dirty-flag inst)
     inst))
 
 
