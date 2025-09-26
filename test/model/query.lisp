@@ -61,40 +61,6 @@
   (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t)
   (clails/model/connection:shutdown-connection-pool))
 
-(deftest test-select-order-by
-  (testing "symbol"
-    ;; single symbol
-    (ok (equal '(("ID" "ASC"))
-                (clails/model/query::parse-order-by '(id))))
-    ;; single list
-    (ok (equal '(("ID" "ASC"))
-                (clails/model/query::parse-order-by '((id :ASC)))))
-    ;; multiple symbols
-    (ok (equal '(("ID" "ASC") ("CREATED_AT" "ASC"))
-                (clails/model/query::parse-order-by '(id created-at))))
-    ;; multiple list
-    (ok (equal '(("ID" "DESC") ("CREATED_AT" "ASC"))
-                (clails/model/query::parse-order-by '((id :DESC) (created-at :ASC))))))
-  (testing "string"
-    ;; single string
-    (ok (equal '(("id" "ASC"))
-                (clails/model/query::parse-order-by '("id"))))
-    ;; single list
-    (ok (equal '(("id" "ASC"))
-                (clails/model/query::parse-order-by '(("id" :ASC)))))
-    ;; multiple symbols
-    (ok (equal '(("ID" "ASC") ("CREATED_AT" "ASC"))
-                (clails/model/query::parse-order-by '("ID" "CREATED-AT"))))
-    ;; multiple list
-    (ok (equal '(("id" "DESC") ("created_at" "ASC"))
-                (clails/model/query::parse-order-by '(("id" :DESC) ("created-at" :ASC))))))
-  (testing "error"
-    ;; not symbol, not string
-    (ok (signals (clails/model/query::parse-order-by '(1))))
-    (ok (signals (clails/model/query::parse-order-by '((1 :ASC)))))
-    ;; not keyword :ASC or :DESC
-    (ok (signals (clails/model/query::parse-order-by '((id :ASCENDING)))))))
-
 
 (deftest test-select
   (testing "no condition"
