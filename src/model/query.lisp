@@ -19,300 +19,16 @@
                 #:kebab->snake
                 #:snake->kebab
                 #:plist-exists)
-  (:export #:select
-           #:make-record
-           #:save
-           #:get-last-id-impl
+  (:export #:<query>
            #:query
            #:execute-query
-           #:build-model-instances))
+           #:save
+           #:get-last-id-impl
+           #:make-record))
 (in-package #:clails/model/query)
 
-
-(defmethod save ((inst <base-model>) &key connection)
-  (clear-error inst)
-  (validate inst)
-  (unless (has-error-p inst)
-    (prog1
-        (if (ref inst :id)
-            (if (has-dirty-p inst)
-                (update1 inst :connection connection)
-                inst)
-            (insert1 inst :connection connection))
-      (clear-dirty-flag inst))))
-
-
-(defun generate-select-query (inst where order-by)
-  (let* ((params (make-array (length where)
-                             :fill-pointer 0))
-         (table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
-         (columns (mapcar #'kebab->snake
-                          (fetch-columns inst)))
-         (conditions (if where
-                         (parse-where where params)
-                         nil))
-         (sort (if order-by
-                  (parse-order-by order-by)
-                   nil)))
-    (list :query (format NIL "SELECT ~{~A~^, ~} FROM ~A ~@[ WHERE ~A ~] ~@[ ORDER BY ~{~{~A~^ ~}~^, ~}~]" columns table-name conditions sort)
-          :params (coerce params 'list))))
-
-
-(defun fetch-columns (inst &key insert update)
-  (loop for column in (slot-value inst 'clails/model/base-model::columns)
-        as dirty-flag-hash = (slot-value inst 'clails/model/base-model::dirty-flag)
-        when (or (and insert
-                      (not (eq (getf column :name) :id)))
-                 ;; update column if dirty
-                 (and update
-                      (not (eq (getf column :name) :id))
-                      (not (eq (getf column :name) :created-at))
-                      (or (eq (getf column :name) :updated-at)
-                          (gethash (getf column :name) dirty-flag-hash)))
-                 (and (not insert)
-                      (not update)))
-          collect (string (getf column :name))))
-
-
-(defun parse-where (where-cond params)
-  (assert (not (null where-cond)))
-  (let ((elm (car where-cond)))
-    (cond ((eq elm '=)
-           (parse-exp '= (cdr where-cond) params))
-          ((eq elm '<)
-           (parse-exp '< (cdr where-cond) params))
-          ((eq elm '<=)
-           (parse-exp '<= (cdr where-cond) params))
-          ((eq elm '>)
-           (parse-exp '> (cdr where-cond) params))
-          ((eq elm '>=)
-           (parse-exp '>= (cdr where-cond) params))
-          ((eq elm '<>)
-           (parse-exp '<> (cdr where-cond) params))
-          ((eq elm '!=)
-           (parse-exp '!= (cdr where-cond) params))
-          ((string-equal elm "null")
-           (parse-null 'null (cdr where-cond) params))
-          ((string-equal elm "not-null")
-           (parse-null 'not-null (cdr where-cond) params))
-          ((eq elm 'and)
-           (format NIL "(~{~A~^ AND ~})"
-                   (loop for exp in (cdr where-cond)
-                         collect (parse-where exp params))))
-          ((eq elm 'or)
-           (format NIL "(~{~A~^ OR ~})"
-                   (loop for exp in (cdr where-cond)
-                         collect (parse-where exp params))))
-          (t (error "parse error: ~A" elm)))))
-
-(defun parse-exp (op exp params)
-  (assert (= 2 (length exp)))
-  (let (x y))
-    (multiple-value-bind (col1 param1)
-        (lexer (car exp))
-      (setf x col1)
-      (when param1
-        (vector-push param1 params)))
-    (multiple-value-bind (col2 param2)
-        (lexer (cadr exp))
-      (setf y col2)
-      (when param2
-        (vector-push param2 params)))
-    (format NIL "~A ~A ~A" x op y))
-
-(defun parse-null (op exp params)
-  (let (x)
-    (multiple-value-bind (col1 param1)
-        (lexer (car exp))
-      (setf x col1)
-      (when param1
-        (vector-push param1 params)))
-    (format nil "~A ~A" x (if (eq op 'null)
-                              "IS NULL"
-                              "IS NOT NULL"))))
-
-
-(defun lexer (param)
-  (cond ((or (stringp param)
-             (numberp param))
-          (values "?" param))
-        ((and (symbolp param)
-              (not (keywordp param)))
-          (values (kebab->snake param) NIL))
-        (t (values param NIL))))
-
-(defun parse-order-by (params &optional order)
-  (flet ((convert (p)
-         (when (and (not (symbolp p))
-                    (not (stringp p)))
-           (error "parse error: expect symbol or string but got ~A" p))
-         (kebab->snake (string p))))
-    (if (null params)
-        order
-        (let ((p (car params)))
-          (cond ((or (symbolp p) (stringp p))
-                 (parse-order-by (cdr params)
-                                 (append order (list (list (convert p) "ASC")))))
-                ((listp p)
-                 (parse-order-by (cdr params)
-                                 (append order
-                                         (list
-                                           (list (convert (car p))
-                                                 (cond ((eq (cadr p) :asc)
-                                                        "ASC")
-                                                       ((eq (cadr p) :desc)
-                                                        "DESC")
-                                                       (t (error "parse error: order by expected keyword :ASC or :DESC but ~A" p))))))))
-                (t (error "parse error: expect symbol, string or list but got ~A" p)))))))
-
-
-(defun make-record (model-name &rest values)
-  "(let ((inst (make-record '<todo> :title \"create new project\" :done nil)))
-     (save inst))"
-  (let ((inst (make-instance model-name)))
-    (loop for (key value) on values by #'cddr
-          do (setf (ref inst key) value))
-    inst))
-
-(defun make-record-from (model-name &rest db-values)
-  (let ((inst (make-instance model-name))
-        (columns-plist (clails/model/base-model::get-columns-plist model-name)))
-    (loop for (key db-value) on db-values by #'cddr
-          do (let* ((key (intern (snake->kebab key) :KEYWORD))
-                    (fn (getf (getf columns-plist key) :DB-CL-FN)))
-              (setf (ref inst key)
-                    (funcall fn db-value))))
-    (clear-dirty-flag inst)
-    inst))
-
-
-;(defun save (inst)
-;  (if (ref inst :id)
-;      (update1 inst)
-;      (insert1 inst)))
-
-
-(defun insert1 (inst &key connection)
-  (let* ((current-datetime (get-universal-time))
-         (table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
-         (columns (fetch-columns inst :insert T))
-         (sql (format NIL "INSERT INTO ~A (~{~A~^, ~}) VALUES (~{?~*~^, ~})" table-name (mapcar #'kebab->snake columns) columns))
-         (params (alexandria:alist-plist (loop for colstr in columns
-                                               as  colkey = (intern colstr :KEYWORD)
-                                               collect (cons colkey (ref inst colkey))))))
-
-    ;; set created-at and updated-at
-    (setf (getf params :created-at) current-datetime)
-    (setf (getf params :updated-at) current-datetime)
-
-    ;; convert parameter
-    ;; plist -> values
-    (setf params (convert-cl-db-values params inst))
-
-    ;; TODO: debug
-    (format t "debug: query: ~S~%" sql)
-    (format t "debug: params: ~S~%" params)
-
-    (let ((body #'(lambda (connection)
-                    (dbi-cp:execute
-                     (dbi-cp:prepare connection sql)
-                     params)
-                    (let ((last-id (get-last-id connection)))
-                      (setf (ref inst :id) last-id)
-                      (setf (ref inst :created-at) current-datetime)
-                      (setf (ref inst :updated-at) current-datetime))
-                    inst)))
-
-      (if connection
-          (funcall body connection)
-          (clails/model/connection:with-db-connection (connection)
-            (funcall body connection))))))
-
-(defun get-last-id (connection)
-  (get-last-id-impl *database-type* connection))
-
-(defgeneric get-last-id-impl (database-type connection)
-  (:documentation "get last id"))
-
-(defun update1 (inst &key connection)
-  (let* ((current-datetime (get-universal-time))
-         (table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
-         (columns (fetch-columns inst :update T))
-         (sql (format NIL "UPDATE ~A SET ~{~A = ?~^, ~} WHERE id = ?" table-name (mapcar #'kebab->snake columns)))
-         (params (alexandria:alist-plist (loop for colstr in columns
-                                               as  colkey = (intern colstr :KEYWORD)
-                                               collect (cons colkey (ref inst colkey))))))
-
-    ;; set updated-at
-    (setf (getf params :updated-at) current-datetime)
-
-    ;; convert parameter
-    ;; plist -> values
-    (setf params (convert-cl-db-values params inst))
-
-    ;; append id
-    (setf params (append params
-                         (list (ref inst :id))))
-
-    ;; TODO: debug
-    (format t "debug: query: ~A~%" sql)
-    (format t "debug: params: ~A~%" params)
-
-    (let ((body #'(lambda (connection)
-                    (dbi-cp:execute
-                     (dbi-cp:prepare connection sql)
-                     params)
-                    (setf (ref inst :updated-at) current-datetime)
-                    inst)))
-
-      (if connection
-          (funcall body connection)
-          (clails/model/connection:with-db-connection (connection)
-            (funcall body connection))))))
-
-
-(defun convert-cl-db-values (params inst)
-  (loop for column in (slot-value inst 'clails/model/base-model::columns)
-        when (plist-exists params (getf column :name))
-          collect (let ((name (getf column :name))
-                        (fn (getf column :cl-db-fn)))
-                    (funcall fn (getf params name)))))
-
-
-
-
-
-
-#|
-
-query example:
-
-(query <blog>
-:where (= (blog :id) 1))
-
-
-(query <writer>
-:as writer
-:columns ((writer :id :name))
-:where (:like (writer :name) :search-name)
-:order-by ((writer :id)))
-
-
-(query <blog>
-:as blog
-:joins ((:inner-join <writer> :as writer
-:on (= (writer :id)
-(blog :writer-id)))
-(:left-join <comment> :as comment
-:on (= (blog :id)
-(comment :blog-id))))
-:where (> (blog :star) 0)
-:order-by ((blog :star :desc)
-(blog :id)))
-
-
-|#
-
+;;;; ----------------------------------------
+;;;; class
 
 (defclass <query> ()
   ((model :initarg :model)
@@ -341,6 +57,97 @@ query example:
    (previous :initform nil :accessor previous-join)))
 
 
+;;;; ========================================
+;;;; export method
+
+(defmethod execute-query ((query <query>) named-values &key connection)
+  (let* ((q (generate-query query))
+         (sql (getf q :query))
+         (named-params (getf q :keywords)))
+    ;; TODO: debug
+    (format t "debug: query: ~A~%" sql)
+    (format t "debug: params: ~A~%" named-params)
+    (let ((result (clails/model/connection:with-db-connection (connection)
+                    (dbi-cp:fetch-all
+                     (dbi-cp:execute
+                      (dbi-cp:prepare connection sql)
+                      (generate-values named-params named-values))))))
+      (build-model-instances query result))))
+
+
+(defmethod save ((inst <base-model>) &key connection)
+  (clear-error inst)
+  (validate inst)
+  (unless (has-error-p inst)
+    (prog1
+        (if (ref inst :id)
+            (if (has-dirty-p inst)
+                (update1 inst :connection connection)
+                inst)
+            (insert1 inst :connection connection))
+      (clear-dirty-flag inst))))
+
+
+(defgeneric get-last-id-impl (database-type connection)
+  (:documentation "get last id"))
+
+
+(defun make-record (model-name &rest values)
+  "(let ((inst (make-record '<todo> :title \"create new project\" :done nil)))
+     (save inst))"
+  (let ((inst (make-instance model-name)))
+    (loop for (key value) on values by #'cddr
+          do (setf (ref inst key) value))
+    inst))
+
+
+
+
+;;;; ========================================
+;;;; export macro
+
+(defmacro query (model &key as columns joins where order-by limit offset)
+  (unless as
+    (error ":as keyword is required for query macro."))
+  (unless (keywordp as)
+    (error "The value for :as must be a keyword (e.g., :blog)."))
+
+  (labels ((expand-columns (grouped-columns)
+             ;; ((blog :id :title :content)
+             ;;  (use :id))
+             ;; => ((blog :id) (blog :title) (blog :content) (user :name))
+             (mapcan #'(lambda (group)
+                         (let ((alias (car group))
+                               (column-names (cdr group)))
+                           (mapcar #'(lambda (column-name)
+                                       (list alias column-name))
+                                   column-names)))
+                     grouped-columns))
+
+           (expand-joins (joins-list)
+             (mapcar #'(lambda (join-spec)
+                         (destructuring-bind (join-type relation &key through) join-spec
+                           `(make-instance '<join-query>
+                                           :join-type ',join-type
+                                           :relation ',relation
+                                           :through ',through)))
+                     joins-list)))
+    `(make-instance '<query>
+                    :model ',model
+                    :alias ',as
+                    :columns ',(expand-columns columns)
+                    :joins (list ,@(expand-joins joins))
+                    :where ',where
+                    :order-by ',order-by
+                    :limit ',limit
+                    :offset ',offset)))
+
+
+;;;; ========================================
+;;;; internals
+
+;;; ----------------------------------------
+;;; instance
 
 (defmethod initialize-instance :after ((q <query>) &rest initargs)
   (declare (ignore initargs))
@@ -380,58 +187,57 @@ query example:
                  (let ((target-model (getf rel-info :model)))
                    (setf (gethash target-alias alias->model) target-model)))))))
 
+;;; ----------------------------------------
+;;; query
+
+(defmethod generate-query ((query <query>))
+  (let* ((alias->model (slot-value query 'alias->model))
+         (base-alias (slot-value query 'alias))
+         (base-model (slot-value query 'model))
+         (base-table-name (getf (gethash base-model clails/model/base-model::*table-information*) :table-name)))
+
+    (let* ((joins (resolve-joins query))
+           (columns (mapcar #'(lambda (c) (column-pair-to-name c T))
+                            (generate-query-columns query alias->model)))
+           (where-keywords (multiple-value-bind (w kw)
+                               (parse-where-claude (slot-value query 'where))
+                             (list :where w :keywords kw)))
+           (order-by (generate-order-by (slot-value query 'order-by)))
+           (offset (generate-offset (slot-value query 'offset)))
+           (limit (generate-limit (slot-value query 'limit))))
+
+      (list :query (format nil "SELECT ~{~A~^, ~} FROM ~A as ~A~@[ ~A~]~@[ WHERE ~A~]~@[ ORDER BY ~{~A~^, ~}~]~@[ LIMIT ~A~]~@[ OFFSET ~A~]"
+                           columns
+                           base-table-name
+                           (kebab->snake base-alias)
+                           (format nil "~{~A~^ ~}" joins)
+                           (getf where-keywords :where)
+                           order-by
+                           (getf limit :limit)
+                           (getf offset :offset))
+            :keywords (flatten (append (ensure-list (getf where-keywords :keywords))
+                                       (ensure-list (getf limit :keyword))
+                                       (ensure-list (getf offset :keyword))))))))
 
 
-(defmacro query (model &key as columns joins where order-by limit offset)
-  (unless as
-    (error ":as keyword is required for query macro."))
-  (unless (keywordp as)
-    (error "The value for :as must be a keyword (e.g., :blog)."))
-
-  (labels ((expand-columns (grouped-columns)
-             ;; ((blog :id :title :content)
-             ;;  (use :id))
-             ;; => ((blog :id) (blog :title) (blog :content) (user :name))
-             (mapcan #'(lambda (group)
-                         (let ((alias (car group))
-                               (column-names (cdr group)))
-                           (mapcar #'(lambda (column-name)
-                                       (list alias column-name))
-                                   column-names)))
-                     grouped-columns))
-
-           (expand-joins (joins-list)
-             (mapcar #'(lambda (join-spec)
-                         (destructuring-bind (join-type relation &key through) join-spec
-                           `(make-instance '<join-query>
-                                           :join-type ',join-type
-                                           :relation ',relation
-                                           :through ',through)))
-                     joins-list)))
-    `(make-instance '<query>
-                    :model ',model
-                    :alias ',as
-                    :columns ',(expand-columns columns)
-                    :joins (list ,@(expand-joins joins))
-                    :where ',where
-                    :order-by ',order-by
-                    :limit ',limit
-                    :offset ',offset)))
+(defmethod resolve-joins ((query <query>))
+  (let ((base-model-alias (slot-value query 'alias))
+        (alias->model (slot-value query 'alias->model)))
+    (loop for join-obj in (slot-value query 'joins)
+          with joins-sql and keywords
+          do (let ((sql (generate-join-sql join-obj base-model-alias alias->model)))
+               (push sql joins-sql))
+          finally (return (nreverse joins-sql)))))
 
 
-(defmethod execute-query ((query <query>) named-values &key connection)
-  (let* ((q (generate-query query))
-         (sql (getf q :query))
-         (named-params (getf q :keywords)))
-          ;; TODO: debug
-    (format t "debug: query: ~A~%" sql)
-    (format t "debug: params: ~A~%" named-params)
-    (let ((result (clails/model/connection:with-db-connection (connection)
-                    (dbi-cp:fetch-all
-                     (dbi-cp:execute
-                      (dbi-cp:prepare connection sql)
-                      (generate-values named-params named-values))))))
-      (build-model-instances query result))))
+(defmethod generate-query-columns ((query <query>) alias->model)
+  (if (slot-value query 'columns)
+      (slot-value query 'columns)
+      (loop for alias being the hash-key of (slot-value query 'alias->model)
+            using (hash-value model)
+            append (let ((inst (make-instance model)))
+                     (loop for column in (slot-value inst 'clails/model/base-model::columns)
+                           collect (list alias (getf column :name)))))))
 
 
 (defmethod generate-join-sql ((join-obj <join-query>) base-model-alias alias->model)
@@ -470,61 +276,21 @@ query example:
                    (kebab->snake target-alias)
                    on-clause))))))
 
-(defmethod resolve-joins ((query <query>))
-  (let ((base-model-alias (slot-value query 'alias))
-        (alias->model (slot-value query 'alias->model)))
-    (loop for join-obj in (slot-value query 'joins)
-          with joins-sql and keywords
-          do (let ((sql (generate-join-sql join-obj base-model-alias alias->model)))
-               (push sql joins-sql))
-          finally (return (nreverse joins-sql)))))
 
-(defmethod generate-query-columns ((query <query>) alias->model)
-  (if (slot-value query 'columns)
-      (slot-value query 'columns)
-      (loop for alias being the hash-key of (slot-value query 'alias->model)
-              using (hash-value model)
-            append (let ((inst (make-instance model)))
-                     (loop for column in (slot-value inst 'clails/model/base-model::columns)
-                           collect (list alias (getf column :name)))))))
-
-(defmethod generate-query ((query <query>))
-  (let* ((alias->model (slot-value query 'alias->model))
-         (base-alias (slot-value query 'alias))
-         (base-model (slot-value query 'model))
-         (base-table-name (getf (gethash base-model clails/model/base-model::*table-information*) :table-name)))
-
-    (let* ((joins (resolve-joins query))
-           (columns (mapcar #'(lambda (c) (column-pair-to-name c T))
-                            (generate-query-columns query alias->model)))
-           (where-keywords (multiple-value-bind (w kw)
-                               (parse-where-claude (slot-value query 'where))
-                             (list :where w :keywords kw)))
-           (order-by (generate-order-by (slot-value query 'order-by)))
-           (offset (generate-offset (slot-value query 'offset)))
-           (limit (generate-limit (slot-value query 'limit))))
-
-      (list :query (format nil "SELECT ~{~A~^, ~} FROM ~A as ~A~@[ ~A~]~@[ WHERE ~A~]~@[ ORDER BY ~{~A~^, ~}~]~@[ LIMIT ~A~]~@[ OFFSET ~A~]"
-                           columns
-                           base-table-name
-                           (kebab->snake base-alias)
-                           (format nil "~{~A~^ ~}" joins)
-                           (getf where-keywords :where)
-                           order-by
-                           (getf limit :limit)
-                           (getf offset :offset))
-            :keywords (flatten (append (ensure-list (getf where-keywords :keywords))
-                                       (ensure-list (getf limit :keyword))
-                                       (ensure-list (getf offset :keyword))))))))
-
-
-(defun generate-values (named-params named-values)
-  "named-params: '(:start-date :end-date :start-date)
-   named-values: '(:start-date \"2025-01-01\" :end-date \"2025-12-31\")
-
-   returns -> '(\"2025-01-01\" \"2025-12-31\" \"2025-01-01\")"
-  (loop for key in named-params
-        collect (getf named-values key)))
+(defun fetch-columns (inst &key insert update)
+  (loop for column in (slot-value inst 'clails/model/base-model::columns)
+        as dirty-flag-hash = (slot-value inst 'clails/model/base-model::dirty-flag)
+        when (or (and insert
+                      (not (eq (getf column :name) :id)))
+                 ;; update column if dirty
+                 (and update
+                      (not (eq (getf column :name) :id))
+                      (not (eq (getf column :name) :created-at))
+                      (or (eq (getf column :name) :updated-at)
+                          (gethash (getf column :name) dirty-flag-hash)))
+                 (and (not insert)
+                      (not update)))
+        collect (string (getf column :name))))
 
 
 (defun parse-where-claude (where)
@@ -592,6 +358,7 @@ query example:
                                       "IS NOT NULL"))
             keywords)))
 
+
 ;; TODO: rename
 (defun lexer2 (param)
   (cond (;; (table :id)
@@ -611,6 +378,7 @@ query example:
         (;; other literal value
          t
          (values param nil))))
+
 
 (defun column-pair-to-name (pair &optional as)
   (if as (format nil "~A.~A as \"~A.~A\"" (kebab->snake (car pair)) (kebab->snake (cadr pair)) (kebab->snake (car pair)) (kebab->snake (cadr pair)))
@@ -662,9 +430,119 @@ query example:
          (list :limit limit
                :keyword nil))))
 
-;;;
-;;; New functions for processing query results
-;;;
+
+(defun generate-values (named-params named-values)
+  "named-params: '(:start-date :end-date :start-date)
+   named-values: '(:start-date \"2025-01-01\" :end-date \"2025-12-31\")
+
+   returns -> '(\"2025-01-01\" \"2025-12-31\" \"2025-01-01\")"
+  (loop for key in named-params
+        collect (getf named-values key)))
+
+
+;;; ----------------------------------------
+;;; save
+
+(defun insert1 (inst &key connection)
+  (let* ((current-datetime (get-universal-time))
+         (table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
+         (columns (fetch-columns inst :insert T))
+         (sql (format NIL "INSERT INTO ~A (~{~A~^, ~}) VALUES (~{?~*~^, ~})" table-name (mapcar #'kebab->snake columns) columns))
+         (params (alexandria:alist-plist (loop for colstr in columns
+                                               as  colkey = (intern colstr :KEYWORD)
+                                               collect (cons colkey (ref inst colkey))))))
+
+    ;; set created-at and updated-at
+    (setf (getf params :created-at) current-datetime)
+    (setf (getf params :updated-at) current-datetime)
+
+    ;; convert parameter
+    ;; plist -> values
+    (setf params (convert-cl-db-values params inst))
+
+    ;; TODO: debug
+    (format t "debug: query: ~S~%" sql)
+    (format t "debug: params: ~S~%" params)
+
+    (let ((body #'(lambda (connection)
+                    (dbi-cp:execute
+                     (dbi-cp:prepare connection sql)
+                     params)
+                    (let ((last-id (get-last-id connection)))
+                      (setf (ref inst :id) last-id)
+                      (setf (ref inst :created-at) current-datetime)
+                      (setf (ref inst :updated-at) current-datetime))
+                    inst)))
+
+      (if connection
+          (funcall body connection)
+          (clails/model/connection:with-db-connection (connection)
+            (funcall body connection))))))
+
+
+(defun get-last-id (connection)
+  (get-last-id-impl *database-type* connection))
+
+
+(defun update1 (inst &key connection)
+  (let* ((current-datetime (get-universal-time))
+         (table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
+         (columns (fetch-columns inst :update T))
+         (sql (format NIL "UPDATE ~A SET ~{~A = ?~^, ~} WHERE id = ?" table-name (mapcar #'kebab->snake columns)))
+         (params (alexandria:alist-plist (loop for colstr in columns
+                                               as  colkey = (intern colstr :KEYWORD)
+                                               collect (cons colkey (ref inst colkey))))))
+
+    ;; set updated-at
+    (setf (getf params :updated-at) current-datetime)
+
+    ;; convert parameter
+    ;; plist -> values
+    (setf params (convert-cl-db-values params inst))
+
+    ;; append id
+    (setf params (append params
+                         (list (ref inst :id))))
+
+    ;; TODO: debug
+    (format t "debug: query: ~A~%" sql)
+    (format t "debug: params: ~A~%" params)
+
+    (let ((body #'(lambda (connection)
+                    (dbi-cp:execute
+                     (dbi-cp:prepare connection sql)
+                     params)
+                    (setf (ref inst :updated-at) current-datetime)
+                    inst)))
+
+      (if connection
+          (funcall body connection)
+          (clails/model/connection:with-db-connection (connection)
+            (funcall body connection))))))
+
+
+(defun convert-cl-db-values (params inst)
+  (loop for column in (slot-value inst 'clails/model/base-model::columns)
+        when (plist-exists params (getf column :name))
+        collect (let ((name (getf column :name))
+                      (fn (getf column :cl-db-fn)))
+                  (funcall fn (getf params name)))))
+
+
+;;; ----------------------------------------
+;;; query -> model
+
+(defun make-record-from (model-name &rest db-values)
+  (let ((inst (make-instance model-name))
+        (columns-plist (clails/model/base-model::get-columns-plist model-name)))
+    (loop for (key db-value) on db-values by #'cddr
+          do (let* ((key (intern (snake->kebab key) :KEYWORD))
+                    (fn (getf (getf columns-plist key) :DB-CL-FN)))
+               (setf (ref inst key)
+                     (funcall fn db-value))))
+    (clear-dirty-flag inst)
+    inst))
+
 
 (defun split-db-column-name (keyword-name)
   "Splits a keyword like :|TABLE.COLUMN| into two keywords, :TABLE and :COLUMN.
@@ -785,5 +663,6 @@ query example:
     (let ((final-results (loop for inst being the hash-value of main-instances collect inst)))
       ;; Post-process to ensure has-many slots are initialized
       (finalize-has-many-relations final-results))))
+
 
 
