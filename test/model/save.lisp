@@ -66,7 +66,7 @@
                                                      :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
                                                      :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
                                                      :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
- (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_JOIN__DIR" "/app/test/data/0003-save-test"))
+ (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR_0003" "/app/test/data/0003-save-test"))
  (uiop:setup-temporary-directory)
  (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
  (setf clails/environment::*project-dir* uiop:*temporary-directory*)
