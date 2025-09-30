@@ -27,7 +27,7 @@
    (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-sqlite3>))
    (setf clails/environment:*project-environment* :test)
    (setf clails/environment:*database-config* `(:test (:database-name ,(format NIL "~A/volumes/clails_test.sqlite3" (env-or-default "CLAILS_SQLITE3_DATABASE" "/app")))))
-   (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test/data/0001-migration-test"))
+   (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR_0001" "/app/test/data/0001-migration-test"))
    (uiop:setup-temporary-directory)
    (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
    (setf clails/environment::*project-dir* uiop:*temporary-directory*))

@@ -31,7 +31,7 @@
                                                       :password ,(env-or-default "CLAILS_POSTGRESQL_PASSWORD" "password")
                                                       :host ,(env-or-default "CLAILS_POSTGRESQL_HOST" "postgresql-test")
                                                       :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "5432"))))
-  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test/data/0001-migration-test"))
+  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR_0001" "/app/test/data/0001-migration-test"))
   (uiop:setup-temporary-directory)
   (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
   (setf clails/environment::*project-dir* uiop:*temporary-directory*))
