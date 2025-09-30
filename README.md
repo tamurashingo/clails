@@ -85,8 +85,8 @@ https://github.com/tamurashingo/clails-sample-apps
 - [x] select from single table
 - [x] update
 - [x] insert
-- [ ] delete
-- [ ] select from many tables
+- [x] delete
+- [x] select from many tables
 
 **view**
 - [x] template-based HTML rendering
