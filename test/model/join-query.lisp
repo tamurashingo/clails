@@ -1,6 +1,4 @@
 (in-package #:cl-user)
-(format t "===================================================~%")
-(format t "1~%")
 (defpackage #:clails-test/model/join-query
   (:use #:cl
         #:rove
@@ -12,7 +10,6 @@
                 #:defmodel
                 #:ref
                 #:ref-in))
-(format t "2~%")
 
 (defpackage #:clails-test/model/db/join-query
   (:use #:cl)
@@ -24,7 +21,6 @@
                 #:drop-table
                 #:drop-column
                 #:drop-index))
-(format t "3~%")
 
 (defpackage #:clails-test-model-joinquery
   (:use #:cl)
@@ -33,11 +29,8 @@
                 #:ref
                 #:<base-model>))
 (in-package #:clails-test-model-joinquery)
-(format t "4~%")
-
 
 (in-package #:clails-test/model/join-query)
-
 
 (setup
   ;; clear table-information
@@ -107,12 +100,6 @@
 
 
 (deftest generate-query-test
-  (format t "------------------------------------~%")
-  (format t "table-information~%")
-  (maphash (lambda (k v)
-             (format t "~A => ~A~%" k v))
-           clails/model/base-model::*table-information*)
-  (format t "------------------------------------~%")
   (let* ((query (query <blog>
                   :as :blog
                   :joins ((:inner-join :account)
