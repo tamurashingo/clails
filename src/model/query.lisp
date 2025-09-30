@@ -13,6 +13,7 @@
                 #:ref
                 #:has-error-p
                 #:has-dirty-p
+                #:frozen-p
                 #:clear-error
                 #:clear-dirty-flag)
   (:import-from #:clails/util
@@ -24,7 +25,8 @@
            #:execute-query
            #:save
            #:get-last-id-impl
-           #:make-record))
+           #:make-record
+           #:destroy))
 (in-package #:clails/model/query)
 
 ;;;; ----------------------------------------
@@ -76,16 +78,17 @@
 
 
 (defmethod save ((inst <base-model>) &key connection)
-  (clear-error inst)
-  (validate inst)
-  (unless (has-error-p inst)
-    (prog1
-        (if (ref inst :id)
-            (if (has-dirty-p inst)
-                (update1 inst :connection connection)
-                inst)
-            (insert1 inst :connection connection))
-      (clear-dirty-flag inst))))
+  (unless (frozen-p inst)
+    (clear-error inst)
+    (validate inst)
+    (unless (has-error-p inst)
+      (prog1
+          (if (ref inst :id)
+              (if (has-dirty-p inst)
+                  (update1 inst :connection connection)
+                  inst)
+              (insert1 inst :connection connection))
+        (clear-dirty-flag inst)))))
 
 
 (defgeneric get-last-id-impl (database-type connection)
@@ -101,7 +104,71 @@
     inst))
 
 
+(defgeneric destroy (instance &key cascade)
+  (:documentation "delete record"))
 
+(defmethod destroy ((inst <base-model>) &key cascade)
+  (if (frozen-p inst)
+      0
+      (progn
+        (when cascade
+          (let ((relations (getf (gethash (class-name (class-of inst)) clails/model/base-model::*table-information*)
+                                 :relations)))
+            (maphash #'(lambda (k v)
+                         ;; only :has-many relation is supported for cascade delete
+                         (when (eq (getf v :type) :has-many)
+                           (destroy (ref inst k) :cascade T)))
+                     relations)))
+        (let* ((table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
+              (sql (format NIL "DELETE FROM ~A WHERE id = ?" table-name))
+              (params (list (ref inst :id))))
+          (format t "debug: query: ~A~%" sql)
+          (format t "debug: params: ~A~%" params)
+          (prog1
+            (clails/model/connection:with-db-connection (connection)
+              (dbi-cp:execute
+                (dbi-cp:prepare connection sql)
+              params)
+              (dbi-cp:row-count connection))
+            (clear-dirty-flag inst)
+            (setf (slot-value inst 'clails/model/base-model::frozen-p) T))))))
+
+(defmethod destroy ((insts list) &key cascade)
+  (if (null insts)
+      0
+      (progn
+        ;; accept only <base-model> instances
+        (dolist (i insts)
+          (check-type i <base-model>))
+        
+        (when cascade
+          (dolist (i insts)
+            (let ((relations (getf (gethash (class-name (class-of i)) clails/model/base-model::*table-information*)
+                                   :relations)))
+              (maphash #'(lambda (k v)
+                           ;; only :has-many relation is supported for cascade delete
+                           (when (eq (getf v :type) :has-many)
+                             (destroy (ref i k) :cascade T)))
+                       relations))))
+
+
+        (let* ((table-name (kebab->snake (slot-value (first insts) 'clails/model/base-model::table-name)))
+               (ids (loop for i in insts
+                      when (not (frozen-p i))
+                        collect (ref i :id)))
+               (sql (format NIL "DELETE FROM ~A WHERE id IN (~{?~*~^, ~})" table-name ids)))
+          (format t "debug: query: ~A~%" sql)
+          (format t "debug: params: ~A~%" ids)
+          (prog1
+              (clails/model/connection:with-db-connection (connection)
+                (dbi-cp:execute
+                  (dbi-cp:prepare connection sql)
+                  ids)
+                (dbi-cp:row-count connection))
+            (dolist (i insts)
+              (unless (frozen-p i)
+                (clear-dirty-flag i)
+                (setf (slot-value i 'clails/model/base-model::frozen-p) T))))))))
 
 ;;;; ========================================
 ;;;; export macro

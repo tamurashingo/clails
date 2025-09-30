@@ -23,6 +23,7 @@
            #:ref-in
            #:has-dirty-p
            #:has-error-p
+           #:frozen-p
            #:clear-error
            #:clear-dirty-flag
            #:initialize-table-information))
@@ -74,7 +75,8 @@ ex: (:id (:name :id
    (errors :initform (make-hash-table))
    (has-error-p :initform nil
                 :reader has-error-p)
-   (save-p :initform nil)))
+   (frozen-p :initform nil
+             :reader frozen-p)))
 
 (defmethod initialize-instance :after ((m <base-model>) &rest initargs)
   (declare (ignore initargs))
