@@ -6,8 +6,10 @@ services:
       MYSQL_ROOT_PASSWORD: password
       MYSQL_USER: user
       MYSQL_PASSWORD: password
-    volumes:
-      - ./volumes/mysql:/var/lib/mysql
+    tmpfs:
+      - /var/lib/mysql
+#    volumes:
+#      - ./volumes/mysql:/var/lib/mysql
   postgresql-test:
     image: postgres:16.3
     container_name: clails_test_postgresql
@@ -15,6 +17,9 @@ services:
       POSTGRES_USER: clails
       POSTGRES_PASSWORD: password
       PGDATA: /var/lib/postgresql/data/pgdata
-    volumes:
-      - ./volumes/postgresql/data:/var/lib/postgresql/data
-      - ./volumes/postgresql/log:/var/log
+    tmpfs:
+      - /var/lib/postgresql/data
+      - /var/log
+#    volumes:
+#      - ./volumes/postgresql/data:/var/lib/postgresql/data
+#      - ./volumes/postgresql/log:/var/log
