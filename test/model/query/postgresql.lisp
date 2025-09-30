@@ -6,6 +6,8 @@
   (:import-from #:clails/util
                 #:env-or-default)
   (:import-from #:clails/model/base-model
+                #:<base-model>
+                #:defmodel
                 #:ref))
 
 (defpackage #:clails-test/model/db
@@ -18,16 +20,6 @@
                 #:drop-table
                 #:drop-column
                 #:drop-index))
-
-(defpackage #:clails-test-model
-  (:use #:cl)
-  (:import-from #:clails/model/base-model
-                #:defmodel
-                #:ref
-                #:<base-model>))
-(in-package #:clails-test-model)
-(defmodel <debug> (<base-model>)
-  (:table "debug"))
 
 (in-package #:clails-test/model/query/postgresql)
 
@@ -62,6 +54,12 @@
 
 
 (setup
+  ;; clear table-information
+  (clrhash clails/model/base-model::*table-information*)
+  ;; define models
+  (defmodel <debug> (<base-model>)
+    (:table "debug"))
+
   (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-postgresql>))
   (setf clails/environment:*project-environment* :test)
   (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_POSTGRESQL_DATABASE" "clails_test")
@@ -69,7 +67,7 @@
                                                        :password ,(env-or-default "CLAILS_POSTGRESQL_PASSWORD" "password")
                                                        :host ,(env-or-default "CLAILS_POSTGRESQL_HOST" "postgresql-test")
                                                        :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "5432"))))
-  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test/migration-test"))
+  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test/data/0001-migration-test"))
   (uiop:setup-temporary-directory)
   (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
   (setf clails/environment::*project-dir* uiop:*temporary-directory*)
@@ -87,7 +85,7 @@
 
 
 (deftest postgresql-column-type-check
-  (let* ((query (query clails-test-model::<debug>
+  (let* ((query (query <debug>
                        :as :debug))
          (result (car (execute-query query '()))))
     (ok (string= "string" (ref result :col-1)))
@@ -102,7 +100,7 @@
 
 
 (deftest postgresql-insert-check
-  (let ((record (make-record 'clails-test-model::<debug> :col-1 "new postgresql record")))
+  (let ((record (make-record '<debug> :col-1 "new postgresql record")))
 
     (ok (null (ref record :id)))
     (ok (null (ref record :created-at)))
@@ -115,7 +113,7 @@
     (ok (not (null (ref record :updated-at))))
 
     ; check inserted record
-    (let* ((query (query clails-test-model::<debug>
+    (let* ((query (query <debug>
                          :as :debug
                          :where (:= (:debug :id) :target-id)))
            (result (execute-query query `(:target-id ,(ref record :id)))))
@@ -128,7 +126,7 @@
     (save record)
 
     ;; check updated record
-    (let* ((query (query clails-test-model::<debug>
+    (let* ((query (query <debug>
                          :as :debug
                          :where (:= (:debug :id) :target-id)))
            (result (execute-query query `(:target-id ,(ref record :id)))))
@@ -136,10 +134,10 @@
       (ok (string= "updated postgresql record" (ref (first result) :col-1))))))
 
 (deftest postgresql-null-check
-  (let ((record (make-record 'clails-test-model::<debug>)))
+  (let ((record (make-record '<debug>)))
     (save record)
 
-    (let* ((query (query clails-test-model::<debug>
+    (let* ((query (query <debug>
                          :as :debug
                          :where (:= (:debug :id) :target-id)))
            (result (execute-query query `(:target-id ,(ref record :id)))))

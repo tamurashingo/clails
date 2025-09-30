@@ -6,6 +6,8 @@
   (:import-from #:clails/util
                 #:env-or-default)
   (:import-from #:clails/model/base-model
+                #:<base-model>
+                #:defmodel
                 #:ref))
 
 (defpackage #:clails-test/model/db
@@ -19,20 +21,16 @@
                 #:drop-column
                 #:drop-index))
 
-(defpackage #:clails-test-model
-  (:use #:cl)
-  (:import-from #:clails/model/base-model
-                #:defmodel
-                #:ref
-                #:<base-model>))
-(in-package #:clails-test-model)
-(defmodel <todo> (<base-model>)
-  (:table "todo"))
-
 (in-package #:clails-test/model/query)
 
 
 (setup
+  ;; clear table-information
+  (clrhash clails/model/base-model::*table-information*)
+  ;; define models
+  (defmodel <todo> (<base-model>)
+    (:table "todo"))
+
   (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
   (setf clails/environment:*project-environment* :test)
   (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
@@ -40,7 +38,7 @@
                                                       :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
                                                       :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
                                                       :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
-  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test/migration-test"))
+  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test/data/0001-migration-test"))
   (uiop:setup-temporary-directory)
   (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
   (setf clails/environment::*project-dir* uiop:*temporary-directory*)
@@ -64,7 +62,7 @@
 
 (deftest test-select
   (testing "no condition"
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :order-by ((:todo :id))))
            (result (execute-query query '()))
@@ -92,7 +90,7 @@
       (ok (null (ref 3rd :done-at)))))
 
   (testing "single condition"
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :where (:= (:todo :done) 0)
                          :order-by ((:todo :id))))
@@ -105,7 +103,7 @@
       (ok (string= "merge pr" (ref 2nd :title)))))
 
   (testing "is null condition"
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :where (:null (:todo :done-at))
                          :order-by ((:todo :id))))
@@ -119,7 +117,7 @@
 
 
   (testing "not null condition"
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :where (:not-null (:todo :done-at))
                          :order-by ((:todo :id))))
@@ -130,7 +128,7 @@
       (ok (string= "create program" (ref 1st :title)))))
 
   (testing "and condition"
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :where (:and (:= (:todo :done) 0)
                                       (:= (:todo :title) "merge pr"))
@@ -142,7 +140,7 @@
       (ok (string= "merge pr" (ref 1st :title)))))
 
   (testing "or condition"
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :where (:or (:= (:todo :done) 1)
                                      (:= (:todo :title) "merge pr"))
@@ -156,7 +154,7 @@
       (ok (string= "merge pr" (ref 2nd :title)))))
 
   (testing "other condition"
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :where (:<= (:todo :created-at) "2024-01-01 00:00:00")
                          :order-by ((:todo :id))))
@@ -167,7 +165,7 @@
       (ok (string= "create program" (ref 1st :title)))))
 
   (testing "sort order"
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :order-by ((:todo :id :desc))))
            (result (execute-query query '()))
@@ -180,7 +178,7 @@
       (ok (string= "create pull request" (ref 2nd :title)))
       (ok (string= "create program" (ref 3rd :title))))
 
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :order-by ((:todo :updated-at :desc)
                                     (:todo :created-at))))
@@ -195,7 +193,7 @@
       (ok (string= "create pull request" (ref 3rd :title))))))
 
 (deftest save
-  (let ((record (make-record 'clails-test-model::<todo> :title "create new project")))
+  (let ((record (make-record '<todo> :title "create new project")))
 
     ;; make sure id is set
     (ok (null (ref record :id)))
@@ -206,7 +204,7 @@
     (ok (not (null (ref record :created-at))))
     (ok (not (null (ref record :updated-at))))
 
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :where (:= (:todo :id) :target-id)))
            (result (execute-query query `(:target-id ,(ref record :id)))))
@@ -221,7 +219,7 @@
 
     (save record)
 
-    (let* ((query (query clails-test-model::<todo>
+    (let* ((query (query <todo>
                          :as :todo
                          :where (:= (:todo :id) :target-id)))
            (result (execute-query query `(:target-id ,(ref record :id)))))

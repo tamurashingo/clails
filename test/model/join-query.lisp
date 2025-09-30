@@ -1,4 +1,6 @@
 (in-package #:cl-user)
+(format t "===================================================~%")
+(format t "1~%")
 (defpackage #:clails-test/model/join-query
   (:use #:cl
         #:rove
@@ -6,8 +8,11 @@
   (:import-from #:clails/util
                 #:env-or-default)
   (:import-from #:clails/model/base-model
+                #:<base-model>
+                #:defmodel
                 #:ref
                 #:ref-in))
+(format t "2~%")
 
 (defpackage #:clails-test/model/db/join-query
   (:use #:cl)
@@ -19,6 +24,7 @@
                 #:drop-table
                 #:drop-column
                 #:drop-index))
+(format t "3~%")
 
 (defpackage #:clails-test-model-joinquery
   (:use #:cl)
@@ -27,43 +33,49 @@
                 #:ref
                 #:<base-model>))
 (in-package #:clails-test-model-joinquery)
-(defmodel <account> (<base-model>)
-  (:table "account"
-   :relations ((:has-many "clails-test-model-joinquery::<blog>"
-                :as :blogs
-                :foreign-key :account-id)
-               (:has-many "clails-test-model-joinquery::<comment>"
-                :as :comments
-                :foreign-key :comment-id)
-               (:has-many "clails-test-model-joinquery::<comment>"
-                :as :approved-comments
-                :foreign-key :approved-id))))
+(format t "4~%")
 
-(defmodel <blog> (<base-model>)
-  (:table "blog"
-   :relations ((:belongs-to "clails-test-model-joinquery::<account>"
-                :column :account
-                :key :account-id)
-               (:has-many "clails-test-model-joinquery::<comment>"
-                :as :comments
-                :foreign-key :blog-id))))
-
-(defmodel <comment> (<base-model>)
-  (:table "comment"
-   :relations ((:belongs-to "clails-test-model-joinquery::<blog>"
-                :column :blog
-                :key :blog-id)
-               (:belongs-to "clails-test-model-joinquery::<account>"
-                :column :comment-account
-                :key :comment-id)
-               (:belongs-to "clails-test-model-joinquery::<account>"
-                :column :approved-account
-                :key :approved-id))))
 
 (in-package #:clails-test/model/join-query)
 
 
 (setup
+  ;; clear table-information
+  (clrhash clails/model/base-model::*table-information*)
+  ;; define models
+  (defmodel <account> (<base-model>)
+    (:table "account"
+    :relations ((:has-many "clails-test/model/join-query::<blog>"
+                  :as :blogs
+                  :foreign-key :account-id)
+                (:has-many "clails-test/model/join-query::<comment>"
+                  :as :comments
+                  :foreign-key :comment-id)
+                (:has-many "clails-test/model/join-query::<comment>"
+                  :as :approved-comments
+                  :foreign-key :approved-id))))
+
+  (defmodel <blog> (<base-model>)
+    (:table "blog"
+    :relations ((:belongs-to "clails-test/model/join-query::<account>"
+                  :column :account
+                  :key :account-id)
+                (:has-many "clails-test/model/join-query::<comment>"
+                  :as :comments
+                  :foreign-key :blog-id))))
+
+  (defmodel <comment> (<base-model>)
+    (:table "comment"
+    :relations ((:belongs-to "clails-test/model/join-query::<blog>"
+                  :column :blog
+                  :key :blog-id)
+                (:belongs-to "clails-test/model/join-query::<account>"
+                  :column :comment-account
+                  :key :comment-id)
+                (:belongs-to "clails-test/model/join-query::<account>"
+                  :column :approved-account
+                  :key :approved-id))))
+
  (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
  (setf clails/environment:*project-environment* :test)
  (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
@@ -71,12 +83,13 @@
                                                      :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
                                                      :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
                                                      :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
- (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_JOIN__DIR" "/app/test/join-test"))
+ (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_JOIN__DIR" "/app/test/data/0002-join-test"))
  (uiop:setup-temporary-directory)
  (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
  (setf clails/environment::*project-dir* uiop:*temporary-directory*)
  (clails/model/migration::db-create)
  (clails/model/migration::db-migrate)
+ (clails/model/base-model:initialize-table-information)
  (clails/model/connection::with-db-connection-direct (connection)
    (dbi-cp:do-sql connection "insert into account (created_at, updated_at, username) values ('2024-01-01 00:00:00', '2024-01-01 00:00:00', 'user1')")
    (dbi-cp:do-sql connection "insert into account (created_at, updated_at, username) values ('2024-01-02 00:00:00', '2024-01-02 00:00:00', 'user2')")
@@ -94,20 +107,23 @@
 
 
 (deftest generate-query-test
-  (clails/model/base-model:initialize-table-information)
-
-
-  (let* ((query (clails/model/query::query clails-test-model-joinquery::<blog>
-                                           :as :blog
-                                           :joins ((:inner-join :account)
-                                                   (:left-join :comments)
-                                                   (:left-join :comment-account :through :comments)
-                                                   (:left-join :approved-account :through :comments))
-                                           :where (:> (:blog :star) 0)
-                                           :order-by ((:blog :star :desc)
-                                                      (:blog :id))
-                                           :limit 20
-                                           :offset 40))
+  (format t "------------------------------------~%")
+  (format t "table-information~%")
+  (maphash (lambda (k v)
+             (format t "~A => ~A~%" k v))
+           clails/model/base-model::*table-information*)
+  (format t "------------------------------------~%")
+  (let* ((query (query <blog>
+                  :as :blog
+                  :joins ((:inner-join :account)
+                          (:left-join :comments)
+                          (:left-join :comment-account :through :comments)
+                          (:left-join :approved-account :through :comments))
+                  :where (:> (:blog :star) 0)
+                  :order-by ((:blog :star :desc)
+                            (:blog :id))
+                  :limit 20
+                  :offset 40))
 
          (result (clails/model/query::generate-query query))
          (sql (getf result :query))
@@ -120,13 +136,13 @@
 
 
 (deftest generate-query-with-params
-  (let* ((query (clails/model/query::query clails-test-model-joinquery::<blog>
-                                           :as :blog
-                                           :joins ((:inner-join :account)
-                                                   (:inner-join :comments)
-                                                   (:inner-join :approved-account :through :comments))
-                                           :where (:and (:= (:account :username) :current-user)
-                                                        (:= (:approved-account :username) :current-user))))
+  (let* ((query (query <blog>
+                       :as :blog
+                       :joins ((:inner-join :account)
+                               (:inner-join :comments)
+                               (:inner-join :approved-account :through :comments))
+                       :where (:and (:= (:account :username) :current-user)
+                                    (:= (:approved-account :username) :current-user))))
 
          (result (clails/model/query::generate-query query))
          (sql (getf result :query))
@@ -137,22 +153,21 @@
     (ok (equal keywords '(:current-user :current-user)))))
 
 (deftest execute-query-test
-  (clails/model/base-model:initialize-table-information)
-  (let* ((query (clails/model/query::query clails-test-model-joinquery::<blog>
-                                           :as :blog
-                                           :joins ((:inner-join :account)
-                                                   (:left-join :comments)
-                                                   (:left-join :comment-account :through :comments))
-                                           :where (:= (:account :username) :current-user)
-                                           :order-by ((:blog :star :desc)
-                                                      (:blog :id))))
-         (result (clails/model/query::execute-query query '(:current-user "user1"))))
+  (let* ((query (query <blog>
+                       :as :blog
+                       :joins ((:inner-join :account)
+                               (:left-join :comments)
+                               (:left-join :comment-account :through :comments))
+                       :where (:= (:account :username) :current-user)
+                       :order-by ((:blog :star :desc)
+                                 (:blog :id))))
+         (result (execute-query query '(:current-user "user1"))))
 
     (ok (= 2 (length result)))
 
     ;; 1st record
     (let ((blog (first result)))
-      (ok (typep blog 'clails-test-model-joinquery::<blog>))
+      (ok (typep blog '<blog>))
       (ok (= (ref blog :id) 2))
       (ok (string= (ref blog :title) "second blog"))
 
@@ -161,7 +176,7 @@
 
     ;; 2nd record
     (let ((blog (second result)))
-      (ok (typep blog 'clails-test-model-joinquery::<blog>))
+      (ok (typep blog '<blog>))
       (ok (= (ref blog :id) 1))
       (ok (string= (ref blog :title) "first blog"))
 
@@ -185,6 +200,4 @@
                          :comment-account ; blog[1].comments[0].comment-account
                          :username)       ; blog[1].comments[0].comment-account.username
                  "user2"))))
-
-
 
