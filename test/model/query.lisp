@@ -258,11 +258,41 @@
 
     (testing "not-in with empty keyword list"
       (let* ((query (query <todo>
-                          :as :todo
-                          :where (:not-in (:todo :id) :ids)
-                          :order-by ((:todo :id))))
-            (result (execute-query query '(:ids ()))))
-        (ok (= 3 (length result)))))))
+                            :as :todo
+                            :where (:not-in (:todo :id) :ids)
+                            :order-by ((:todo :id))))
+              (result (execute-query query '(:ids ()))))
+        (ok (= 3 (length result))))))
+
+  (testing "between/not-between condition"
+    (testing "between with literal values"
+      (let* ((query (query <todo>
+                            :as :todo
+                            :where (:between (:todo :id) 2 3)
+                            :order-by ((:todo :id))))
+              (result (execute-query query '())))
+        (ok (= 2 (length result)))
+        (ok (= 2 (ref (first result) :id)))
+        (ok (= 3 (ref (second result) :id)))))
+
+    (testing "between with keyword"
+      (let* ((query (query <todo>
+                            :as :todo
+                            :where (:between (:todo :created-at) :start :end)
+                            :order-by ((:todo :id))))
+              (result (execute-query query '(:start "2024-01-01 00:00:01" :end "2024-01-01 00:00:02"))))
+        (ok (= 2 (length result)))
+        (ok (= 2 (ref (first result) :id)))
+        (ok (= 3 (ref (second result) :id)))))
+
+    (testing "not between"
+      (let* ((query (query <todo>
+                            :as :todo
+                            :where (:not-between (:todo :id) 2 3)
+                            :order-by ((:todo :id))))
+              (result (execute-query query '())))
+        (ok (= 1 (length result)))
+        (ok (= 1 (ref (first result) :id)))))))
 
 (deftest save
   (let ((record (make-record '<todo> :title "create new project")))
