@@ -5,6 +5,9 @@
                 #:appendf
                 #:ensure-list
                 #:flatten)
+  (:import-from #:cl-ppcre
+                #:regex-replace-all
+                #:quote-meta-chars)
   (:import-from #:clails/environment
                 #:*database-type*)
   (:import-from #:clails/model/base-model
@@ -63,17 +66,13 @@
 ;;;; export method
 
 (defmethod execute-query ((query <query>) named-values &key connection)
-  (let* ((q (generate-query query))
-         (sql (getf q :query))
-         (named-params (getf q :keywords)))
-    ;; TODO: debug
-    (format t "debug: query: ~A~%" sql)
-    (format t "debug: params: ~A~%" named-params)
+  (multiple-value-bind (sql params)
+      (generate-query query named-values)
     (let ((result (clails/model/connection:with-db-connection (connection)
                     (dbi-cp:fetch-all
                      (dbi-cp:execute
                       (dbi-cp:prepare connection sql)
-                      (generate-values named-params named-values))))))
+                      params)))))
       (build-model-instances query result))))
 
 
@@ -257,7 +256,7 @@
 ;;; ----------------------------------------
 ;;; query
 
-(defmethod generate-query ((query <query>))
+(defmethod generate-query ((query <query>) &optional named-values)
   (let* ((alias->model (slot-value query 'alias->model))
          (base-alias (slot-value query 'alias))
          (base-model (slot-value query 'model))
@@ -266,25 +265,51 @@
     (let* ((joins (resolve-joins query))
            (columns (mapcar #'(lambda (c) (column-pair-to-name c T))
                             (generate-query-columns query alias->model)))
-           (where-keywords (multiple-value-bind (w kw)
-                               (parse-where-claude (slot-value query 'where))
-                             (list :where w :keywords kw)))
+           (where-parts (multiple-value-list (parse-where-claude (slot-value query 'where))))
            (order-by (generate-order-by (slot-value query 'order-by)))
            (offset (generate-offset (slot-value query 'offset)))
-           (limit (generate-limit (slot-value query 'limit))))
+           (limit (generate-limit (slot-value query 'limit)))
+           (sql-template (format nil "SELECT ~{~A~^, ~} FROM ~A as ~A~@[ ~A~]~@[ WHERE ~A~]~@[ ORDER BY ~{~A~^, ~}~]~@[ LIMIT ~A~]~@[ OFFSET ~A~]"
+                                 columns
+                                 base-table-name
+                                 (kebab->snake base-alias)
+                                 (format nil "~{~A~^ ~}" joins)
+                                 (first where-parts)
+                                 order-by
+                                 (getf limit :limit)
+                                 (getf offset :offset)))
+           (named-params (append (second where-parts)
+                                          (ensure-list (getf limit :keyword))
+                                          (ensure-list (getf offset :keyword)))))
 
-      (list :query (format nil "SELECT ~{~A~^, ~} FROM ~A as ~A~@[ ~A~]~@[ WHERE ~A~]~@[ ORDER BY ~{~A~^, ~}~]~@[ LIMIT ~A~]~@[ OFFSET ~A~]"
-                           columns
-                           base-table-name
-                           (kebab->snake base-alias)
-                           (format nil "~{~A~^ ~}" joins)
-                           (getf where-keywords :where)
-                           order-by
-                           (getf limit :limit)
-                           (getf offset :offset))
-            :keywords (flatten (append (ensure-list (getf where-keywords :keywords))
-                                       (ensure-list (getf limit :keyword))
-                                       (ensure-list (getf offset :keyword))))))))
+      (let ((final-sql sql-template)
+            (final-params '())
+            (regular-named-params '()))
+
+        (loop for param in named-params
+              do (if (and (listp param) (eq (car param) :in-expansion))
+                     (destructuring-bind (op column-sql keyword) (cdr param)
+                       (let* ((values (getf named-values keyword))
+                              (placeholder (format nil "__IN_CLAUSE_~A_~A__"
+                                                   (cl-ppcre:regex-replace-all "[.:]" column-sql "_")
+                                                   keyword)))
+
+                         (if (null values)
+                             (let ((replacement (if (string= op "IN") "1=0" "1=1")))
+                               (setf final-sql (cl-ppcre:regex-replace-all (cl-ppcre:quote-meta-chars placeholder) final-sql replacement)))
+                             (let* ((question-marks (format nil "(~{?~*~^, ~})" values))
+                                    (replacement (format nil "~A ~A ~A" column-sql op question-marks)))
+                               (setf final-sql (cl-ppcre:regex-replace-all (cl-ppcre:quote-meta-chars placeholder) final-sql replacement))
+                               (appendf final-params values)))))
+                     (push param regular-named-params)))
+
+        (appendf final-params (generate-values (nreverse regular-named-params) named-values))
+
+        ;; for debug
+        (format t "debug: query: ~A~%" final-sql)
+        (format t "debug: params: ~A~%" final-params)
+
+        (values final-sql final-params)))))
 
 
 (defmethod resolve-joins ((query <query>))
@@ -370,6 +395,12 @@
                (parse-exp2 "LIKE" (cdr where)))
               ((eq elm :not-like)
                (parse-exp2 "NOT LIKE" (cdr where)))
+              ((find elm '(:in :not-in))
+               (let ((op (if (eq elm :in) "IN" "NOT IN"))
+                     (args (cdr where)))
+                 (if (keywordp (second args))
+                     (parse-in-dynamic op args)
+                     (parse-in-clause op args))))
               ((eq elm :null)
                (parse-null2 :null (cdr where)))
               ((eq elm :not-null)
@@ -379,21 +410,53 @@
                      with exp and keywords
                      do (multiple-value-setq (exp keywords) (parse-where-claude expression))
                      collect exp into exp-list
-                     when keywords
-                       collect keywords into keywords-list
+                     append keywords into all-keywords
                      finally (return (values (format nil "(~{~A~^ AND ~})" exp-list)
-                                             (flatten keywords-list)))))
+                                             all-keywords))))
               ((eq elm :or)
                (loop for expression in (cdr where)
                      with exp and keywords
                      do (multiple-value-setq (exp keywords) (parse-where-claude expression))
                      collect exp into exp-list
-                     when keywords
-                       collect keywords into keywords-list
+                     append keywords into all-keywords
                      finally (return (values (format nil "(~{~A~^ OR ~})" exp-list)
-                                             (flatten keywords-list)))))
+                                             all-keywords))))
               (t
                (error "where claude: parse error `~A`" elm))))))
+
+(defun parse-in-clause (op exp)
+  (let (column-sql)
+    (multiple-value-bind (sql param)
+        (lexer2 (car exp))
+      (setf column-sql sql)
+      (when param
+        (error "Unexpected parameter in column part of IN clause.")))
+    (let ((in-values (cadr exp)))
+      (when (and (listp in-values) (eq (car in-values) 'quote))
+        (setf in-values (cadr in-values)))
+      (unless (listp in-values)
+        (error "IN clause expects a list of values (e.g., '(1 2 3) or (:id1 :id2)). Got: ~S" in-values))
+      (let (placeholders params)
+        (dolist (val in-values)
+          (multiple-value-bind (ph p) (lexer2 val)
+            (push ph placeholders)
+            (when p (appendf params (ensure-list p)))))
+        (if (null placeholders)
+            (if (string= op "IN")
+                (values "1=0" nil)
+                (values "1=1" nil))
+            (values (format nil "~A ~A (~{~A~^, ~})" column-sql op (nreverse placeholders))
+                    (flatten params)))))))
+
+(defun parse-in-dynamic (op exp)
+  (let* ((column-spec (first exp))
+         (param-keyword (second exp))
+         (column-sql (column-pair-to-name column-spec))
+         (placeholder (format nil "__IN_CLAUSE_~A_~A__"
+                              (cl-ppcre:regex-replace-all "[.:]" column-sql "_")
+                              param-keyword)))
+    (values placeholder
+            (list (list :in-expansion op column-sql param-keyword)))))
 
 ;; TODO: rename
 (defun parse-exp2 (op exp)
