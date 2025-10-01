@@ -395,6 +395,8 @@
                (parse-exp2 "LIKE" (cdr where)))
               ((eq elm :not-like)
                (parse-exp2 "NOT LIKE" (cdr where)))
+              ((find elm '(:between :not-between))
+               (parse-between-clause (if (eq elm :between) "BETWEEN" "NOT BETWEEN") (cdr where)))
               ((find elm '(:in :not-in))
                (let ((op (if (eq elm :in) "IN" "NOT IN"))
                      (args (cdr where)))
@@ -457,6 +459,23 @@
                               param-keyword)))
     (values placeholder
             (list (list :in-expansion op column-sql param-keyword)))))
+
+(defun parse-between-clause (op exp)
+  (let (column-sql val1-sql val2-sql keywords)
+    ;; Column
+    (multiple-value-bind (sql param) (lexer2 (first exp))
+      (setf column-sql sql)
+      (when param (error "Unexpected parameter in column part of BETWEEN clause.")))
+    ;; Value 1
+    (multiple-value-bind (sql param) (lexer2 (second exp))
+      (setf val1-sql sql)
+      (when param (appendf keywords (ensure-list param))))
+    ;; Value 2
+    (multiple-value-bind (sql param) (lexer2 (third exp))
+      (setf val2-sql sql)
+      (when param (appendf keywords (ensure-list param))))
+    (values (format nil "~A ~A ~A AND ~A" column-sql op val1-sql val2-sql)
+            keywords)))
 
 ;; TODO: rename
 (defun parse-exp2 (op exp)
