@@ -100,44 +100,36 @@
 
 
 (deftest generate-query-test
-  (let* ((query (query <blog>
-                  :as :blog
-                  :joins ((:inner-join :account)
-                          (:left-join :comments)
-                          (:left-join :comment-account :through :comments)
-                          (:left-join :approved-account :through :comments))
-                  :where (:> (:blog :star) 0)
-                  :order-by ((:blog :star :desc)
-                            (:blog :id))
-                  :limit 20
-                  :offset 40))
-
-         (result (clails/model/query::generate-query query))
-         (sql (getf result :query))
-         (keywords (getf result :keywords)))
-
-    (ok (string-equal "SELECT BLOG.ID as \"BLOG.ID\", BLOG.CREATED_AT as \"BLOG.CREATED_AT\", BLOG.UPDATED_AT as \"BLOG.UPDATED_AT\", BLOG.TITLE as \"BLOG.TITLE\", BLOG.CONTENT as \"BLOG.CONTENT\", BLOG.ACCOUNT_ID as \"BLOG.ACCOUNT_ID\", BLOG.STAR as \"BLOG.STAR\", ACCOUNT.ID as \"ACCOUNT.ID\", ACCOUNT.CREATED_AT as \"ACCOUNT.CREATED_AT\", ACCOUNT.UPDATED_AT as \"ACCOUNT.UPDATED_AT\", ACCOUNT.USERNAME as \"ACCOUNT.USERNAME\", COMMENTS.ID as \"COMMENTS.ID\", COMMENTS.CREATED_AT as \"COMMENTS.CREATED_AT\", COMMENTS.UPDATED_AT as \"COMMENTS.UPDATED_AT\", COMMENTS.COMMENT as \"COMMENTS.COMMENT\", COMMENTS.BLOG_ID as \"COMMENTS.BLOG_ID\", COMMENTS.COMMENT_ID as \"COMMENTS.COMMENT_ID\", COMMENTS.APPROVED_ID as \"COMMENTS.APPROVED_ID\", COMMENT_ACCOUNT.ID as \"COMMENT_ACCOUNT.ID\", COMMENT_ACCOUNT.CREATED_AT as \"COMMENT_ACCOUNT.CREATED_AT\", COMMENT_ACCOUNT.UPDATED_AT as \"COMMENT_ACCOUNT.UPDATED_AT\", COMMENT_ACCOUNT.USERNAME as \"COMMENT_ACCOUNT.USERNAME\", APPROVED_ACCOUNT.ID as \"APPROVED_ACCOUNT.ID\", APPROVED_ACCOUNT.CREATED_AT as \"APPROVED_ACCOUNT.CREATED_AT\", APPROVED_ACCOUNT.UPDATED_AT as \"APPROVED_ACCOUNT.UPDATED_AT\", APPROVED_ACCOUNT.USERNAME as \"APPROVED_ACCOUNT.USERNAME\" FROM blog as BLOG INNER JOIN account as ACCOUNT ON BLOG.ACCOUNT_ID = ACCOUNT.id LEFT JOIN comment as COMMENTS ON BLOG.id = COMMENTS.BLOG_ID LEFT JOIN account as COMMENT_ACCOUNT ON COMMENTS.COMMENT_ID = COMMENT_ACCOUNT.id LEFT JOIN account as APPROVED_ACCOUNT ON COMMENTS.APPROVED_ID = APPROVED_ACCOUNT.id WHERE BLOG.STAR > 0 ORDER BY BLOG.STAR DESC, BLOG.ID LIMIT 20 OFFSET 40"
-                       sql))
-    (ok (null keywords))))
+  (let ((query (query <blog>
+                 :as :blog
+                 :joins ((:inner-join :account)
+                         (:left-join :comments)
+                         (:left-join :comment-account :through :comments)
+                         (:left-join :approved-account :through :comments))
+                 :where (:> (:blog :star) 0)
+                 :order-by ((:blog :star :desc)
+                           (:blog :id))
+                 :limit 20
+                 :offset 40)))
+    (multiple-value-bind (sql params) (clails/model/query::generate-query query)
+      (ok (string-equal "SELECT BLOG.ID as \"BLOG.ID\", BLOG.CREATED_AT as \"BLOG.CREATED_AT\", BLOG.UPDATED_AT as \"BLOG.UPDATED_AT\", BLOG.TITLE as \"BLOG.TITLE\", BLOG.CONTENT as \"BLOG.CONTENT\", BLOG.ACCOUNT_ID as \"BLOG.ACCOUNT_ID\", BLOG.STAR as \"BLOG.STAR\", ACCOUNT.ID as \"ACCOUNT.ID\", ACCOUNT.CREATED_AT as \"ACCOUNT.CREATED_AT\", ACCOUNT.UPDATED_AT as \"ACCOUNT.UPDATED_AT\", ACCOUNT.USERNAME as \"ACCOUNT.USERNAME\", COMMENTS.ID as \"COMMENTS.ID\", COMMENTS.CREATED_AT as \"COMMENTS.CREATED_AT\", COMMENTS.UPDATED_AT as \"COMMENTS.UPDATED_AT\", COMMENTS.COMMENT as \"COMMENTS.COMMENT\", COMMENTS.BLOG_ID as \"COMMENTS.BLOG_ID\", COMMENTS.COMMENT_ID as \"COMMENTS.COMMENT_ID\", COMMENTS.APPROVED_ID as \"COMMENTS.APPROVED_ID\", COMMENT_ACCOUNT.ID as \"COMMENT_ACCOUNT.ID\", COMMENT_ACCOUNT.CREATED_AT as \"COMMENT_ACCOUNT.CREATED_AT\", COMMENT_ACCOUNT.UPDATED_AT as \"COMMENT_ACCOUNT.UPDATED_AT\", COMMENT_ACCOUNT.USERNAME as \"COMMENT_ACCOUNT.USERNAME\", APPROVED_ACCOUNT.ID as \"APPROVED_ACCOUNT.ID\", APPROVED_ACCOUNT.CREATED_AT as \"APPROVED_ACCOUNT.CREATED_AT\", APPROVED_ACCOUNT.UPDATED_AT as \"APPROVED_ACCOUNT.UPDATED_AT\", APPROVED_ACCOUNT.USERNAME as \"APPROVED_ACCOUNT.USERNAME\" FROM blog as BLOG INNER JOIN account as ACCOUNT ON BLOG.ACCOUNT_ID = ACCOUNT.id LEFT JOIN comment as COMMENTS ON BLOG.id = COMMENTS.BLOG_ID LEFT JOIN account as COMMENT_ACCOUNT ON COMMENTS.COMMENT_ID = COMMENT_ACCOUNT.id LEFT JOIN account as APPROVED_ACCOUNT ON COMMENTS.APPROVED_ID = APPROVED_ACCOUNT.id WHERE BLOG.STAR > 0 ORDER BY BLOG.STAR DESC, BLOG.ID LIMIT 20 OFFSET 40"
+                         sql))
+      (ok (null params)))))
 
 
 
 (deftest generate-query-with-params
-  (let* ((query (query <blog>
-                       :as :blog
-                       :joins ((:inner-join :account)
-                               (:inner-join :comments)
-                               (:inner-join :approved-account :through :comments))
-                       :where (:and (:= (:account :username) :current-user)
-                                    (:= (:approved-account :username) :current-user))))
-
-         (result (clails/model/query::generate-query query))
-         (sql (getf result :query))
-         (keywords (getf result :keywords)))
-
-    (format t "result:~S~%" result)
-    (ok (string= "SELECT BLOG.ID as \"BLOG.ID\", BLOG.CREATED_AT as \"BLOG.CREATED_AT\", BLOG.UPDATED_AT as \"BLOG.UPDATED_AT\", BLOG.TITLE as \"BLOG.TITLE\", BLOG.CONTENT as \"BLOG.CONTENT\", BLOG.ACCOUNT_ID as \"BLOG.ACCOUNT_ID\", BLOG.STAR as \"BLOG.STAR\", ACCOUNT.ID as \"ACCOUNT.ID\", ACCOUNT.CREATED_AT as \"ACCOUNT.CREATED_AT\", ACCOUNT.UPDATED_AT as \"ACCOUNT.UPDATED_AT\", ACCOUNT.USERNAME as \"ACCOUNT.USERNAME\", COMMENTS.ID as \"COMMENTS.ID\", COMMENTS.CREATED_AT as \"COMMENTS.CREATED_AT\", COMMENTS.UPDATED_AT as \"COMMENTS.UPDATED_AT\", COMMENTS.COMMENT as \"COMMENTS.COMMENT\", COMMENTS.BLOG_ID as \"COMMENTS.BLOG_ID\", COMMENTS.COMMENT_ID as \"COMMENTS.COMMENT_ID\", COMMENTS.APPROVED_ID as \"COMMENTS.APPROVED_ID\", APPROVED_ACCOUNT.ID as \"APPROVED_ACCOUNT.ID\", APPROVED_ACCOUNT.CREATED_AT as \"APPROVED_ACCOUNT.CREATED_AT\", APPROVED_ACCOUNT.UPDATED_AT as \"APPROVED_ACCOUNT.UPDATED_AT\", APPROVED_ACCOUNT.USERNAME as \"APPROVED_ACCOUNT.USERNAME\" FROM blog as BLOG INNER JOIN account as ACCOUNT ON BLOG.ACCOUNT_ID = ACCOUNT.id INNER JOIN comment as COMMENTS ON BLOG.id = COMMENTS.BLOG_ID INNER JOIN account as APPROVED_ACCOUNT ON COMMENTS.APPROVED_ID = APPROVED_ACCOUNT.id WHERE (ACCOUNT.USERNAME = ? AND APPROVED_ACCOUNT.USERNAME = ?)" sql))
-    (ok (equal keywords '(:current-user :current-user)))))
+  (let ((query (query <blog>
+                      :as :blog
+                      :joins ((:inner-join :account)
+                              (:inner-join :comments)
+                              (:inner-join :approved-account :through :comments))
+                      :where (:and (:= (:account :username) :current-user)
+                                   (:= (:approved-account :username) :current-user)))))
+    (multiple-value-bind (sql params)
+        (clails/model/query::generate-query query '(:current-user "user1"))
+      (ok (string= "SELECT BLOG.ID as \"BLOG.ID\", BLOG.CREATED_AT as \"BLOG.CREATED_AT\", BLOG.UPDATED_AT as \"BLOG.UPDATED_AT\", BLOG.TITLE as \"BLOG.TITLE\", BLOG.CONTENT as \"BLOG.CONTENT\", BLOG.ACCOUNT_ID as \"BLOG.ACCOUNT_ID\", BLOG.STAR as \"BLOG.STAR\", ACCOUNT.ID as \"ACCOUNT.ID\", ACCOUNT.CREATED_AT as \"ACCOUNT.CREATED_AT\", ACCOUNT.UPDATED_AT as \"ACCOUNT.UPDATED_AT\", ACCOUNT.USERNAME as \"ACCOUNT.USERNAME\", COMMENTS.ID as \"COMMENTS.ID\", COMMENTS.CREATED_AT as \"COMMENTS.CREATED_AT\", COMMENTS.UPDATED_AT as \"COMMENTS.UPDATED_AT\", COMMENTS.COMMENT as \"COMMENTS.COMMENT\", COMMENTS.BLOG_ID as \"COMMENTS.BLOG_ID\", COMMENTS.COMMENT_ID as \"COMMENTS.COMMENT_ID\", COMMENTS.APPROVED_ID as \"COMMENTS.APPROVED_ID\", APPROVED_ACCOUNT.ID as \"APPROVED_ACCOUNT.ID\", APPROVED_ACCOUNT.CREATED_AT as \"APPROVED_ACCOUNT.CREATED_AT\", APPROVED_ACCOUNT.UPDATED_AT as \"APPROVED_ACCOUNT.UPDATED_AT\", APPROVED_ACCOUNT.USERNAME as \"APPROVED_ACCOUNT.USERNAME\" FROM blog as BLOG INNER JOIN account as ACCOUNT ON BLOG.ACCOUNT_ID = ACCOUNT.id INNER JOIN comment as COMMENTS ON BLOG.id = COMMENTS.BLOG_ID INNER JOIN account as APPROVED_ACCOUNT ON COMMENTS.APPROVED_ID = APPROVED_ACCOUNT.id WHERE (ACCOUNT.USERNAME = ? AND APPROVED_ACCOUNT.USERNAME = ?)" sql))
+      (ok (equal params '("user1" "user1"))))))
 
 (deftest execute-query-test
   (let* ((query (query <blog>

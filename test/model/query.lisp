@@ -190,7 +190,79 @@
 
       (ok (string= "merge pr" (ref 1st :title)))
       (ok (string= "create program" (ref 2nd :title)))
-      (ok (string= "create pull request" (ref 3rd :title))))))
+      (ok (string= "create pull request" (ref 3rd :title)))))
+
+  (testing "in/not-in condition"
+    (testing "in with literal list"
+      (let* ((query (query <todo>
+                           :as :todo
+                           :where (:in (:todo :title) ("create program" "merge pr"))
+                           :order-by ((:todo :id))))
+             (result (execute-query query '())))
+        (ok (= 2 (length result)))
+        (ok (string= "create program" (ref (first result) :title)))
+        (ok (string= "merge pr" (ref (second result) :title)))))
+
+    (testing "in with keyword"
+      (let* ((query (query <todo>
+                           :as :todo
+                           :where (:in (:todo :id) :ids)
+                           :order-by ((:todo :id))))
+             (result (execute-query query '(:ids (1 3)))))
+        (ok (= 2 (length result)))
+        (ok (= 1 (ref (first result) :id)))
+        (ok (= 3 (ref (second result) :id)))))
+
+    (testing "not-in with literal list"
+      (let* ((query (query <todo>
+                           :as :todo
+                           :where (:not-in (:todo :title) ("create program"))
+                           :order-by ((:todo :id))))
+             (result (execute-query query '())))
+        (ok (= 2 (length result)))
+        (ok (string= "create pull request" (ref (first result) :title)))
+        (ok (string= "merge pr" (ref (second result) :title)))))
+
+    (testing "not-in with keyword"
+      (let* ((query (query <todo>
+                           :as :todo
+                           :where (:not-in (:todo :id) :ids)
+                           :order-by ((:todo :id))))
+             (result (execute-query query '(:ids (1 2)))))
+        (ok (= 1 (length result)))
+        (ok (= 3 (ref (first result) :id)))))
+
+    (testing "in with empty literal list"
+      (let* ((query (query <todo>
+                          :as :todo
+                          :where (:in (:todo :id) nil)
+                          :order-by ((:todo :id))))
+            (result (execute-query query '())))
+        (ok (= 0 (length result)))))
+
+    (testing "in with empty keyword list"
+      (let* ((query (query <todo>
+                          :as :todo
+                          :where (:in (:todo :id) :ids)
+                          :order-by ((:todo :id))))
+            (result (execute-query query '(:ids ()))))
+        (ok (= 0 (length result)))))
+
+    (testing "not-in with empty literal list"
+      (let* ((query (query <todo>
+                          :as :todo
+                          :where (:not-in (:todo :id) ())
+                          :order-by ((:todo :id))))
+            (result (execute-query query '())))
+        (ok (= 3 (length result)))))
+
+    (testing "not-in with empty keyword list"
+      (let* ((query (query <todo>
+                          :as :todo
+                          :where (:not-in (:todo :id) :ids)
+                          :order-by ((:todo :id))))
+            (result (execute-query query '(:ids ()))))
+        (ok (= 3 (length result)))))))
 
 (deftest save
   (let ((record (make-record '<todo> :title "create new project")))
@@ -228,4 +300,3 @@
 
     ;; debug output
     (clails/model/base-model::show-model-data record)))
-
