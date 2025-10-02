@@ -8,6 +8,8 @@
   (:import-from #:cl-ppcre
                 #:regex-replace-all
                 #:quote-meta-chars)
+  (:import-from #:clails/condition
+                #:optimistic-lock-error)
   (:import-from #:clails/environment
                 #:*database-type*)
   (:import-from #:clails/model/base-model
@@ -84,7 +86,10 @@
       (prog1
           (if (ref inst :id)
               (if (has-dirty-p inst)
-                  (update1 inst :connection connection)
+                  (let ((rows-updated (update1 inst :connection connection)))
+                    (when (= rows-updated 0)
+                      (error 'optimistic-lock-error))
+                    inst)
                   inst)
               (insert1 inst :connection connection))
         (clear-dirty-flag inst)))))
@@ -593,13 +598,19 @@
 ;;; save
 
 (defun insert1 (inst &key connection)
-  (let* ((current-datetime (get-universal-time))
+  (let* ((class-name (class-name (class-of inst)))
+         (table-info (gethash class-name clails/model/base-model::*table-information*))
+         (version-column (getf table-info :version-column))
+         (current-datetime (get-universal-time))
          (table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
          (columns (fetch-columns inst :insert T))
          (sql (format NIL "INSERT INTO ~A (~{~A~^, ~}) VALUES (~{?~*~^, ~})" table-name (mapcar #'kebab->snake columns) columns))
          (params (alexandria:alist-plist (loop for colstr in columns
                                                as  colkey = (intern colstr :KEYWORD)
                                                collect (cons colkey (ref inst colkey))))))
+
+    (when version-column
+      (setf (getf params version-column) 1))
 
     ;; set created-at and updated-at
     (setf (getf params :created-at) current-datetime)
@@ -620,7 +631,9 @@
                     (let ((last-id (get-last-id connection)))
                       (setf (ref inst :id) last-id)
                       (setf (ref inst :created-at) current-datetime)
-                      (setf (ref inst :updated-at) current-datetime))
+                      (setf (ref inst :updated-at) current-datetime)
+                      (when version-column
+                        (setf (ref inst version-column) 1)))
                     inst)))
 
       (if connection
@@ -634,36 +647,58 @@
 
 
 (defun update1 (inst &key connection)
-  (let* ((current-datetime (get-universal-time))
+  (let* ((class-name (class-name (class-of inst)))
+         (table-info (gethash class-name clails/model/base-model::*table-information*))
+         (version-column (getf table-info :version-column))
+         (current-version (when version-column (ref inst version-column)))
+         (current-datetime (get-universal-time))
          (table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
-         (columns (fetch-columns inst :update T))
-         (sql (format NIL "UPDATE ~A SET ~{~A = ?~^, ~} WHERE id = ?" table-name (mapcar #'kebab->snake columns)))
-         (params (alexandria:alist-plist (loop for colstr in columns
-                                               as  colkey = (intern colstr :KEYWORD)
-                                               collect (cons colkey (ref inst colkey))))))
+         (columns nil)
+         (where-clause "id = ?")
+         (where-params (list (ref inst :id)))
+         (params nil)
+         (sql nil))
 
-    ;; set updated-at
+    (when version-column
+      ;; the version-column will be automatically added to the `update` columns when flag sets to dirty
+      (setf (gethash version-column (slot-value inst 'clails/model/base-model::dirty-flag))
+            T)
+      (setf where-clause (format nil "~A AND ~A = ?" where-clause (kebab->snake version-column)))
+      (appendf where-params (list current-version)))
+    (setf columns (fetch-columns inst :update T))
+
+    (setf params (alexandria:alist-plist (loop for colstr in columns
+                                               as colkey = (intern colstr :KEYWORD)
+                                               collect (cons colkey (ref inst colkey)))))
+
+    ;; set updated-at and version
     (setf (getf params :updated-at) current-datetime)
+    (when version-column
+      (setf (getf params version-column) (1+ current-version)))
 
-    ;; convert parameter
-    ;; plist -> values
+    (setf sql (format NIL "UPDATE ~A SET ~{~A = ?~^, ~} WHERE ~A"
+                      table-name
+                      (mapcar #'kebab->snake columns)
+                      where-clause))
+
+    ;; convert parameter plist -> values
     (setf params (convert-cl-db-values params inst))
 
-    ;; append id
-    (setf params (append params
-                         (list (ref inst :id))))
+    ;; append where-params
+    (setf params (append params where-params))
 
     ;; TODO: debug
     (format t "debug: query: ~A~%" sql)
     (format t "debug: params: ~A~%" params)
 
     (let ((body #'(lambda (connection)
-                    (dbi-cp:execute
-                     (dbi-cp:prepare connection sql)
-                     params)
-                    (setf (ref inst :updated-at) current-datetime)
-                    inst)))
-
+                    (dbi-cp:execute (dbi-cp:prepare connection sql) params)
+                    (let ((rows (dbi-cp:row-count connection)))
+                      (when (> rows 0)
+                        (setf (ref inst :updated-at) current-datetime)
+                        (when version-column
+                          (setf (ref inst version-column) (1+ current-version))))
+                      rows))))
       (if connection
           (funcall body connection)
           (clails/model/connection:with-db-connection (connection)
