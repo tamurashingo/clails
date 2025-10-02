@@ -57,6 +57,7 @@ jobs:
         CLAILS_MIGRATION_DIR_0001: ${{ github.workspace }}/test/data/0001-migration-test
         CLAILS_MIGRATION_DIR_0002: ${{ github.workspace }}/test/data/0002-join-test
         CLAILS_MIGRATION_DIR_0003: ${{ github.workspace }}/test/data/0003-save-test
+        CLAILS_MIGRATION_DIR_0004: ${{ github.workspace }}/test/data/0004-lock-test
         CLAILS_SQLITE3_DATABASE: ${{ github.workspace }}
         CLAILS_MYSQL_DATABASE: clails_test
         CLAILS_MYSQL_USERNAME: root
