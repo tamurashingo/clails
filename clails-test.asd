@@ -22,7 +22,8 @@
                #:clails-test/helper/date-helper
                #:clails-test/model/join-query
                #:clails-test/model/save
-               #:clails-test/model/optimistic-lock)
+               #:clails-test/model/optimistic-lock
+               #:clails-test/logger)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 
