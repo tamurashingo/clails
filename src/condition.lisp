@@ -7,6 +7,7 @@
            #:404/not-found
            #:405/method-not-allowed
            #:500/internal-server-error
+           #:optimistic-lock-error
            #:code
            #:message
            #:template-name
@@ -67,3 +68,7 @@
    :code 500
    :template-name "public/500.html"
    :message "Internal Server Error"))
+
+
+(define-condition optimistic-lock-error (simple-error)
+  ())

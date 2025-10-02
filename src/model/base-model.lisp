@@ -248,6 +248,18 @@ Example: (ref-in blog :comments 0 :approved-account)"
                (setf (getf value :columns2)
                      (funcall (getf value :columns-fn2) conn))
 
+               ;; check version column type
+               (let ((version-column-name (getf value :version-column))
+                     (columns-plist (getf value :columns2)))
+                 (when version-column-name
+                   (let* ((column-info (getf columns-plist version-column-name))
+                          (column-type (getf column-info :type)))
+                     (unless (eq column-type :integer)
+                       (error "Optimistic locking version column '~A' for model '~A' must be of type :integer, but is '~A'."
+                              version-column-name
+                              key
+                              column-type)))))
+
                ;; initialize relations
                (let ((relations (getf value :relations)))
                  (when relations
@@ -342,6 +354,7 @@ Example: (ref-in blog :comments 0 :approved-account)"
                                    (model->tbl `,class-name)))
          (fn-name (intern (format NIL "%MAKE-~A-INITFORM" `,class-name)))
          (relations (getf options :relations))
+         (version-column (getf options :version))
          (errors nil)
          (relations-ht (make-hash-table :test #'eq)))
 
@@ -381,7 +394,8 @@ Example: (ref-in blog :comments 0 :approved-account)"
                                     (clails/model/base-model::fetch-columns-and-types-plist-impl clails/environment:*database-type* conn ,table-name))
                    :columns nil
                    :columns2 nil
-                   :relations ,relations-ht)))))
+                   :relations ,relations-ht
+                   :version-column ,version-column)))))
 
 
 (defgeneric fetch-columns-and-types-impl (database-type connection table)
