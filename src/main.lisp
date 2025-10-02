@@ -11,6 +11,7 @@
                 #:db/migrate)
   (:import-from #:clails/model)
   (:import-from #:clails/middleware/clails-middleware)
+  (:import-from #:clails/logger)
   (:export #:create-project
            #:generate/model
            #:generate/migration
