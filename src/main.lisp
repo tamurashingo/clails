@@ -10,6 +10,7 @@
                 #:db/create
                 #:db/migrate)
   (:import-from #:clails/model)
+  (:import-from #:clails/view)
   (:import-from #:clails/middleware/clails-middleware)
   (:import-from #:clails/logger)
   (:export #:create-project
