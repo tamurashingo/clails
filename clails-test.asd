@@ -23,7 +23,10 @@
                #:clails-test/model/join-query
                #:clails-test/model/save
                #:clails-test/model/optimistic-lock
-               #:clails-test/logger)
+               #:clails-test/logger
+               #:clails-test/view/parser
+               #:clails-test/view/compiler
+               #:clails-test/view/renderer)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 

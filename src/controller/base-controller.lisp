@@ -17,6 +17,7 @@
            #:header
            #:params
            #:view
+           #:view-data
            #:set-view
            #:set-redirect
            #:set-response
@@ -51,7 +52,9 @@
 
 
 (defclass <web-controller> (<base-controller>)
-  ((view :accessor view)))
+  ((view :accessor view)
+   (view-data :initform nil
+              :accessor view-data)))
 
 (defmethod initialize-instance :after ((c <web-controller>) &rest initargs)
   (declare (ignore initargs))
@@ -95,9 +98,13 @@
                        :path-info))))
 
 
-(defmethod set-view ((controller <web-controller>) viewname)
+(defmethod set-view ((controller <web-controller>) viewname &optional data)
+  "Set view template and optional data for rendering.
+   viewname: template file name (e.g., \"users/show.html\")
+   data: plist of data to pass to template (e.g., '(:user user :todos todos))"
   (setf (view controller) (merge-pathnames (format nil "app/views/~A" viewname)
-                                           *project-dir*)))
+                                           *project-dir*))
+  (setf (view-data controller) data))
 
 
 (defmethod set-redirect ((controller <web-controller>) path)

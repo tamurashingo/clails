@@ -7,6 +7,7 @@
                 #:code
                 #:header
                 #:view
+                #:view-data
                 #:response)
   (:import-from #:clails/controller/error-handle-controller
                 #:<error-handle-controller>
@@ -14,6 +15,8 @@
   (:import-from #:clails/condition
                 #:message
                 #:path)
+  (:import-from #:clails/view/renderer
+                #:render)
   (:export #:resolve-view))
 
 
@@ -42,12 +45,12 @@
 
 
 (defun extract-template (controller template-name)
-  ;; A hack to avoid having to specify package names within cl-template.
-  (let ((*package* (symbol-package (class-name (class-of controller)))))
-    (let ((tmpl (uiop:read-file-string template-name
-                                       :external-format :utf-8)))
-      (funcall (cl-template:compile-template tmpl)
-               `(:controller ,controller)))))
+  "Render template using the new template engine.
+   Use the controller's package for evaluating template code."
+  (let* ((controller-package (symbol-package (class-name (class-of controller))))
+         (data (or (view-data controller)
+                   (list :controller controller))))
+    (render template-name data :package controller-package)))
 
 
 (defun view/html-template (controller content)
