@@ -26,7 +26,9 @@
                #:clails-test/logger
                #:clails-test/view/parser
                #:clails-test/view/compiler
-               #:clails-test/view/renderer)
+               #:clails-test/view/renderer
+               #:clails-test/datetime/all
+               #:clails-test/datetime/conversions)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 
