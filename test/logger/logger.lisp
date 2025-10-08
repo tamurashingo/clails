@@ -1,4 +1,4 @@
-(defpackage clails/test/logger
+(defpackage clails/test/logger/logger
   (:use #:cl
         #:rove
         #:jonathan)
@@ -12,7 +12,7 @@
                 #:<json-formatter>
                 #:make-console-appender
                 #:<logger>))
-(in-package :clails/test/logger)
+(in-package :clails/test/logger/logger)
 
 (deftest logger-tests
   (testing "Text Formatter"
@@ -45,8 +45,8 @@
     (let ((output (with-output-to-string (*standard-output*)
                     (let ((*logger* (make-instance '<logger>
                                                    :level :info
-                                                   :appender (make-console-appender
-                                                              :formatter (make-instance '<text-formatter>)))))
+                                                   :appenders (list (make-console-appender
+                                                                     :formatter (make-instance '<text-formatter>))))))
                       (log.debug "This should not be printed.")
                       (with-log-context (:session-id "abc")
                         (log.info "Info message with context.")

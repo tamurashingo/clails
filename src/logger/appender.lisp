@@ -8,7 +8,10 @@
                 #:format-record)
   (:export #:<appender>
            #:<stream-appender>
-           #:make-console-appender))
+           #:make-console-appender
+           #:<file-appender>
+           #:make-file-appender
+           #:close-appender))
 (in-package #:clails/logger/appender)
 
 (defclass <appender> () ()
@@ -33,4 +36,101 @@
   "Creates an appender that writes to *standard-output*."
   (make-instance '<stream-appender>
                  :stream *standard-output*
+                 :formatter formatter))
+
+;;; ------------------------------------------------------------------
+;;; File Appender
+;;; ------------------------------------------------------------------
+(defclass <file-appender> (<appender>)
+  ((filepath
+    :initarg :filepath
+    :reader file-appender-filepath
+    :documentation "Path to the log file.")
+   (formatter
+    :initarg :formatter
+    :reader file-appender-formatter
+    :documentation "Formatter used to format log records.")
+   (stream
+    :accessor file-appender-stream
+    :initform nil
+    :documentation "File stream for writing logs."))
+  (:documentation "Appender that writes log records to a file."))
+
+(defmethod log-append ((appender <file-appender>) (record <log-record>))
+  "Append a log record to the file.
+
+   Opens the file stream if not already open, formats the record, and writes it to the file.
+
+   @param appender [<file-appender>] File appender instance
+   @param record [<log-record>] Log record to append
+   @return [null] nil
+   "
+  ;; Open stream if not already open
+  (unless (file-appender-stream appender)
+    (setf (file-appender-stream appender)
+          (open (file-appender-filepath appender)
+                :direction :output
+                :if-exists :append
+                :if-does-not-exist :create)))
+
+  ;; Format and write the record
+  (format-record (file-appender-formatter appender)
+                 (file-appender-stream appender)
+                 record)
+  (finish-output (file-appender-stream appender)))
+
+;;; ------------------------------------------------------------------
+;;; Appender Cleanup
+;;; ------------------------------------------------------------------
+(defgeneric close-appender (appender)
+  (:documentation "Close the appender and release any resources.
+
+   @param appender [<appender>] Appender instance to close
+   @return [null] nil
+   "))
+
+(defmethod close-appender ((appender <appender>))
+  "Default implementation does nothing.
+
+   @param appender [<appender>] Appender instance
+   @return [null] nil
+   "
+  (declare (ignore appender))
+  nil)
+
+(defmethod close-appender ((appender <stream-appender>))
+  "Close stream appender (does not close standard streams).
+
+   @param appender [<stream-appender>] Stream appender instance
+   @return [null] nil
+   "
+  ;; Don't close standard streams
+  (declare (ignore appender))
+  nil)
+
+(defmethod close-appender ((appender <file-appender>))
+  "Close file appender and its underlying file stream.
+
+   @param appender [<file-appender>] File appender instance
+   @return [null] nil
+   "
+  (when (file-appender-stream appender)
+    (close (file-appender-stream appender))
+    (setf (file-appender-stream appender) nil)))
+
+;;; ------------------------------------------------------------------
+;;; Helper Functions
+;;; ------------------------------------------------------------------
+(defun make-file-appender (&key filepath formatter)
+  "Create a file appender that writes to the specified file.
+
+   The file is opened in append mode and created if it does not exist.
+
+   @param filepath [pathname] Path to the log file
+   @param filepath [string] Path to the log file
+   @param formatter [<formatter>] Formatter to use for log records
+   @return [<file-appender>] File appender instance
+   "
+  (make-instance '<file-appender>
+                 :filepath filepath
                  :formatter formatter))
