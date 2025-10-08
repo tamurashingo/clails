@@ -35,9 +35,6 @@
                 #:<file-appender>
                 #:make-file-appender
                 #:close-appender)
-  (:import-from #:clails/logger/fluentd-appender
-                #:<fluentd-appender>
-                #:make-fluentd-appender)
   (:import-from #:clails/logger/formatter
                 #:<text-formatter>
                 #:<json-formatter>)
@@ -73,8 +70,6 @@
            #:<file-appender>
            #:make-file-appender
            #:close-appender
-           #:<fluentd-appender>
-           #:make-fluentd-appender
            #:<text-formatter>
            #:<json-formatter>
            #:setup-logger/development
