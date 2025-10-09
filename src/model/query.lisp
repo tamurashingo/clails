@@ -720,8 +720,7 @@
   (let ((inst (make-instance model-name))
         (columns-plist (clails/model/base-model::get-columns-plist model-name)))
     (loop for (key db-value) on db-values by #'cddr
-          do (let* ((key (intern (snake->kebab key) :KEYWORD))
-                    (fn (getf (getf columns-plist key) :DB-CL-FN)))
+          do (let ((fn (getf (getf columns-plist key) :DB-CL-FN)))
                (setf (ref inst key)
                      (funcall fn db-value))))
     (clear-dirty-flag inst)
