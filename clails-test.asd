@@ -23,7 +23,12 @@
                #:clails-test/model/join-query
                #:clails-test/model/save
                #:clails-test/model/optimistic-lock
-               #:clails-test/logger
+               #:clails-test/logger/logger
+               #:clails-test/logger/registry
+               #:clails-test/logger/purpose-specific
+               #:clails-test/logger/file-appender
+               #:clails-test/logger/environment
+               #:clails-test/logger/dynamic-config
                #:clails-test/view/parser
                #:clails-test/view/compiler
                #:clails-test/view/renderer
