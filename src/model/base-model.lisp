@@ -37,40 +37,17 @@
                :documentation "")
    (has-dirty-p :initform nil
                 :reader has-dirty-p)
-   (columns :documentation "Holds information about columns in the form of a plist. This value varies depending on the DB implementation.
-- :name - [string] the name of the column
-- :access - [keyword] the key used to retrieve values from the database (note: in PostgreSQL, keywords are converted to lowercase, so this is defined separately from :name)
-- :type - [keyword] the type specified during migration
-- :db-cl-fn - [function] function to convert database values to Common Lisp values
-- :cl-db-fn - [function] function to convert Common Lisp values to database values
-
-'ex: ((:name :id
-       :access \"ID\"
-       :type :integer
-       :convert-fn #'identity)
-      (:name :created-at
-       :access \"CREATED-AT\"
-       :type :datetime
-       :function #'identity)
-      (:name :updated-at
-       :access \"UPDATED-AT\"
-       :type :datetime
-       :function #'identity)
-      (:name :title
-       :access \"TITLE\"
-       :type :text
-       :function #'babel:octets-to-string))")
-   (columns2 :documentation "property list
-ex: (:id (:name :id
-          :access \"ID\"
-          :type :integer
-          :db-cl-fn #'identity
-          :cl-db-fn #'identity)
-     :created-at (:name :created-at
-                  :access \"CREATED_AT\"
-                  :type :datetime
-                  :db-cl-fn #'identity
-                  :cl-db-fn #'identity))")
+   (columns :documentation "list of column
+ex: ((:name :id
+      :access \"ID\"
+      :type :integer
+      :db-cl-fn #'identity
+      :cl-db-fn #'identity)
+    (:name :created-at
+     :access \"CREATED_AT\"
+     :type :datetime
+     :db-cl-fn #'identity
+     :cl-db-fn #'identity))")
    (table-name :documentation "database table name")
    (errors :initform (make-hash-table))
    (has-error-p :initform nil
@@ -78,15 +55,8 @@ ex: (:id (:name :id
    (frozen-p :initform nil
              :reader frozen-p)))
 
-(defmethod initialize-instance :after ((m <base-model>) &rest initargs)
-  (declare (ignore initargs))
-  (loop for column in (slot-value m 'columns)
-        do (let ((col (getf column :name)))
-              (setf (gethash col (slot-value m 'data)) nil))))
-
 (defmethod print-object ((obj <base-model>) stream)
   (print-unreadable-object (obj stream :type t)
-    (format stream "table: ~a, value: " (slot-value obj 'table-name))
     (format stream "~{~{~a -> ~a~}~^, ~}"
             (loop for column in (slot-value obj 'columns)
                   for colname = (getf column :name)
@@ -125,7 +95,7 @@ ex: (:id (:name :id
 (defmethod ref ((inst <base-model>) key)
   (let* ((class-name (class-name (class-of inst)))
          (table-info (gethash class-name *table-information*))
-         (columns-plist (getf table-info :columns2))
+         (columns-plist (getf table-info :columns-plist))
          (relations-ht (getf table-info :relations)))
 
     ;; Check if the key is a DB column or a defined relation alias
@@ -143,7 +113,7 @@ ex: (:id (:name :id
 (defmethod ref-error ((inst <base-model>) key)
   (let* ((class-name (class-name (class-of inst)))
          (table-info (gethash class-name *table-information*))
-         (columns-plist (getf table-info :columns2)))
+         (columns-plist (getf table-info :columns-plist)))
     (if (getf columns-plist key)
         (gethash key (slot-value inst 'errors))
         (error "not found slot-name: `~A` is not a column in model `~A`'"
@@ -171,7 +141,6 @@ ex: (:id (:name :id
 (defmethod clear-dirty-flag ((inst <base-model>))
   (clrhash (slot-value inst 'dirty-flag))
   (setf (slot-value inst 'has-dirty-p) nil))
-
 
 
 (defun value= (old new)
@@ -235,7 +204,18 @@ Example: (ref-in blog :comments 0 :approved-account)"
          "")
       "")))
 
-(defparameter *table-information* (make-hash-table))
+
+(defparameter *table-information* (make-hash-table)
+              "key: model class name
+               value: plist
+                :table-name <string>
+                :columns <list of columns>
+                :columns-fn <function to fetch columns>
+                :columns-plist <plist of columns>
+                :columns-plist-fn <function to fetch columns plist>
+                :relations <hash-table of relations>
+                :version-column <keyword or nil>")
+
 
 (defun initialize-table-information ()
   (with-db-connection-direct (conn)
@@ -245,12 +225,12 @@ Example: (ref-in blog :comments 0 :approved-account)"
                (format t "initializing ~A ... " key)
                (setf (getf value :columns)
                      (funcall (getf value :columns-fn) conn))
-               (setf (getf value :columns2)
-                     (funcall (getf value :columns-fn2) conn))
+               (setf (getf value :columns-plist)
+                     (funcall (getf value :columns-plist-fn) conn))
 
                ;; check version column type
                (let ((version-column-name (getf value :version-column))
-                     (columns-plist (getf value :columns2)))
+                     (columns-plist (getf value :columns-plist)))
                  (when version-column-name
                    (let* ((column-info (getf columns-plist version-column-name))
                           (column-type (getf column-info :type)))
@@ -277,14 +257,13 @@ Example: (ref-in blog :comments 0 :approved-account)"
           using (hash-value value)
         do (format t "key:~A, value:~A" key value)))
 
-
 (defun get-columns (model-name)
   (getf (gethash model-name clails/model/base-model::*table-information*)
         :columns))
 
 (defun get-columns-plist (model-name)
   (getf (gethash model-name clails/model/base-model::*table-information*)
-        :columns2))
+        :columns-plist))
 
 
 
@@ -383,17 +362,16 @@ Example: (ref-in blog :comments 0 :approved-account)"
 
        (defclass ,cls-name ,superclass
          ((table-name :initform ,table-name)
-          (columns :initform (clails/model/base-model::get-columns ',cls-name))
-          (columns2 :initform (clails/model/base-model::get-columns ',cls-name))))
+          (columns :initform (clails/model/base-model::get-columns ',cls-name))))
 
        (setf (gethash  ',cls-name clails/model/base-model::*table-information*)
              (list :table-name ,table-name
                    :columns-fn #'(lambda (conn)
                                    (clails/model/base-model::fetch-columns-and-types-impl clails/environment:*database-type*  conn ,table-name))
-                   :columns-fn2 #'(lambda (conn)
+                   :columns-plist-fn #'(lambda (conn)
                                     (clails/model/base-model::fetch-columns-and-types-plist-impl clails/environment:*database-type* conn ,table-name))
                    :columns nil
-                   :columns2 nil
+                   :columns-plist nil
                    :relations ,relations-ht
                    :version-column ,version-column)))))
 
