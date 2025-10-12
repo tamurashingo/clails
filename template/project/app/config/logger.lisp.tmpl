@@ -1,0 +1,170 @@
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>/config/logger
+  (:use #:cl)
+  (:import-from #:clails/logger))
+
+(in-package #:<%= (@ project-name ) %>/config/logger)
+
+(defun logger-setup/develop ()
+  (clear-loggers)
+
+  (ensure-directories-exist "logs/")
+
+  ;; project default logger
+  (register-logger
+   :root
+   :appenders (list (make-console-appender
+                     :formatter (make-instance '<text-formatter>))
+                    (make-file-appender
+                     :filepath "logs/application.develop.log"
+                     :formatter (make-instance '<text-formatter>)))
+   :level :debug)
+
+  ;; clails framework logger
+  (register-logger
+   :clails
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :error)
+
+  ;; SQL logger
+  (register-logger
+   :sql
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :debug)
+
+  ;; web-access logger
+  (register-logger
+   :web-access
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :info)
+
+  ;; audit logger
+  (register-logger
+   :audit
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :info)
+
+  nil)
+
+
+(defun logger-setup/test ()
+  (clear-loggers)
+
+  ;; project default logger
+  (register-logger
+   :<%= (@ project-name) %>
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :warn)
+
+  ;; clails framework logger
+  (register-logger
+   :clails
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :error)
+
+  ;; SQL logger
+  (register-logger
+   :sql
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :error)
+
+  ;; web-access logger
+  (register-logger
+   :web-access
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :warn)
+
+  ;; audit logger
+  (register-logger
+   :audit
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :info)
+
+  nil)
+
+
+
+(defun logger-setup/production ()
+  (clear-loggers)
+
+  (ensure-directories-exist "logs/")
+
+  ;; root logger
+  (register-logger
+   :root
+   :appender (make-null-appender)
+   :level :none)
+  
+  ;; project default logger
+  (register-logger
+   :root
+   :appenders (list (make-console-appender
+                     :formatter (make-instance '<json-formatter>))
+                    (make-file-appender
+                     :filepath "logs/application.log"
+                     :formatter (make-instance '<json-formatter>)))
+   :level :warn)
+  
+  ;; clails framework logger
+
+  ;; SQL logger
+  (register-logger
+   :sql
+   :appender (make-file-appender
+              :filepath "logs/sql.log"
+              :formatter (make-instance '<json-formatter>))
+   :level :info)
+
+  ;; web-access logger
+  (register-logger
+   :sql
+   :appender (make-file-appender
+              :filepath "logs/access.log"
+              :formatter (make-instance '<json-formatter>))
+   :level :info)
+
+  ;; audit logger
+  (register-logger
+   :audit
+   :appender (make-file-appender
+              :filepath "logs/audit.log"
+              :formatter (make-instance '<json-formatter>))
+   :level :info)
+
+  nil)
+
+
+(defun initialize-logging (&optional environment)
+  "Initialize the logging system according to the environment.
+
+   If environment is not specified, it will be obtained from
+   clails/environment:*project-environment*.
+
+   Supported environments:
+   - :develop, :development - Development environment
+   - :test - Test environment
+   - :production - Production environment
+
+   @param environment [keyword] Environment keyword (optional)
+   @return [null] nil
+   @condition error Unknown environment specified
+   "
+  (let ((env (or environment
+                 (and (find-package :clails/environment)
+                      (symbol-value (find-symbol "*PROJECT-ENVIRONMENT*" :clails/environment)))
+                 :develop)))
+    (case env
+      ((:develop :development) (setup-logger/development))
+      (:test (setup-logger/test))
+      (:production (setup-logger/production))
+      (t (error "Unknown environment: ~A" env)))))

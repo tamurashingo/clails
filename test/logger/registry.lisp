@@ -8,7 +8,6 @@
                 #:clear-loggers
                 #:logger-name
                 #:logger-level
-                #:logger-appenders
                 #:make-console-appender
                 #:<text-formatter>))
 (in-package #:clails/test/logger/registry)
@@ -21,7 +20,7 @@
       (ok logger "Logger is created")
       (ok (eq (logger-name logger) :test-logger) "Logger name is correct")
       (ok (eq (logger-level logger) :debug) "Logger level is correct")
-      (ok (= (length (logger-appenders logger)) 1) "Logger has one appender")
+      (ok (= (length (clails/logger/core::logger-appenders logger)) 1) "Logger has one appender")
       
       (let ((retrieved (get-logger :test-logger)))
         (ok retrieved "Logger can be retrieved")
@@ -34,15 +33,15 @@
            (logger (register-logger :multi-logger 
                                     :appenders (list appender1 appender2)
                                     :level :info)))
-      (ok (= (length (logger-appenders logger)) 2) "Logger has two appenders")))
+      (ok (= (length (clails/logger/core::logger-appenders logger)) 2) "Logger has two appenders")))
   
-  (testing "Get default logger fallback"
+  (testing "Get root logger fallback"
     (clear-loggers)
     (let ((appender (make-console-appender :formatter (make-instance '<text-formatter>))))
-      (register-logger :default :appender appender :level :info)
+      (register-logger :root :appender appender :level :info)
       (let ((logger (get-logger :non-existent)))
-        (ok logger "Returns default logger for non-existent logger")
-        (ok (eq (logger-name logger) :default) "Returns the default logger"))))
+        (ok logger "Returns root logger for non-existent logger")
+        (ok (eq (logger-name logger) :root) "Returns the :root logger"))))
   
   (testing "Remove logger"
     (clear-loggers)

@@ -84,6 +84,13 @@
                                database
                                (read-template "app/config/environment.lisp.tmpl"))
 
+    ;; logger
+    (create-file-with-template "app/config/logger.lisp"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "app/config/logger.lisp.tmpl"))
+
     ;; database
     (let ((db-template (cond ((eq database :sqlite3)
                               "app/config/database-sqlite3.lisp.tmpl")
