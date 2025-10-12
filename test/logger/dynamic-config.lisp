@@ -8,7 +8,6 @@
                 #:set-logger-level
                 #:add-appender
                 #:logger-level
-                #:logger-appenders
                 #:make-console-appender
                 #:<text-formatter>
                 #:<json-formatter>))
@@ -36,12 +35,12 @@
     (clear-loggers)
     (let ((appender1 (make-console-appender :formatter (make-instance '<text-formatter>))))
       (register-logger :test-logger :appender appender1 :level :info)
-      (ok (= (length (logger-appenders (get-logger :test-logger))) 1)
+      (ok (= (length (clails/logger/core::logger-appenders (get-logger :test-logger))) 1)
           "Logger starts with one appender")
       
       (let ((appender2 (make-console-appender :formatter (make-instance '<json-formatter>))))
         (add-appender :test-logger appender2)
-        (ok (= (length (logger-appenders (get-logger :test-logger))) 2)
+        (ok (= (length (clails/logger/core::logger-appenders (get-logger :test-logger))) 2)
             "Logger now has two appenders"))))
   
   (testing "Add appender to non-existent logger"
@@ -55,5 +54,5 @@
     (let ((appender (make-console-appender :formatter (make-instance '<text-formatter>))))
       (register-logger :test-logger :appender appender :level :info)
       (add-appender :test-logger appender)
-      (ok (= (length (logger-appenders (get-logger :test-logger))) 1)
+      (ok (= (length (clails/logger/core::logger-appenders (get-logger :test-logger))) 1)
           "Duplicate appender is not added"))))
