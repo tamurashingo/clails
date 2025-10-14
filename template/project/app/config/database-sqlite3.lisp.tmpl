@@ -3,7 +3,8 @@
 (defpackage #:<%= (@ project-name) %>/config/database
   (:use #:cl)
   (:import-from #:clails/environment
-                #:*project-environment*)
+                #:*project-environment*
+                #:*project-dir*)
   (:import-from #:clails/util
                 #:env-or-default
                 #:env)

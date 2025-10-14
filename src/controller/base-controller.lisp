@@ -8,6 +8,11 @@
   (:import-from #:clails/environment
                 #:*routing-tables*
                 #:*project-dir*)
+  (:import-from #:clails/logger
+                #:log.web-access
+                #:log-package.trace
+                #:log-package.debug
+                #:log-level-enabled-p)
   (:export #:<base-controller>
            #:<web-controller>
            #:<rest-controller>
@@ -72,6 +77,8 @@
 (defgeneric do-get (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
+    (when (log-level-enabled-p :trace)
+      (log-package.trace "do-get called"))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))
@@ -79,6 +86,8 @@
 (defgeneric do-post (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
+    (when (log-level-enabled-p :trace)
+      (log-package.trace "do-post called"))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))
@@ -86,6 +95,8 @@
 (defgeneric do-put (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
+    (when (log-level-enabled-p :trace)
+      (log-package.trace "do-put called"))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))
@@ -93,6 +104,8 @@
 (defgeneric do-delete (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
+    (when (log-level-enabled-p :trace)
+      (log-package.trace "do-delete called"))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))

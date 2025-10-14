@@ -21,6 +21,7 @@
            #:set-logger-level
            #:add-appender
            #:clear-loggers
+           #:log-level-enabled-p
            #:log-package.trace
            #:log-package.debug
            #:log-package.info
@@ -380,6 +381,27 @@
    @param context [plist] Additional context (e.g., :user-id, :ip-address, :action)
    "
   `(clails/logger/core::log-message-to :audit :info ,message ,@context))
+
+;;; ------------------------------------------------------------------
+;;; Log Level Check API
+;;; ------------------------------------------------------------------
+(defun log-level-enabled-p (level &optional (package-or-logger-name *package*))
+  "Check if the specified log level is enabled for the given package or logger.
+
+   Returns true if the log level is enabled, false otherwise.
+   If no logger is found, returns nil.
+
+   @param level [keyword] Log level to check (:trace, :debug, :info, :warn, :error, :fatal)
+   @param package-or-logger-name [package] Package object (default: *package*)
+   @param package-or-logger-name [symbol] Package name symbol
+   @param package-or-logger-name [string] Package name string or logger name
+   @param package-or-logger-name [keyword] Logger name
+   @return [boolean] t if the log level is enabled, nil otherwise
+   "
+  (let* ((logger-name (package-to-logger-name package-or-logger-name))
+         (logger (get-logger logger-name)))
+    (when logger
+      (log-level>= level (logger-level logger)))))
 
 ;;; ------------------------------------------------------------------
 ;;; Dynamic Configuration API

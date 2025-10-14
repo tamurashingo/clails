@@ -9,6 +9,8 @@
   (:import-from #:clails/model/connection
                 #:with-db-connection-direct
                 #:with-db-connection)
+  (:import-from #:clails/logger
+                #:log.sql)
   (:export #:defmigration
            #:create-table
            #:add-column
@@ -170,9 +172,9 @@
 (defun db-status ()
   (setf *migrations* nil)
   (load-migration-files)
-  (format t " STATUS    MIGRATION NAME~%")
-  (format t "-----------------------------------------~%")
-  (format t "~{~{ ~A~11T~A~}~%~}" (migrated-status)))
+  (log.sql " STATUS    MIGRATION NAME")
+  (log.sql "-----------------------------------------")
+  (log.sql (format nil "~{~{ ~A~11T~A~}~%~}" (migrated-status))))
 
 (defun check-type-valid (type)
   (when (not (find type *type-list*))
@@ -194,9 +196,9 @@
 (defun load-migration-files ()
   (let ((files (directory (format NIL "~A/db/migrate/**/*.lisp" *migration-base-dir*))))
     (dolist (file files)
-      (format T "loading migration file: ~A" file)
+      (log.sql (format nil "loading migration file: ~A" file))
       (load file)
-      (format T " ... done~%"))))
+      (log.sql " ... done"))))
 
 (defun migrated-status ()
   (with-db-connection-direct (connection)
@@ -222,7 +224,7 @@
 
 (defun not-migrated-p (connection migration-name &optional verbose)
   (when verbose
-    (format T "checking migration: ~A~%" migration-name))
+    (log.sql (format nil "checking migration: ~A" migration-name)))
   (let* ((query (dbi:prepare connection "select * from migration where migration_name = ?"))
          (result (dbi:execute query (list migration-name))))
     (null (dbi:fetch result))))

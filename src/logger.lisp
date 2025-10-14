@@ -18,6 +18,7 @@
                 #:set-logger-level
                 #:add-appender
                 #:clear-loggers
+                #:log-level-enabled-p
                 #:log-package.trace
                 #:log-package.debug
                 #:log-package.info
@@ -48,6 +49,7 @@
            #:set-logger-level
            #:add-appender
            #:clear-loggers
+           #:log-level-enabled-p
            #:log-package.trace
            #:log-package.debug
            #:log-package.info

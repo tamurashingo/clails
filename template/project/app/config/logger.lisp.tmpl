@@ -2,7 +2,9 @@
 (in-package #:cl-user)
 (defpackage #:<%= (@ project-name ) %>/config/logger
   (:use #:cl)
-  (:import-from #:clails/logger))
+  (:import-from #:clails/logger)
+  (:export #:initialize-logger
+           #:finalize-logger))
 
 (in-package #:<%= (@ project-name ) %>/config/logger)
 
@@ -144,7 +146,7 @@
   nil)
 
 
-(defun initialize-logging (&optional environment)
+(defun initialize-logger (&optional environment)
   "Initialize the logging system according to the environment.
 
    If environment is not specified, it will be obtained from
@@ -168,3 +170,12 @@
       (:test (setup-logger/test))
       (:production (setup-logger/production))
       (t (error "Unknown environment: ~A" env)))))
+
+(defun finalize-logger ()
+  (maphash #'(lambda (k logger)
+               (declare (ignore k))
+               (let ((appenders (clails/logger/core::logger-appenders logger)))
+                 (dolist (appender appenders)
+                   (close-appender appender))))
+           clails/logger/core::*logger-registry*))
+

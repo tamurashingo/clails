@@ -1,0 +1,36 @@
+(in-package #:cl-user)
+(defpackage #:clails/middleware/core
+  (:use #:cl)
+  (:import-from #:clails/middleware/clails-middleware
+                #:*lack-middleware-clails-controller*)
+  (:export #:*clails-middleware-stack*
+           #:add-middleware-before
+           #:add-middleware-after
+           #:show-middleware-stack))
+(in-package #:clails/middleware/core)
+
+(defparameter *clails-middleware-stack* (list
+                                         *lack-middleware-clails-controller*
+                                         (:static :path "/"
+                                                  :root #P"./public/"))
+  "A list of middleware functions to be applied to the application.
+   Each middleware function should take a single argument,
+   which is the next application in the stack,
+   and return a new application that wraps the next one.
+   see: https://github.com/fukamachi/lack ")
+
+
+;; insert before the existing stack
+(defun add-middleware-before (middleware)
+  (setf *clails-middleware-stack*
+        (cons middleware *clails-middleware-stack*)))
+
+;; insert after the existing stack
+(defun add-middleware-after (middleware)
+  (setf *clails-middleware-stack*
+        (append *clails-middleware-stack*
+                (list middleware))))
+
+(defun show-middleware-stack (&optional (stream T))
+  (dolist (mw *clails-middleware-stack*)
+    (format stream "~A~%" mw)))
