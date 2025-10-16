@@ -1,6 +1,8 @@
 (in-package #:cl-user)
 (defpackage #:clails/middleware/core
   (:use #:cl)
+  (:import-from #:lack.middleware.static
+                #:*lack-middleware-static*)
   (:import-from #:clails/middleware/clails-middleware
                 #:*lack-middleware-clails-controller*)
   (:export #:*clails-middleware-stack*
@@ -10,9 +12,10 @@
 (in-package #:clails/middleware/core)
 
 (defparameter *clails-middleware-stack* (list
-                                         *lack-middleware-clails-controller*
-                                         (:static :path "/"
-                                                  :root #P"./public/"))
+                                          *lack-middleware-clails-controller*
+                                          (funcall *lack-middleware-static*
+                                                   :path "/"
+                                                   :root #P"./public/")))
   "A list of middleware functions to be applied to the application.
    Each middleware function should take a single argument,
    which is the next application in the stack,
