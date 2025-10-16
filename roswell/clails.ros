@@ -21,10 +21,11 @@ exec ros -Q -- $0 "$@"
   (setf qlot/logger:*logger-message-stream* (make-broadcast-stream))
   (ensure-directories-exist CLAILS_CONF_DIR)
   (setf qlot:*project-root* CLAILS_CONF_DIR)
-  (qlot:add "tamurashingo/cl-dbi-connection-pool")
-  (qlot:add "tamurashingo/getcmd")
+  (unless (probe-file (merge-pathnames "qlfile" CLAILS_CONF_DIR))
+    (qlot:add "tamurashingo/cl-dbi-connection-pool")
+    (qlot:add "tamurashingo/getcmd")
 
-  (qlot:add "tamurashingo/clails")
+    (qlot:add "tamurashingo/clails"))
 
   (qlot:install)
   (push (format NIL "~A/.qlot/" CLAILS_CONF_DIR) ql:*local-project-directories*)
