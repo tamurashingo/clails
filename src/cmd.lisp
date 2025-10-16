@@ -18,7 +18,8 @@
                 #:db-status)
   (:import-from #:clails/controller/base-controller
                 #:initialize-routing-tables)
-  (:import-from #:clails/middleware/clails-middleware
+  (:import-from #:clails/middleware
+                #:*clails-middleware-stack*
                 #:*lack-middleware-clails-controller*)
   (:import-from #:clails/util
                 #:function-from-string)
