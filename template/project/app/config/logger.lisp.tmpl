@@ -2,7 +2,13 @@
 (in-package #:cl-user)
 (defpackage #:<%= (@ project-name ) %>/config/logger
   (:use #:cl)
-  (:import-from #:clails/logger)
+  (:import-from #:clails/logger
+                #:clear-loggers
+                #:register-logger
+                #:make-console-appender
+                #:make-file-appender
+                #:<text-formatter>
+                #:<json-formatter>)
   (:export #:initialize-logger
            #:finalize-logger))
 
