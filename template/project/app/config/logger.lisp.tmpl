@@ -8,7 +8,7 @@
 
 (in-package #:<%= (@ project-name ) %>/config/logger)
 
-(defun logger-setup/develop ()
+(defun setup-logger/develop ()
   (clear-loggers)
 
   (ensure-directories-exist "logs/")
@@ -54,7 +54,7 @@
   nil)
 
 
-(defun logger-setup/test ()
+(defun setup-logger/test ()
   (clear-loggers)
 
   ;; project default logger
@@ -96,7 +96,7 @@
 
 
 
-(defun logger-setup/production ()
+(defun setup-logger/production ()
   (clear-loggers)
 
   (ensure-directories-exist "logs/")
@@ -166,7 +166,7 @@
                       (symbol-value (find-symbol "*PROJECT-ENVIRONMENT*" :clails/environment)))
                  :develop)))
     (case env
-      ((:develop :development) (setup-logger/development))
+      ((:develop :development) (setup-logger/develop))
       (:test (setup-logger/test))
       (:production (setup-logger/production))
       (t (error "Unknown environment: ~A" env)))))
