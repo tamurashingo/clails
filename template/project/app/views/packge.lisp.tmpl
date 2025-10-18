@@ -1,0 +1,11 @@
+(in-package #:cl-user)
+(defpackage #:<%%= (@ project-name ) %%>/views/package
+  (:use #:cl)
+  (:import-from #:clails/view/view-helper
+                #:*view-context*
+                #:view)
+  (:import-from #:<%%= (@ project-name ) %%>/controllers/application-controller
+                #:lisp-type
+                #:lisp-version))
+
+(in-package #:<%%= (@ project-name ) %%>/views/package)
