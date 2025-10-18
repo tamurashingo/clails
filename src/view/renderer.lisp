@@ -36,20 +36,21 @@
                          (compile-and-cache-template template-path
                                                      start-expr
                                                      start-script
-                                                     tag-end))))
+                                                     tag-end
+                                                     package))))
     
-    ;; Execute template with data in specified package
-    (let ((*package* package)
-          (*view-context* data))
+    ;; Execute template with data
+    (let ((*view-context* data))
       (with-output-to-string (stream)
         (funcall compiled-fn stream)))))
 
-(defun compile-and-cache-template (template-path start-expr start-script tag-end)
+(defun compile-and-cache-template (template-path start-expr start-script tag-end package)
   "Read, compile and cache a template"
   (let* ((template-string (uiop:read-file-string template-path
                                                  :external-format :utf-8))
          (compiled-fn (compile-template template-string
                                         :start-expr start-expr
                                         :start-script start-script
-                                        :tag-end tag-end)))
+                                        :tag-end tag-end
+                                        :package package)))
     (cache-template template-path compiled-fn)))
