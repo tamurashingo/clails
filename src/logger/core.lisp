@@ -307,7 +307,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :trace ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :trace ,message ,@context))
 
 (defmacro log-package.debug (message &rest context)
   "Log a message using the current package's logger at DEBUG level.
@@ -315,7 +315,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :debug ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :debug ,message ,@context))
 
 (defmacro log-package.info (message &rest context)
   "Log a message using the current package's logger at INFO level.
@@ -323,7 +323,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :info ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :info ,message ,@context))
 
 (defmacro log-package.warn (message &rest context)
   "Log a message using the current package's logger at WARN level.
@@ -331,7 +331,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :warn ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :warn ,message ,@context))
 
 (defmacro log-package.error (message &rest context)
   "Log a message using the current package's logger at ERROR level.
@@ -339,7 +339,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :error ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :error ,message ,@context))
 
 (defmacro log-package.fatal (message &rest context)
   "Log a message using the current package's logger at FATAL level.
@@ -347,7 +347,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :fatal ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :fatal ,message ,@context))
 
 ;;; ------------------------------------------------------------------
 ;;; Purpose-Specific Logging API
