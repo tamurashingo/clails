@@ -112,6 +112,14 @@
                                database
                                (read-template "app/controllers/application-controller.lisp.tmpl"))
 
+
+    ;; view package
+    (create-file-with-template "app/views/package.lisp"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "app/views/packge.lisp.tmpl"))
+
     ;; view
     (create-file-with-template "app/views/index.html"
                                project-name

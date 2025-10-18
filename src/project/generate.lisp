@@ -49,13 +49,25 @@
                                   :name ,name
                                   :current-datetime ,(current-datetime)))))))
 
-(defun add-load (name)
+(defun add-load (comment load-package)
   (let ((outfile (format nil "~A/app/application.lisp" *project-dir*)))
     (with-open-file (out outfile
                          :direction :output
                          :if-exists :append)
-      (format out ";-- ~A : add ~A controller~%" (current-datetime) name)
-      (format out "(asdf:load-system :~A/controllers/~A-controller)~%~%" *project-name* name))))
+      (when comment
+        (format out "~A~%" comment))
+      (format out "~A~%" load-package))))
+
+(defun add-load-controller (name)
+  (let ((comment (format nil "; -- ~A : add ~A controller~%" (current-datetime) name))
+        (load-statement (format nil "(asdf:load-system :~A/controllers/~A-controller)~%" *project-name* name)))
+    (add-load comment load-statement)))
+
+
+(defun add-load-view-package (name)
+  (let ((comment (format nil "; -- ~A : add ~A view package~%" (current-datetime) name))
+        (load-statement (format nil "(asdf:load-system :~A/views/~A/package)~%" *project-name* name)))
+    (add-load comment load-statement)))
 
 ;; ----------------------------------------
 ;; model
@@ -74,6 +86,11 @@
 (defun gen/view (view-name &key (overwrite T))
   (let ((dir (format nil "app/views/~A/" view-name)))
     (ensure-directories-exist dir)
+    (gen/template view-name "package.lisp" dir "template/generate/views/package.lisp.tmpl"
+                  overwrite
+                  :start-delimiter "<%%"
+                  :start-echo-delimiter "<%%="
+                  :end-delimiter "%%>")
     (gen/template view-name "show.html" dir "template/generate/views/show.html.tmpl"
                   overwrite
                   :start-delimiter "<%%"
@@ -93,7 +110,8 @@
                   overwrite
                   :start-delimiter "<%%"
                   :start-echo-delimiter "<%%="
-                  :end-delimiter "%%>")))
+                  :end-delimiter "%%>")
+    (add-load-view-package view-name)))
 
 ;; ----------------------------------------
 ;; controller
@@ -101,7 +119,7 @@
   (let ((filename (format nil "~A-controller.lisp" controller-name)))
     (gen/template controller-name filename "/app/controllers/" "template/generate/controller.lisp.tmpl" overwrite))
   (add-routing controller-name)
-  (add-load controller-name))
+  (add-load-controller controller-name))
 
 ;; ----------------------------------------
 ;; scaffold
