@@ -118,7 +118,10 @@
                                project-name
                                project-dir
                                database
-                               (read-template "app/views/packge.lisp.tmpl"))
+                               (read-template "app/views/packge.lisp.tmpl")
+                               :start-delimiter "<%%"
+                               :start-echo-delimiter "<%%="
+                               :end-delimiter "%%>")
 
     ;; view
     (create-file-with-template "app/views/index.html"
