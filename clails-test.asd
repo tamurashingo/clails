@@ -28,6 +28,7 @@
                #:clails-test/logger/file-appender
                #:clails-test/logger/dynamic-config
                #:clails-test/logger/package-hierarchy
+               #:clails-test/logger/console-appender-threads
                #:clails-test/view/parser
                #:clails-test/view/compiler
                #:clails-test/view/renderer
