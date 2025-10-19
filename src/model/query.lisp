@@ -25,6 +25,9 @@
                 #:kebab->snake
                 #:snake->kebab
                 #:plist-exists)
+  (:import-from #:clails/logger
+                #:log-level-enabled-p
+                #:log.sql)
   (:export #:<query>
            #:query
            #:execute-query
@@ -70,6 +73,9 @@
 (defmethod execute-query ((query <query>) named-values &key connection)
   (multiple-value-bind (sql params)
       (generate-query query named-values)
+    (when (log-level-enabled-p :sql :debug)
+      (log.sql (format nil "sql: ~S" query))
+      (log.sql (format nil "params: ~S" params)))
     (let ((result (clails/model/connection:with-db-connection (connection)
                     (dbi-cp:fetch-all
                      (dbi-cp:execute
@@ -94,7 +100,7 @@
               (insert1 inst :connection connection))
         (clear-dirty-flag inst)))))
 
-
+v
 (defgeneric get-last-id-impl (database-type connection)
   (:documentation "get last id"))
 
@@ -124,10 +130,11 @@
                            (destroy (ref inst k) :cascade T)))
                      relations)))
         (let* ((table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
-              (sql (format NIL "DELETE FROM ~A WHERE id = ?" table-name))
-              (params (list (ref inst :id))))
-          (format t "debug: query: ~A~%" sql)
-          (format t "debug: params: ~A~%" params)
+               (sql (format NIL "DELETE FROM ~A WHERE id = ?" table-name))
+               (params (list (ref inst :id))))
+          (when (log-level-enabled-p :sql :debug)
+            (log.sql (format nil "sql: ~S" sql))
+            (log.sql (format nil "params: ~S" params)))
           (prog1
             (clails/model/connection:with-db-connection (connection)
               (dbi-cp:execute
@@ -161,8 +168,9 @@
                       when (not (frozen-p i))
                         collect (ref i :id)))
                (sql (format NIL "DELETE FROM ~A WHERE id IN (~{?~*~^, ~})" table-name ids)))
-          (format t "debug: query: ~A~%" sql)
-          (format t "debug: params: ~A~%" ids)
+          (when (log-level-enabled-p :sql :debug)
+            (log.sql (format nil "sql: ~S" sql))
+            (log.sql (format nil "params: ~S" params)))
           (prog1
               (clails/model/connection:with-db-connection (connection)
                 (dbi-cp:execute
@@ -311,8 +319,9 @@
         (appendf final-params (generate-values (nreverse regular-named-params) named-values))
 
         ;; for debug
-        (format t "debug: query: ~A~%" final-sql)
-        (format t "debug: params: ~A~%" final-params)
+        (when (log-level-enabled-p :sql :debug)
+          (log.sql (format nil "sql: ~S" sql))
+          (log.sql (format nil "params: ~S" params)))
 
         (values final-sql final-params)))))
 
@@ -620,9 +629,9 @@
     ;; plist -> values
     (setf params (convert-cl-db-values params inst))
 
-    ;; TODO: debug
-    (format t "debug: query: ~S~%" sql)
-    (format t "debug: params: ~S~%" params)
+    (when (log-level-enabled-p :sql :debug)
+      (log.sql (format nil "sql: ~S" sql))
+      (log.sql (format nil "params: ~S" params)))
 
     (let ((body #'(lambda (connection)
                     (dbi-cp:execute
@@ -687,9 +696,9 @@
     ;; append where-params
     (setf params (append params where-params))
 
-    ;; TODO: debug
-    (format t "debug: query: ~A~%" sql)
-    (format t "debug: params: ~A~%" params)
+    (when (log-level-enabled-p :sql :debug)
+      (log.sql (format nil "sql: ~S" sql))
+      (log.sql (format nil "params: ~S" params)))
 
     (let ((body #'(lambda (connection)
                     (dbi-cp:execute (dbi-cp:prepare connection sql) params)

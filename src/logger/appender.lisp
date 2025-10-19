@@ -23,20 +23,35 @@
 
 (defclass <stream-appender> (<appender>)
   ((stream :initarg :stream :reader stream-appender-stream)
-   (formatter :initarg :formatter :reader stream-appender-formatter))
+   (formatter :initarg :formatter :reader stream-appender-formatter)
+   (use-dynamic-stream :initarg :use-dynamic-stream
+                       :initform nil
+                       :reader stream-appender-use-dynamic-stream
+                       :documentation "If true, use *standard-output* at log time instead of the stored stream."))
   (:documentation "Appender that writes log records to a stream, using a specified formatter."))
 
 (defmethod log-append ((appender <stream-appender>) (record <log-record>))
-  (format-record (stream-appender-formatter appender)
-                 (stream-appender-stream appender)
-                 record)
-  (finish-output (stream-appender-stream appender)))
+  (let ((target-stream (if (stream-appender-use-dynamic-stream appender)
+                           *standard-output*
+                           (stream-appender-stream appender))))
+    (format-record (stream-appender-formatter appender)
+                   target-stream
+                   record)
+    (finish-output target-stream)))
 
 (defun make-console-appender (&key formatter)
-  "Creates an appender that writes to *standard-output*."
+  "Creates an appender that writes to *standard-output*.
+   
+   This appender uses the dynamic value of *standard-output* at log time,
+   making it thread-safe and compatible with bordeaux-threads.
+   
+   @param formatter [<formatter>] Formatter to use for log records
+   @return [<stream-appender>] Console appender instance
+   "
   (make-instance '<stream-appender>
                  :stream *standard-output*
-                 :formatter formatter))
+                 :formatter formatter
+                 :use-dynamic-stream t))
 
 ;;; ------------------------------------------------------------------
 ;;; File Appender

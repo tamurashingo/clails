@@ -8,6 +8,11 @@
   (:import-from #:clails/environment
                 #:*routing-tables*
                 #:*project-dir*)
+  (:import-from #:clails/logger
+                #:log.web-access
+                #:log-package.trace
+                #:log-package.debug
+                #:log-level-enabled-p)
   (:export #:<base-controller>
            #:<web-controller>
            #:<rest-controller>
@@ -18,6 +23,7 @@
            #:params
            #:view
            #:view-data
+           #:view-package
            #:set-view
            #:set-redirect
            #:set-response
@@ -54,7 +60,9 @@
 (defclass <web-controller> (<base-controller>)
   ((view :accessor view)
    (view-data :initform nil
-              :accessor view-data)))
+              :accessor view-data)
+   (view-package :accessor view-package
+                 :initform nil)))
 
 (defmethod initialize-instance :after ((c <web-controller>) &rest initargs)
   (declare (ignore initargs))
@@ -72,6 +80,8 @@
 (defgeneric do-get (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
+    (when (log-level-enabled-p :trace)
+      (log-package.trace "do-get called"))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))
@@ -79,6 +89,8 @@
 (defgeneric do-post (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
+    (when (log-level-enabled-p :trace)
+      (log-package.trace "do-post called"))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))
@@ -86,6 +98,8 @@
 (defgeneric do-put (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
+    (when (log-level-enabled-p :trace)
+      (log-package.trace "do-put called"))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))
@@ -93,6 +107,8 @@
 (defgeneric do-delete (controller)
   (:documentation "")
   (:method ((controller <base-controller>))
+    (when (log-level-enabled-p :trace)
+      (log-package.trace "do-delete called"))
     (error '404/not-found
            :path (getf (getf controller :request)
                        :path-info))))
@@ -104,7 +120,53 @@
    data: plist of data to pass to template (e.g., '(:user user :todos todos))"
   (setf (view controller) (merge-pathnames (format nil "app/views/~A" viewname)
                                            *project-dir*))
-  (setf (view-data controller) data))
+  (setf (view-data controller) data)
+  (setf (view-package controller) (resolve-view-package viewname)))
+
+
+(defun resolve-view-package (viewname)
+  "Resolve package name from view file path.
+
+   Converts view path to package name following the convention:
+   - \"index.html\" -> :{project}/views/package
+   - \"todo/show.html\" -> :{project}/views/todo/package
+   - \"admin/user/list.html\" -> :{project}/views/admin/user/package
+
+   @param viewname [string] View file path relative to app/views/
+   @return [keyword] Package name as keyword
+   "
+  (let* ((project-name (get-project-name))
+         (path-parts (split-view-path viewname)))
+    (make-keyword
+      (if path-parts
+          (format nil "~A/views/~{~A~^/~}/package" project-name path-parts)
+          (format nil "~A/views/package" project-name)))))
+
+(defun get-project-name ()
+  "Get current project name from *project-dir*.
+
+   @return [string] Project name
+   "
+  (car (last (pathname-directory *project-dir*))))
+
+(defun split-view-path (viewname)
+  "Split view path and extract directory parts (excluding filename).
+
+   @param viewname [string] View file path (e.g., \"todo/show.html\")
+   @return [list] List of directory names (e.g., (\"todo\"))
+   "
+  (let* ((pathname (pathname viewname))
+         (directory (pathname-directory pathname)))
+    (when (and directory (eq (car directory) :relative))
+      (cdr directory))))
+
+(defun make-keyword (name)
+  "Convert string to keyword.
+
+   @param name [string] String to convert to keyword
+   @return [keyword] Keyword
+   "
+  (intern (string-upcase name) :keyword))
 
 
 (defmethod set-redirect ((controller <web-controller>) path)

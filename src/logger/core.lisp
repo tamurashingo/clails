@@ -21,6 +21,7 @@
            #:set-logger-level
            #:add-appender
            #:clear-loggers
+           #:log-level-enabled-p
            #:log-package.trace
            #:log-package.debug
            #:log-package.info
@@ -306,7 +307,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :trace ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :trace ,message ,@context))
 
 (defmacro log-package.debug (message &rest context)
   "Log a message using the current package's logger at DEBUG level.
@@ -314,7 +315,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :debug ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :debug ,message ,@context))
 
 (defmacro log-package.info (message &rest context)
   "Log a message using the current package's logger at INFO level.
@@ -322,7 +323,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :info ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :info ,message ,@context))
 
 (defmacro log-package.warn (message &rest context)
   "Log a message using the current package's logger at WARN level.
@@ -330,7 +331,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :warn ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :warn ,message ,@context))
 
 (defmacro log-package.error (message &rest context)
   "Log a message using the current package's logger at ERROR level.
@@ -338,7 +339,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :error ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :error ,message ,@context))
 
 (defmacro log-package.fatal (message &rest context)
   "Log a message using the current package's logger at FATAL level.
@@ -346,7 +347,7 @@
    @param message [string] Log message
    @param context [plist] Additional context key-value pairs
    "
-  `(clails/logger/core::log-for-package *package* :fatal ,message ,@context))
+  `(clails/logger/core::log-for-package ,*package* :fatal ,message ,@context))
 
 ;;; ------------------------------------------------------------------
 ;;; Purpose-Specific Logging API
@@ -380,6 +381,27 @@
    @param context [plist] Additional context (e.g., :user-id, :ip-address, :action)
    "
   `(clails/logger/core::log-message-to :audit :info ,message ,@context))
+
+;;; ------------------------------------------------------------------
+;;; Log Level Check API
+;;; ------------------------------------------------------------------
+(defun log-level-enabled-p (level &optional (package-or-logger-name *package*))
+  "Check if the specified log level is enabled for the given package or logger.
+
+   Returns true if the log level is enabled, false otherwise.
+   If no logger is found, returns nil.
+
+   @param level [keyword] Log level to check (:trace, :debug, :info, :warn, :error, :fatal)
+   @param package-or-logger-name [package] Package object (default: *package*)
+   @param package-or-logger-name [symbol] Package name symbol
+   @param package-or-logger-name [string] Package name string or logger name
+   @param package-or-logger-name [keyword] Logger name
+   @return [boolean] t if the log level is enabled, nil otherwise
+   "
+  (let* ((logger-name (package-to-logger-name package-or-logger-name))
+         (logger (get-logger logger-name)))
+    (when logger
+      (log-level>= level (logger-level logger)))))
 
 ;;; ------------------------------------------------------------------
 ;;; Dynamic Configuration API

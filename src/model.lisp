@@ -9,7 +9,8 @@
                 #:ref-in
                 #:has-dirty-p
                 #:has-error-p
-                #:frozen-p)
+                #:frozen-p
+                #:initialize-table-information)
   (:import-from #:clails/model/query
                 #:query
                 #:execute-query
@@ -28,6 +29,7 @@
            #:has-dirty-p
            #:has-error-p
            #:frozen-p
+           #:initialize-table-information
 
            #:query
            #:execute-query

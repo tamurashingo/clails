@@ -23,6 +23,8 @@
                 #:create-connection-pool-impl)
   (:import-from #:clails/model/query
                 #:get-last-id-impl)
+  (:import-from #:clails/logger
+                #:log.sql)
   (:import-from #:clails/util
                 #:kebab->snake
                 #:snake->kebab
@@ -129,82 +131,90 @@
                                                  ("updated-at" :type :datetime
                                                                :not-null T))
                                                columns))))
+    (log.sql query :table table :columns columns :constraints constraints)
     (dbi:do-sql connection query)))
 
 (defmethod add-column-impl ((database-type <database-type-postgresql>) connection &key table columns)
   (declare (ignore database-type))
   (mandatory-check table columns)
   (let ((query (gen-add-column table columns)))
+    (log.sql query :table table :columns columns)
     (dbi:do-sql connection query)))
 
 (defmethod add-index-impl ((database-type <database-type-postgresql>) connection &key table index columns)
   (declare (ignore database-type))
   (mandatory-check table index columns)
   (let ((query (gen-add-index table index columns)))
+    (log.sql query :table table :index index :columns columns)
     (dbi:do-sql connection query)))
 
 (defmethod drop-table-impl ((database-type <database-type-postgresql>) connection &key table)
   (declare (ignore database-type))
   (mandatory-check table)
   (let ((query (gen-drop-table table)))
+    (log.sql query :table table)
     (dbi:do-sql connection query)))
 
 (defmethod drop-column-impl ((database-type <database-type-postgresql>) connection &key table column)
   (declare (ignore database-type))
   (mandatory-check table column)
   (let ((query (gen-drop-column table column)))
+    (log.sql query :table table :column column)
     (dbi:do-sql connection query)))
 
 (defmethod drop-index-impl ((database-type <database-type-postgresql>) connection &key table index)
   (declare (ignore database-type))
   (mandatory-check table index)
   (let ((query (gen-drop-index table index)))
+    (log.sql query :table table :index index)
     (dbi:do-sql connection query)))
 
 
 (defmethod fetch-columns-and-types-impl ((database-type <database-type-postgresql>) connection table)
   (declare (ignore database-type))
-  (let* ((query (dbi:prepare connection "select COLUMN_NAME, DATA_TYPE from information_schema.columns where table_name = ? order by ordinal_position"))
-         (result (dbi:execute query (list table))))
-    (loop for row = (dbi:fetch result)
-          while row
-;;          collect (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))))
-          collect (let* ((name (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))
-                         (access (intern (string-downcase (getf row :|column_name|)) :KEYWORD))
-                         (inv (cdr (assoc (getf row :|data_type|) *postgresql-type-convert-functions* :test #'string=)))
-                         (type (if inv (getf inv :type)
-                                       *postgresql-type-convert-unknown-type*))
-                         (db-cl-fn (if inv (getf inv :db-cl-fn)
-                                           *postgresql-type-convert-unknown-function*))
-                         (cl-db-fn (if inv (getf inv :cl-db-fn)
-                                           *postgresql-type-convert-unknown-function*)))
-                    (list :name name
-                          :access access
-                          :type type
-                          :db-cl-fn db-cl-fn
-                          :cl-db-fn cl-db-fn)))))
+  (let ((sql "select COLUMN_NAME, DATA_TYPE from information_schema.columns where table_name = ? order by ordinal_position"))
+    (log.sql sql :table table)
+    (let* ((query (dbi:prepare connection sql))
+          (result (dbi:execute query (list table))))
+      (loop for row = (dbi:fetch result)
+            while row
+            collect (let* ((name (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))
+                          (access (intern (string-downcase (getf row :|column_name|)) :KEYWORD))
+                          (inv (cdr (assoc (getf row :|data_type|) *postgresql-type-convert-functions* :test #'string=)))
+                          (type (if inv (getf inv :type)
+                                        *postgresql-type-convert-unknown-type*))
+                          (db-cl-fn (if inv (getf inv :db-cl-fn)
+                                            *postgresql-type-convert-unknown-function*))
+                          (cl-db-fn (if inv (getf inv :cl-db-fn)
+                                            *postgresql-type-convert-unknown-function*)))
+                      (list :name name
+                            :access access
+                            :type type
+                            :db-cl-fn db-cl-fn
+                            :cl-db-fn cl-db-fn))))))
 
 (defmethod fetch-columns-and-types-plist-impl ((database-type <database-type-postgresql>) connection table)
   (declare (ignore database-type))
-  (let* ((query (dbi:prepare connection "select COLUMN_NAME, DATA_TYPE from information_schema.columns where table_name = ? order by ordinal_position"))
-         (result (dbi:execute query (list table))))
-    (loop for row = (dbi:fetch result)
-          while row
-;;          collect (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))))
-          append (let* ((name (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))
-                        (access (intern (string-downcase (getf row :|column_name|)) :KEYWORD))
-                        (inv (cdr (assoc (getf row :|data_type|) *postgresql-type-convert-functions* :test #'string=)))
-                        (type (if inv (getf inv :type)
-                                  *postgresql-type-convert-unknown-type*))
-                        (db-cl-fn (if inv (getf inv :db-cl-fn)
-                                      *postgresql-type-convert-unknown-function*))
-                        (cl-db-fn (if inv (getf inv :cl-db-fn)
-                                      *postgresql-type-convert-unknown-function*)))
-                   (list name (list :name name
-                                    :access access
-                                    :type type
-                                    :db-cl-fn db-cl-fn
-                                    :cl-db-fn cl-db-fn))))))
+  (let ((sql "select COLUMN_NAME, DATA_TYPE from information_schema.columns where table_name = ? order by ordinal_position"))
+    (log.sql sql :table table)
+    (let* ((query (dbi:prepare connection sql))
+          (result (dbi:execute query (list table))))
+      (loop for row = (dbi:fetch result)
+            while row
+            append (let* ((name (intern (snake->kebab (string-upcase (getf row :|column_name|))) :KEYWORD))
+                          (access (intern (string-downcase (getf row :|column_name|)) :KEYWORD))
+                          (inv (cdr (assoc (getf row :|data_type|) *postgresql-type-convert-functions* :test #'string=)))
+                          (type (if inv (getf inv :type)
+                                    *postgresql-type-convert-unknown-type*))
+                          (db-cl-fn (if inv (getf inv :db-cl-fn)
+                                        *postgresql-type-convert-unknown-function*))
+                          (cl-db-fn (if inv (getf inv :cl-db-fn)
+                                        *postgresql-type-convert-unknown-function*)))
+                    (list name (list :name name
+                                      :access access
+                                      :type type
+                                      :db-cl-fn db-cl-fn
+                                      :cl-db-fn cl-db-fn)))))))
 
 (defun gen-create-table (table columns)
   (format NIL "CREATE TABLE ~A (~{~A~^, ~})" (kebab->snake table)

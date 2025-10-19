@@ -2,11 +2,20 @@
 (in-package #:cl-user)
 (defpackage #:<%= (@ project-name ) %>/config/logger
   (:use #:cl)
-  (:import-from #:clails/logger))
+  (:import-from #:clails/logger
+                #:clear-loggers
+                #:register-logger
+                #:make-console-appender
+                #:make-file-appender
+                #:close-appender
+                #:<text-formatter>
+                #:<json-formatter>)
+  (:export #:initialize-logger
+           #:finalize-logger))
 
 (in-package #:<%= (@ project-name ) %>/config/logger)
 
-(defun logger-setup/develop ()
+(defun setup-logger/develop ()
   (clear-loggers)
 
   (ensure-directories-exist "logs/")
@@ -52,7 +61,7 @@
   nil)
 
 
-(defun logger-setup/test ()
+(defun setup-logger/test ()
   (clear-loggers)
 
   ;; project default logger
@@ -94,7 +103,7 @@
 
 
 
-(defun logger-setup/production ()
+(defun setup-logger/production ()
   (clear-loggers)
 
   (ensure-directories-exist "logs/")
@@ -144,7 +153,7 @@
   nil)
 
 
-(defun initialize-logging (&optional environment)
+(defun initialize-logger (&optional environment)
   "Initialize the logging system according to the environment.
 
    If environment is not specified, it will be obtained from
@@ -164,7 +173,16 @@
                       (symbol-value (find-symbol "*PROJECT-ENVIRONMENT*" :clails/environment)))
                  :develop)))
     (case env
-      ((:develop :development) (setup-logger/development))
+      ((:develop :development) (setup-logger/develop))
       (:test (setup-logger/test))
       (:production (setup-logger/production))
       (t (error "Unknown environment: ~A" env)))))
+
+(defun finalize-logger ()
+  (maphash #'(lambda (k logger)
+               (declare (ignore k))
+               (let ((appenders (clails/logger/core::logger-appenders logger)))
+                 (dolist (appender appenders)
+                   (close-appender appender))))
+           clails/logger/core::*logger-registry*))
+

@@ -8,6 +8,8 @@
                 #:template
                 #:prefix
                 #:path)
+  (:import-from #:clails/logger
+                #:log-package.info)
   (:export #:%generate-model
            #:%generate-migration))
 (in-package #:clails/model/generate)
@@ -20,8 +22,7 @@
                                        (path template)
                                        model-name))))
 
-    ; TODO: log
-    (format T "generate model file: ~A~%" model-file)
+    (log-package.info (format nil "generate model file: ~A" model-file))
     (with-open-file (out model-file
                          :direction :output
                          :if-exists (if overwrite :overwrite
@@ -36,8 +37,7 @@
          (unique-name (gen-unique-name migration-name))
          (migration-file (pathname (format NIL "~A/~A/~A.lisp" project-dir (path template) unique-name))))
 
-    ; TODO: log
-    (format T "generate migration file: ~A~%" migration-file)
+    (log-package.info (format nil "generate migration file: ~A" migration-file))
     (with-open-file (out migration-file
                          :direction :output)
       (format out "~A" (funcall (cl-template:compile-template (template template))

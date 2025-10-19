@@ -8,6 +8,7 @@
                 #:header
                 #:view
                 #:view-data
+                #:view-package
                 #:response)
   (:import-from #:clails/controller/error-handle-controller
                 #:<error-handle-controller>
@@ -46,11 +47,15 @@
 
 (defun extract-template (controller template-name)
   "Render template using the new template engine.
-   Use the controller's package for evaluating template code."
-  (let* ((controller-package (symbol-package (class-name (class-of controller))))
+   Use the controller's view-package if available, otherwise fall back to controller's package."
+  (let* ((view-pkg (view-package controller))
+         (controller-package (symbol-package (class-name (class-of controller))))
+         (package (if view-pkg
+                      (find-package view-pkg)
+                      controller-package))
          (data (or (view-data controller)
                    (list :controller controller))))
-    (render template-name data :package controller-package)))
+    (render template-name data :package package)))
 
 
 (defun view/html-template (controller content)

@@ -17,6 +17,10 @@
                 #:404/not-found)
   (:import-from #:clails/controller/error-handle-controller
                 #:<error-handle-controller>)
+  (:import-from #:clails/logger
+                #:log.web-access
+                #:log-package.trace
+                #:log-level-enabled-p)
   (:export #:*lack-middleware-clails-controller*))
 
 (in-package #:clails/middleware/clails-middleware)
@@ -27,21 +31,33 @@
       (handler-case
           (let* ((controller (make-controller env))
                  (method (request-method (request controller))))
+            (when (log-level-enabled-p :trace)
+              (log-package.trace (format nil "Request path: ~A" (getf env :path-info))))
             (cond ((eq method :get)
+                   (when (log-level-enabled-p :trace)
+                     (log-package.trace "Dispatching to do-get"))
                    (do-get controller))
                   ((or (eq method :put)
                        (and (eq method :post)
                             (string-equal "put"
                                      (gethash "_method" (params controller)))))
+                   (when (log-level-enabled-p :trace)
+                     (log-package.trace "Dispatching to do-put"))
                    (do-put controller))
                   ((or (eq method :delete)
                        (and (eq method :post)
                             (string-equal "delete"
                                      (gethash "_method" (params controller)))))
+                   (when (log-level-enabled-p :trace)
+                     (log-package.trace "Dispatching to do-delete"))
                    (do-delete controller))
                   ((eq method :post)
+                   (when (log-level-enabled-p :trace)
+                     (log-package.trace "Dispatching to do-post"))
                    (do-post controller))
                   (t
+                   (when (log-level-enabled-p :trace)
+                     (log-package.trace (format nil "Unsupported method: ~A" method)))
                    nil))
             (resolve-view controller))
         (404/not-found (c)

@@ -1,6 +1,8 @@
 (in-package #:cl-user)
 (defpackage #:clails/cmd
   (:use #:cl)
+  (:import-from #:alexandria
+                #:flatten)
   (:import-from #:clails/environment
                 #:*project-name*
                 #:*project-dir*)
@@ -16,7 +18,8 @@
                 #:db-status)
   (:import-from #:clails/controller/base-controller
                 #:initialize-routing-tables)
-  (:import-from #:clails/middleware/clails-middleware
+  (:import-from #:clails/middleware
+                #:*clails-middleware-stack*
                 #:*lack-middleware-clails-controller*)
   (:import-from #:clails/util
                 #:function-from-string)
@@ -82,12 +85,10 @@
 
 (defun server (&key (port "5000") (bind "127.0.0.1"))
   (initialize-routing-tables)
-  (setf *app*
-    (lack:builder
-      *lack-middleware-clails-controller*
-      (:static :path "/"
-               :root #P"./public/")
-      *app*))
+  (let* ((args (append *clails-middleware-stack* (list *app*)))
+         (builder `(lack:builder ,@args)))
+    (setf *app* (eval builder)))
+
   (setf *handler*
         (clack:clackup *app*
                        :debug nil
