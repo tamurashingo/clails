@@ -41,36 +41,66 @@
 ;;;; class
 
 (defclass <query> ()
-  ((model :initarg :model)
+  ((model :initarg :model
+          :documentation "Model class symbol")
    (alias :initarg :alias
-          :initform nil)
+          :initform nil
+          :documentation "Alias name for the model in query")
    (columns :initarg :columns
-            :initform nil)
+            :initform nil
+            :documentation "List of columns to select")
    (joins :initarg :joins
-          :initform nil)
+          :initform nil
+          :documentation "List of join specifications")
    (where :initarg :where
-          :initform nil)
+          :initform nil
+          :documentation "WHERE clause specification")
    (order-by :initarg :order-by
-             :initform nil)
+             :initform nil
+             :documentation "ORDER BY clause specification")
    (limit :initarg :limit
-          :initform nil)
+          :initform nil
+          :documentation "LIMIT value")
    (offset :initarg :offset
-           :initform nil)
-   (inst :type 'clails/model/base-model::<base-model>)
+           :initform nil
+           :documentation "OFFSET value")
+   (inst :type 'clails/model/base-model::<base-model>
+         :documentation "Model instance")
    (alias->model :initform (make-hash-table)
-                 :documentation "alias name to model symbol")))
+                 :documentation "Hash table mapping alias names to model symbols"))
+  (:documentation "Query builder class for constructing and executing database queries."))
 
 (defclass <join-query> ()
-  ((join-type :initarg :join-type :reader join-type)
-   (relation :initarg :relation :reader relation)
-   (through :initarg :through :initform nil :reader through)
-   (previous :initform nil :accessor previous-join)))
+  ((join-type :initarg :join-type
+              :reader join-type
+              :documentation "Type of join (:inner-join, :left-join, etc.)")
+   (relation :initarg :relation
+             :reader relation
+             :documentation "Relation alias to join")
+   (through :initarg :through
+            :initform nil
+            :reader through
+            :documentation "Intermediate relation for nested joins")
+   (previous :initform nil
+             :accessor previous-join
+             :documentation "Previous join in the chain"))
+  (:documentation "Join specification for query builder."))
 
 
 ;;;; ========================================
 ;;;; export method
 
 (defmethod execute-query ((query <query>) named-values &key connection)
+  "Execute the query and return model instances.
+   
+   Generates SQL from the query specification, executes it against the database,
+   and builds model instances from the results, including nested relations.
+   
+   @param query [<query>] Query specification
+   @param named-values [plist] Named parameter values for the query
+   @param connection [dbi:<dbi-connection>] Optional database connection to use
+   @return [list] List of model instances with populated relations
+   "
   (multiple-value-bind (sql params)
       (generate-query query named-values)
     (when (log-level-enabled-p :sql :debug)
@@ -85,6 +115,17 @@
 
 
 (defmethod save ((inst <base-model>) &key connection)
+  "Save model instance to the database.
+   
+   Validates the instance, then either updates (if ID exists and dirty)
+   or inserts (if no ID). Clears dirty flags on success.
+   
+   @param inst [<base-model>] Model instance to save
+   @param connection [dbi:<dbi-connection>] Optional database connection to use
+   @return [<base-model>] The saved model instance
+   @return [nil] NIL if validation failed or instance is frozen
+   @condition optimistic-lock-error Signaled when update affects 0 rows (version conflict)
+   "
   (unless (frozen-p inst)
     (clear-error inst)
     (validate inst)
@@ -100,14 +141,29 @@
               (insert1 inst :connection connection))
         (clear-dirty-flag inst)))))
 
-v
+
 (defgeneric get-last-id-impl (database-type connection)
-  (:documentation "get last id"))
+  (:documentation "Get the last inserted ID for the specified database type.
+   
+   Implementation must be provided for each database type.
+   
+   @param database-type [<database-type>] Database type instance
+   @param connection [dbi:<dbi-connection>] Database connection
+   @return [integer] Last inserted ID
+   "))
 
 
 (defun make-record (model-name &rest values)
-  "(let ((inst (make-record '<todo> :title \"create new project\" :done nil)))
-     (save inst))"
+  "Create a new model instance with the given attribute values.
+   
+   @param model-name [symbol] Model class name (e.g., <todo>)
+   @param values [plist] Property list of attribute key-value pairs
+   @return [<base-model>] New model instance
+   
+   Example:
+   (let ((inst (make-record '<todo> :title \"create new project\" :done nil)))
+     (save inst))
+   "
   (let ((inst (make-instance model-name)))
     (loop for (key value) on values by #'cddr
           do (setf (ref inst key) value))
@@ -115,9 +171,23 @@ v
 
 
 (defgeneric destroy (instance &key cascade)
-  (:documentation "delete record"))
+  (:documentation "Delete record from the database.
+   
+   @param instance [<base-model>] Model instance to delete
+   @param cascade [boolean] Whether to cascade delete to related records
+   @return [integer] Number of rows deleted
+   "))
 
 (defmethod destroy ((inst <base-model>) &key cascade)
+  "Delete a single model instance from the database.
+   
+   If cascade is true, also deletes related :has-many records.
+   Sets the instance to frozen after deletion.
+   
+   @param inst [<base-model>] Model instance to delete
+   @param cascade [boolean] If T, cascade delete to :has-many relations
+   @return [integer] Number of rows deleted (0 if frozen, 1 otherwise)
+   "
   (if (frozen-p inst)
       0
       (progn
@@ -145,6 +215,15 @@ v
             (setf (slot-value inst 'clails/model/base-model::frozen-p) T))))))
 
 (defmethod destroy ((insts list) &key cascade)
+  "Delete multiple model instances from the database.
+   
+   If cascade is true, also deletes related :has-many records for each instance.
+   Sets all instances to frozen after deletion.
+   
+   @param insts [list] List of <base-model> instances to delete
+   @param cascade [boolean] If T, cascade delete to :has-many relations
+   @return [integer] Number of rows deleted
+   "
   (if (null insts)
       0
       (progn
@@ -186,6 +265,29 @@ v
 ;;;; export macro
 
 (defmacro query (model &key as columns joins where order-by limit offset)
+  "Create a query builder instance for the specified model.
+   
+   Provides a DSL for constructing SQL queries with support for joins,
+   where clauses, ordering, and pagination.
+   
+   @param model [symbol] Model class name (e.g., <blog>)
+   @param as [keyword] Required alias for the model (e.g., :blog)
+   @param columns [list] List of column specifications (e.g., ((blog :id :title) (user :name)))
+   @param joins [list] List of join specifications (e.g., ((:inner-join :user) (:left-join :comments)))
+   @param where [form] WHERE clause expression
+   @param order-by [list] ORDER BY specifications
+   @param limit [integer] LIMIT value
+   @param offset [integer] OFFSET value
+   @return [<query>] Query builder instance
+   @condition error Signaled when :as is missing or not a keyword
+   
+   Example:
+   (query <blog>
+     :as :blog
+     :columns ((blog :id :title))
+     :joins ((:inner-join :account))
+     :where (:> (:blog :star) 0))
+   "
   (unless as
     (error ":as keyword is required for query macro."))
   (unless (keywordp as)
@@ -229,6 +331,14 @@ v
 ;;; instance
 
 (defmethod initialize-instance :after ((q <query>) &rest initargs)
+  "Initialize query instance after creation.
+   
+   Sets up base model instance, assigns default alias if not provided,
+   and builds the alias-to-model mapping.
+   
+   @param q [<query>] Query instance being initialized
+   @param initargs [list] Initialization arguments (ignored)
+   "
   (declare (ignore initargs))
   ;; Set up base instance and alias
   (let ((inst (make-instance (slot-value q 'model))))
@@ -247,6 +357,14 @@ v
 
 
 (defmethod build-alias-map ((query <query>))
+  "Build mapping from aliases to model classes.
+   
+   Resolves model classes for all aliases (base and joined) by looking up
+   relation information in the model metadata.
+   
+   @param query [<query>] Query instance
+   @condition error Signaled when source alias or relation cannot be resolved
+   "
   (let* ((alias->model (slot-value query 'alias->model))
          (base-alias (slot-value query 'alias))
          (base-model (slot-value query 'model)))
@@ -270,6 +388,16 @@ v
 ;;; query
 
 (defmethod generate-query ((query <query>) &optional named-values)
+  "Generate SQL query and parameters from query specification.
+   
+   Constructs SELECT statement with joins, where clause, order by, limit, and offset.
+   Handles dynamic IN clause expansion for parameterized queries.
+   
+   @param query [<query>] Query specification
+   @param named-values [plist] Named parameter values
+   @return [string] SQL query string
+   @return [list] List of parameter values
+   "
   (let* ((alias->model (slot-value query 'alias->model))
          (base-alias (slot-value query 'alias))
          (base-model (slot-value query 'model))
@@ -327,6 +455,11 @@ v
 
 
 (defmethod resolve-joins ((query <query>))
+  "Generate JOIN clauses for the query.
+   
+   @param query [<query>] Query instance
+   @return [list] List of JOIN SQL strings
+   "
   (let ((base-model-alias (slot-value query 'alias))
         (alias->model (slot-value query 'alias->model)))
     (loop for join-obj in (slot-value query 'joins)
@@ -337,6 +470,15 @@ v
 
 
 (defmethod generate-query-columns ((query <query>) alias->model)
+  "Generate list of columns to select.
+   
+   If columns are explicitly specified, returns them. Otherwise, returns
+   all columns from all models in the query.
+   
+   @param query [<query>] Query instance
+   @param alias->model [hash-table] Mapping from aliases to model classes
+   @return [list] List of column pairs (alias column-name)
+   "
   (if (slot-value query 'columns)
       (slot-value query 'columns)
       (loop for alias being the hash-key of (slot-value query 'alias->model)
@@ -347,6 +489,16 @@ v
 
 
 (defmethod generate-join-sql ((join-obj <join-query>) base-model-alias alias->model)
+  "Generate SQL JOIN clause for a single join specification.
+   
+   Constructs INNER JOIN or LEFT JOIN with ON clause based on relation metadata.
+   
+   @param join-obj [<join-query>] Join specification
+   @param base-model-alias [keyword] Base model alias
+   @param alias->model [hash-table] Mapping from aliases to model classes
+   @return [string] JOIN SQL string
+   @condition error Signaled when source model or relation cannot be resolved
+   "
   (let* ((through-relation (through join-obj))
          (source-alias (if through-relation
                            through-relation
@@ -384,6 +536,17 @@ v
 
 
 (defun fetch-columns (inst &key insert update)
+  "Fetch column names to be included in SQL statement.
+
+   For INSERT operations, only returns columns that have been explicitly set
+   (marked with dirty-flag). For UPDATE operations, returns columns that have
+   been modified plus :updated-at.
+
+   @param inst [<base-model>] Model instance
+   @param insert [boolean] If true, fetches columns for INSERT statement
+   @param update [boolean] If true, fetches columns for UPDATE statement
+   @return [list] List of column name strings
+   "
   (loop for column in (slot-value inst 'clails/model/base-model::columns)
         as dirty-flag-hash = (slot-value inst 'clails/model/base-model::dirty-flag)
         when (or (and insert
@@ -401,6 +564,16 @@ v
 
 
 (defun parse-where-claude (where)
+  "Parse WHERE clause expression tree into SQL.
+   
+   Supports operators: :=, :<, :<=, :>, :>=, :<>, :!=, :like, :not-like,
+   :between, :not-between, :in, :not-in, :null, :not-null, :and, :or.
+   
+   @param where [list] WHERE clause expression (nil for no where clause)
+   @return [string] SQL WHERE clause string
+   @return [list] List of parameter keywords
+   @condition error Signaled for unsupported operators
+   "
   (if (not where)
       nil
       (let ((elm (car where)))
@@ -442,6 +615,14 @@ v
                (error "where claude: parse error `~A`" elm))))))
 
 (defun parse-in-clause (op exp)
+  "Parse IN clause with static list of values.
+   
+   @param op [string] Operator (\"IN\" or \"NOT IN\")
+   @param exp [list] Expression (column-spec values-list)
+   @return [string] SQL clause string
+   @return [list] List of parameters
+   @condition error Signaled when values are not a list
+   "
   (let (column-sql)
     (multiple-value-bind (sql param)
         (lexer2 (car exp))
@@ -466,6 +647,15 @@ v
                     (flatten params)))))))
 
 (defun parse-in-dynamic (op exp)
+  "Parse IN clause with dynamic parameterized values.
+   
+   Creates placeholder for later expansion with actual parameter values.
+   
+   @param op [string] Operator (\"IN\" or \"NOT IN\")
+   @param exp [list] Expression (column-spec param-keyword)
+   @return [string] Placeholder string for later replacement
+   @return [list] List containing :in-expansion spec
+   "
   (let* ((column-spec (first exp))
          (param-keyword (second exp))
          (column-sql (column-pair-to-name column-spec))
@@ -476,6 +666,14 @@ v
             (list (list :in-expansion op column-sql param-keyword)))))
 
 (defun parse-between-clause (op exp)
+  "Parse BETWEEN clause.
+   
+   @param op [string] Operator (\"BETWEEN\" or \"NOT BETWEEN\")
+   @param exp [list] Expression (column-spec value1 value2)
+   @return [string] SQL BETWEEN clause
+   @return [list] List of parameter keywords
+   @condition error Signaled when column part contains parameters
+   "
   (let (column-sql val1-sql val2-sql keywords)
     ;; Column
     (multiple-value-bind (sql param) (lexer2 (first exp))
@@ -494,6 +692,13 @@ v
 
 ;; TODO: rename
 (defun parse-exp2 (op exp)
+  "Parse binary comparison expression.
+   
+   @param op [keyword|string] Operator (:=, :<, :>, etc. or \"LIKE\", \"NOT LIKE\")
+   @param exp [list] Expression (left-operand right-operand)
+   @return [string] SQL comparison expression
+   @return [list] List of parameter keywords
+   "
   (let (x y keywords)
     (multiple-value-bind (col1 param1)
         (lexer2 (car exp))
@@ -511,6 +716,13 @@ v
 
 ;; TODO: rename
 (defun parse-null2 (op exp)
+  "Parse NULL check expression.
+   
+   @param op [keyword] Operator (:null or :not-null)
+   @param exp [list] Expression (column-spec)
+   @return [string] SQL NULL check (\"IS NULL\" or \"IS NOT NULL\")
+   @return [list] List of parameter keywords
+   "
   (let (x keywords)
     (multiple-value-bind (col1 param1)
         (lexer2 (car exp))
@@ -525,6 +737,15 @@ v
 
 ;; TODO: rename
 (defun lexer2 (param)
+  "Convert parameter to SQL representation.
+   
+   @param param [list] Column pair (alias column-name)
+   @param param [keyword] Parameter keyword (becomes \"?\")
+   @param param [string] String literal (quoted)
+   @param param [t] Other literal value
+   @return [string] SQL representation
+   @return [keyword|nil] Parameter keyword if applicable
+   "
   (cond (;; (table :id)
          (and (listp param)
               (= (length param) 2)
@@ -545,14 +766,27 @@ v
 
 
 (defun column-pair-to-name (pair &optional as)
+  "Convert column pair to SQL column name.
+   
+   @param pair [list] Column pair (alias column-name)
+   @param as [boolean] If true, includes AS clause for aliasing
+   @return [string] SQL column reference (e.g., \"BLOG.TITLE\" or \"BLOG.TITLE as \\\"BLOG.TITLE\\\"\")
+   "
   (if as (format nil "~A.~A as \"~A.~A\"" (kebab->snake (car pair)) (kebab->snake (cadr pair)) (kebab->snake (car pair)) (kebab->snake (cadr pair)))
          (format nil "~A.~A" (kebab->snake (car pair)) (kebab->snake (cadr pair)))))
 
 
 (defun generate-order-by (params &optional order)
-  "((:blog :star :desc)
-    (:blog :id))
-   => (\"BLOG.STAR DESC\" \"BLOG.ID\")"
+  "Generate ORDER BY clause from parameters.
+   
+   @param params [list] List of order specs ((:alias :column [:ASC|:DESC]) ...)
+   @param order [list] Accumulator for recursion (internal use)
+   @return [list] List of ORDER BY clause strings
+   @condition error Signaled for invalid order spec format or sort direction
+   
+   Example input: ((:blog :star :desc) (:blog :id))
+   Example output: (\"BLOG.STAR DESC\" \"BLOG.ID\")
+   "
   (flet ((generate (p)
            (when (not (and (listp p) (>= (length p) 2) (keywordp (first p)) (keywordp (second p))))
              (error "parse error: order-by: expect (:keyword :keyword) but got ~S" p))
@@ -573,6 +807,13 @@ v
 
 ;; TODO: In the future, refactor this to use OFFSET/FETCH depending on the database implementation.
 (defun generate-offset (offset)
+  "Generate OFFSET clause specification.
+   
+   @param offset [nil] No offset
+   @param offset [keyword] Parameter keyword for offset value
+   @param offset [integer] Literal offset value
+   @return [plist] Property list with :offset and :keyword
+   "
   (cond ((null offset)
          (list :offset nil
                :keyword nil))
@@ -584,6 +825,13 @@ v
                :keyword nil))))
 
 (defun generate-limit (limit)
+  "Generate LIMIT clause specification.
+   
+   @param limit [nil] No limit
+   @param limit [keyword] Parameter keyword for limit value
+   @param limit [integer] Literal limit value
+   @return [plist] Property list with :limit and :keyword
+   "
   (cond ((null limit)
          (list :limit nil
                :keyword nil))
@@ -596,10 +844,12 @@ v
 
 
 (defun generate-values (named-params named-values)
-  "named-params: '(:start-date :end-date :start-date)
-   named-values: '(:start-date \"2025-01-01\" :end-date \"2025-12-31\")
-
-   returns -> '(\"2025-01-01\" \"2025-12-31\" \"2025-01-01\")"
+  "Extract parameter values in order from named values plist.
+   
+   @param named-params [list] List of parameter keywords in order (e.g., (:start-date :end-date :start-date))
+   @param named-values [plist] Property list of parameter values (e.g., (:start-date \"2025-01-01\" :end-date \"2025-12-31\"))
+   @return [list] List of values in parameter order (e.g., (\"2025-01-01\" \"2025-12-31\" \"2025-01-01\"))
+   "
   (loop for key in named-params
         collect (getf named-values key)))
 
@@ -608,6 +858,16 @@ v
 ;;; save
 
 (defun insert1 (inst &key connection)
+  "Insert a model instance into the database.
+
+   Only inserts columns that have been explicitly set (marked with dirty-flag),
+   allowing database default values to be applied to unset columns.
+   Automatically sets created-at and updated-at timestamps.
+
+   @param inst [<base-model>] Model instance to insert
+   @param connection [connection] Optional database connection (uses connection pool if not provided)
+   @return [<base-model>] The inserted instance with id, created-at, updated-at, and version set
+   "
   (let* ((class-name (class-name (class-of inst)))
          (table-info (gethash class-name clails/model/base-model::*table-information*))
          (version-column (getf table-info :version-column))
@@ -672,10 +932,25 @@ v
 
 
 (defun get-last-id (connection)
+  "Get the last inserted ID from the database.
+   
+   @param connection [dbi:<dbi-connection>] Database connection
+   @return [integer] Last inserted ID
+   "
   (get-last-id-impl *database-type* connection))
 
 
 (defun update1 (inst &key connection)
+  "Update a model instance in the database.
+   
+   Only updates columns marked as dirty. Automatically updates :updated-at
+   and version column (if configured). Uses optimistic locking when version
+   column is specified.
+   
+   @param inst [<base-model>] Model instance to update
+   @param connection [connection] Optional database connection
+   @return [integer] Number of rows updated (0 if version mismatch, 1 otherwise)
+   "
   (let* ((class-name (class-name (class-of inst)))
          (table-info (gethash class-name clails/model/base-model::*table-information*))
          (version-column (getf table-info :version-column))
@@ -735,6 +1010,14 @@ v
 
 
 (defun convert-cl-db-values (params inst)
+  "Convert Common Lisp values to database values.
+   
+   Applies cl-db-fn conversion function for each column.
+   
+   @param params [plist] Parameter values by column name
+   @param inst [<base-model>] Model instance
+   @return [list] List of converted values
+   "
   (loop for column in (slot-value inst 'clails/model/base-model::columns)
         when (plist-exists params (getf column :name))
         collect (let ((name (getf column :name))
@@ -746,6 +1029,14 @@ v
 ;;; query -> model
 
 (defun make-record-from (model-name &rest db-values)
+  "Create model instance from database row values.
+   
+   Applies db-cl-fn conversion for each column and clears dirty flags.
+   
+   @param model-name [symbol] Model class name
+   @param db-values [plist] Database values by column keyword
+   @return [<base-model>] Model instance with values set and dirty flags cleared
+   "
   (let ((inst (make-instance model-name))
         (columns-plist (clails/model/base-model::get-columns-plist model-name)))
     (loop for (key db-value) on db-values by #'cddr
@@ -757,8 +1048,16 @@ v
 
 
 (defun split-db-column-name (keyword-name)
-  "Splits a keyword like :|TABLE.COLUMN| into two keywords, :TABLE and :COLUMN.
-   The keyword comes from the database driver."
+  "Split database column keyword into alias and column name.
+   
+   Splits a keyword like :|TABLE.COLUMN| into two keywords, :TABLE and :COLUMN.
+   The keyword comes from the database driver.
+   
+   @param keyword-name [keyword] Database column keyword in format :|ALIAS.COLUMN|
+   @return [keyword] Table alias keyword
+   @return [keyword] Column name keyword
+   @condition error Signaled when keyword is not in expected format
+   "
   (let* ((str (string keyword-name))
          (dot-pos (position #\. str)))
     (if dot-pos
@@ -767,8 +1066,14 @@ v
         (error "Invalid column name from DB: ~A. Expected 'ALIAS.COLUMN' format." keyword-name))))
 
 (defun group-row-data-by-alias (row-plist)
-  "Groups a flat plist of results from the DB into a hash table where keys are
-   table aliases and values are plists of column data for that alias."
+  "Group flat database result row by table alias.
+   
+   Groups a flat plist of results from the DB into a hash table where keys are
+   table aliases and values are plists of column data for that alias.
+   
+   @param row-plist [plist] Flat result row from database
+   @return [hash-table] Hash table with aliases as keys and column data plists as values
+   "
   (let ((grouped (make-hash-table)))
     ;; Group data into alists first to handle multiple columns for the same alias
     (loop for (key val) on row-plist by #'cddr
@@ -781,8 +1086,17 @@ v
     grouped))
 
 (defun hydrate-instance (model-class data-plist record-cache)
-  "Creates a model instance from a plist of data, or retrieves it from cache if it
-   has already been created for the same ID."
+  "Create or retrieve cached model instance from data.
+   
+   Creates a model instance from a plist of data, or retrieves it from cache if it
+   has already been created for the same ID.
+   
+   @param model-class [symbol] Model class name
+   @param data-plist [plist] Column data for the instance
+   @param record-cache [hash-table] Cache of instances by model class and ID
+   @return [<base-model>] Model instance
+   @return [nil] NIL if data-plist has no :ID
+   "
   (let ((id (getf data-plist :ID)))
     (when id
       (let* ((model-cache (or (gethash model-class record-cache)
@@ -794,8 +1108,16 @@ v
         instance))))
 
 (defun hydrate-instances-for-row (grouped-data alias->model record-cache)
-  "For a single result row (grouped by alias), creates or retrieves all
-   corresponding model instances."
+  "Create or retrieve model instances for all aliases in a result row.
+   
+   For a single result row (grouped by alias), creates or retrieves all
+   corresponding model instances.
+   
+   @param grouped-data [hash-table] Row data grouped by alias
+   @param alias->model [hash-table] Mapping from aliases to model classes
+   @param record-cache [hash-table] Cache of instances
+   @return [hash-table] Hash table mapping aliases to model instances
+   "
   (let ((hydrated-row-instances (make-hash-table :test #'eq)))
     (maphash
      #'(lambda (alias data-plist)
@@ -836,8 +1158,14 @@ v
                         (pushnew target-inst (ref source-inst (getf rel-info :as)) :test #'eq))))))))))
 
 (defun finalize-has-many-relations (instances)
-  "Ensures that for a list of instances, any :has-many relation slots that were not
-   populated during result processing are initialized to NIL instead of being unbound."
+  "Initialize unbound :has-many relation slots to NIL.
+   
+   Ensures that for a list of instances, any :has-many relation slots that were not
+   populated during result processing are initialized to NIL instead of being unbound.
+   
+   @param instances [list] List of model instances
+   @return [list] The same list of instances
+   "
   (loop for inst in instances
         do (let* ((model (class-name (class-of inst)))
                   (relations (getf (gethash model clails/model/base-model::*table-information*) :relations)))
@@ -853,8 +1181,15 @@ v
   instances)
 
 (defun build-model-instances (query result)
-  "Processes a raw database result set for a given <query> object and constructs
-   a graph of nested model instances."
+  "Process database result set into graph of nested model instances.
+   
+   Processes a raw database result set for a given <query> object and constructs
+   a graph of nested model instances with relations properly linked.
+   
+   @param query [<query>] Query specification
+   @param result [list] Raw database result set (list of plists)
+   @return [list] List of unique main model instances with relations populated
+   "
   (let* ((record-cache (make-hash-table :test #'eq)) ; Cache for all instances across all rows {model-class -> {id -> instance}}
          (main-instances (make-hash-table :test #'eql))) ; Cache for top-level instances {id -> instance}
 

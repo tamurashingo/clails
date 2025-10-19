@@ -289,6 +289,14 @@
 
 
 (defun parse-column (col)
+  "Parse a column definition for SQLite3 CREATE/ALTER TABLE statement.
+
+   Converts Lisp-style column definition to SQL column specification,
+   including automatic conversion of default values using convert-default-value.
+
+   @param col [list] Column definition: (name :type type :not-null bool :default-value value ...)
+   @return [string] SQL column specification
+   "
   (let* ((column-name (kebab->snake (first col)))
          (attr (rest col))
          (type (getf attr :type))

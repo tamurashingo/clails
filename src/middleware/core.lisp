@@ -25,17 +25,31 @@
    see: https://github.com/fukamachi/lack ")
 
 
-;; insert before the existing stack
 (defun add-middleware-before (middleware)
+  "Add middleware at the beginning of the stack.
+   
+   The middleware will be executed before all existing middleware.
+   
+   @param middleware [function] Middleware function to add
+   "
   (setf *clails-middleware-stack*
         (cons middleware *clails-middleware-stack*)))
 
-;; insert after the existing stack
 (defun add-middleware-after (middleware)
+  "Add middleware at the end of the stack.
+   
+   The middleware will be executed after all existing middleware.
+   
+   @param middleware [function] Middleware function to add
+   "
   (setf *clails-middleware-stack*
         (append *clails-middleware-stack*
                 (list middleware))))
 
 (defun show-middleware-stack (&optional (stream T))
+  "Display the current middleware stack.
+   
+   @param stream [stream] Output stream (default: *standard-output*)
+   "
   (dolist (mw *clails-middleware-stack*)
     (format stream "~A~%" mw)))

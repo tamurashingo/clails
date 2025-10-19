@@ -12,57 +12,43 @@
 
 
 (defclass <connection> ()
-  ((thread-id :initarg :thread-id)
+  ((thread-id :initarg :thread-id
+              :documentation "Operating system thread ID")
    (connection :initarg :connection
                :reader connection
-               :type dbi-cp.proxy::<dbi-connection-proxy>))
-  (:documentation "#### Description:
-
-Wrapper class for easily refrencing <dbi-connection-proxy> by thread-id
-"))
+               :type dbi-cp.proxy::<dbi-connection-proxy>
+               :documentation "Database connection proxy"))
+  (:documentation "Wrapper class for managing database connections bound to threads."))
 
 
 (defparameter *thread-connection-pool*
   nil
-  ;(make-hash-table :test #'eq)
-  "#### Description:
-
-**key** -> thread id\
-**value** -> <connection>
-
-Hashtable to manage connections bound to threads.
-")
+  "Hash table managing connections bound to threads.
+   
+   Key: thread OS ID
+   Value: <connection> instance")
 
 
 (defun find-connection-by-thread (thread)
-  "#### Syntax:
-
-**find-connection-by-thread** thread => <connection> | nil
-
-#### Arguments and values:
-
-*thread* -> thread \
-*<connection>* -> connection
-
-#### Description:
-
-find connection bt thread from connection-
-"
+  "Find connection associated with the given thread.
+   
+   @param thread [thread] Thread object
+   @return [<connection>] Connection instance if found
+   @return [nil] NIL if no connection found for the thread
+   "
   (let ((thread-id (sb-thread::thread-os-thread thread)))
     (gethash thread-id *thread-connection-pool*)))
 
 
 (defun get-connection-by-thread (thread)
-  "#### Syntax:
-
-**get-connection-by-thread** thread => <connection>
-
-### Arguments and values:
-
-*thread* -> thread \
-*<connection>* -> connection
-"
-
+  "Get or create connection for the given thread.
+   
+   If a connection already exists for the thread, returns it.
+   Otherwise, acquires a new connection from the pool and associates it with the thread.
+   
+   @param thread [thread] Thread object
+   @return [dbi-cp.proxy::<dbi-connection-proxy>] Database connection
+   "
   (anaphora:aif (find-connection-by-thread thread)
                 (connection anaphora:it)
                 (let* ((connection (dbi-cp:get-connection *connection-pool*))
@@ -74,15 +60,11 @@ find connection bt thread from connection-
                   connection)))
 
 (defun collect-destroyed-thread-connection ()
-  "#### Syntax:
-
-**collect-destroyed-thread-connection** => any
-
-#### Description:
-
-Releases the connection bound to the terminated thread.
-Execute every minute like garbage collection.
-"
+  "Release connections bound to terminated threads.
+   
+   Performs garbage collection of connections associated with threads
+   that no longer exist. Should be executed periodically (e.g., every minute).
+   "
   (let ((all-threads (mapcar #'(lambda (th) (sb-thread::thread-os-thread th))
                              (bt:all-threads))))
     (maphash #'(lambda (key connection)
@@ -93,30 +75,70 @@ Execute every minute like garbage collection.
 
 
 (defun startup-connection-pool ()
+  "Initialize the database connection pool.
+   
+   Creates the thread-connection hash table and connection pool
+   if they don't already exist.
+   "
   (when (null *connection-pool*)
     (setf *thread-connection-pool* (make-hash-table :test #'eq))
     (setf *connection-pool* (create-connection-pool-impl *database-type*))))
 
 (defun shutdown-connection-pool ()
+  "Shutdown the database connection pool.
+   
+   Closes all connections and clears the connection pools.
+   "
   (when *connection-pool*
     (dbi-cp:shutdown *connection-pool*)
     (setf *thread-connection-pool* nil)
     (setf *connection-pool* nil)))
 
 (defgeneric create-connection-pool-impl (database-type)
-  (:documentation "Create connection pool."))
+  (:documentation "Create connection pool for the specified database type.
+   
+   Implementation must be provided for each database type.
+   
+   @param database-type [<database-type>] Database type instance
+   @return [dbi-cp:<connection-pool>] Connection pool instance
+   "))
 
 
 (defun get-connection-direct (&key (no-database nil))
+  "Get a direct database connection (not from pool).
+   
+   @param no-database [boolean] If T, connect without specifying a database
+   @return [dbi:<dbi-connection>] Direct database connection
+   "
   (get-connection-direct-impl *database-type* :no-database no-database))
 
 (defgeneric get-connection-direct-impl (database-type &key)
-  (:documentation "Get connection to database."))
+  (:documentation "Get direct connection to database for the specified type.
+   
+   Implementation must be provided for each database type.
+   
+   @param database-type [<database-type>] Database type instance
+   @param no-database [boolean] If T, connect without specifying a database
+   @return [dbi:<dbi-connection>] Direct database connection
+   "))
 
 (defun disconnect-direct (connection)
+  "Disconnect a direct database connection.
+   
+   @param connection [dbi:<dbi-connection>] Connection to disconnect
+   "
   (dbi:disconnect connection))
 
 (defmacro with-db-connection-direct ((connection &key (no-database nil)) &body body)
+  "Execute body with a direct database connection.
+   
+   Acquires a direct connection, executes the body, and ensures
+   the connection is closed even if an error occurs.
+   
+   @param connection [symbol] Variable name to bind the connection to
+   @param no-database [boolean] If T, connect without specifying a database
+   @param body [form] Forms to execute with the connection
+   "
   `(let ((,connection (get-connection-direct :no-database ,no-database)))
      (unwind-protect
          (progn
@@ -125,16 +147,33 @@ Execute every minute like garbage collection.
 
 
 (defun get-connection ()
+  "Get database connection for the current thread.
+   
+   @return [dbi-cp.proxy::<dbi-connection-proxy>] Database connection
+   "
   (let ((current-th (bt:current-thread)))
     (get-connection-by-thread current-th)))
 
 
 (defun disconnect (connection)
+  "Disconnect and release the connection for the current thread.
+   
+   @param connection [dbi-cp.proxy::<dbi-connection-proxy>] Connection to disconnect
+   "
   (let ((thread-id (sb-thread::thread-os-thread (bt:current-thread))))
     (remhash thread-id *thread-connection-pool*)
     (dbi-cp:disconnect connection)))
 
 (defmacro with-db-connection ((connection) &body body)
+  "Execute body with a pooled database connection.
+   
+   Acquires a connection from the pool for the current thread,
+   executes the body, and ensures the connection is released
+   even if an error occurs.
+   
+   @param connection [symbol] Variable name to bind the connection to
+   @param body [form] Forms to execute with the connection
+   "
   `(let ((,connection (get-connection)))
      (unwind-protect
          (progn
