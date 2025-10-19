@@ -121,13 +121,20 @@ ex: ((:name :id
                class-name))))
 
 (defmethod (setf ref) (new-value (inst <base-model>) key)
-  (let ((old-value (gethash key (slot-value inst 'data))))
-    (unless (value= old-value new-value)
+  (multiple-value-bind (old-value key-exists-p) (gethash key (slot-value inst 'data))
+    (unless (and key-exists-p (value= old-value new-value))
       (setf (gethash key (slot-value inst 'data))
             new-value)
-      (setf (gethash key (slot-value inst 'dirty-flag))
-            t)
-      (setf (slot-value inst 'has-dirty-p) t))))
+      (let* ((class-name (class-name (class-of inst)))
+             (table-info (gethash class-name *table-information*))
+             (columns-plist (getf table-info :columns-plist))
+             (is-db-column (or (find key '(:id :created-at :updated-at))
+                               (getf columns-plist key))))
+        ;; Only set dirty-flag for database columns, not for relations
+        (when is-db-column
+          (setf (gethash key (slot-value inst 'dirty-flag))
+                t)
+          (setf (slot-value inst 'has-dirty-p) t))))))
 
 (defmethod (setf ref-error) (error-value (inst <base-model>) key)
   (setf (gethash key (slot-value inst 'errors))
