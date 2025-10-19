@@ -23,6 +23,7 @@
                #:clails-test/model/join-query
                #:clails-test/model/save
                #:clails-test/model/optimistic-lock
+               #:clails-test/model/default-value
                #:clails-test/logger/registry
                #:clails-test/logger/purpose-specific
                #:clails-test/logger/file-appender
