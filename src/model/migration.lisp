@@ -228,9 +228,9 @@
    "
   (setf *migrations* nil)
   (load-migration-files)
-  (log.sql " STATUS    MIGRATION NAME")
-  (log.sql "-----------------------------------------")
-  (log.sql (format nil "~{~{ ~A~11T~A~}~%~}" (migrated-status))))
+  (format t " STATUS    MIGRATION NAME~%")
+  (format t "-----------------------------------------~%")
+  (format t "~{~{ ~A~11T~A~}~%~}~%" (migrated-status)))
 
 (defun check-type-valid (type)
   "Check if column type is valid.
@@ -257,9 +257,9 @@
 (defun load-migration-files ()
   (let ((files (directory (format NIL "~A/db/migrate/**/*.lisp" *migration-base-dir*))))
     (dolist (file files)
-      (log.sql (format nil "loading migration file: ~A" file))
+      (format t "loading migration file: ~A" file)
       (load file)
-      (log.sql " ... done"))))
+      (format t " ... done"))))
 
 (defun migrated-status ()
   (with-db-connection-direct (connection)
