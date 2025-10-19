@@ -151,7 +151,7 @@ v
         ;; accept only <base-model> instances
         (dolist (i insts)
           (check-type i <base-model>))
-        
+
         (when cascade
           (dolist (i insts)
             (let ((relations (getf (gethash (class-name (class-of i)) clails/model/base-model::*table-information*)
@@ -387,7 +387,8 @@ v
   (loop for column in (slot-value inst 'clails/model/base-model::columns)
         as dirty-flag-hash = (slot-value inst 'clails/model/base-model::dirty-flag)
         when (or (and insert
-                      (not (eq (getf column :name) :id)))
+                      (not (eq (getf column :name) :id))
+                      (gethash (getf column :name) dirty-flag-hash))
                  ;; update column if dirty
                  (and update
                       (not (eq (getf column :name) :id))
@@ -613,42 +614,61 @@ v
          (current-datetime (get-universal-time))
          (table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
          (columns (fetch-columns inst :insert T))
-         (sql (format NIL "INSERT INTO ~A (~{~A~^, ~}) VALUES (~{?~*~^, ~})" table-name (mapcar #'kebab->snake columns) columns))
-         (params (alexandria:alist-plist (loop for colstr in columns
-                                               as  colkey = (intern colstr :KEYWORD)
-                                               collect (cons colkey (ref inst colkey))))))
+         (params nil))
 
+    ;; Build params from columns that have dirty flag set
+    (loop for colstr in columns
+          as colkey = (intern colstr :KEYWORD)
+          do (push (ref inst colkey) params))
+    (setf params (nreverse params))
+
+    ;; Add created-at and updated-at to columns and params
+    (setf columns (append columns (list "CREATED-AT" "UPDATED-AT")))
+    (setf params (append params (list current-datetime current-datetime)))
+
+    ;; Add version column if specified
     (when version-column
-      (setf (getf params version-column) 1))
+      (setf columns (append columns (list (string version-column))))
+      (setf params (append params (list 1))))
 
-    ;; set created-at and updated-at
-    (setf (getf params :created-at) current-datetime)
-    (setf (getf params :updated-at) current-datetime)
+    ;; Build SQL with all columns including created-at and updated-at
+    (let ((sql (format NIL "INSERT INTO ~A (~{~A~^, ~}) VALUES (~{?~*~^, ~})"
+                       table-name
+                       (mapcar #'kebab->snake columns)
+                       columns)))
 
-    ;; convert parameter
-    ;; plist -> values
-    (setf params (convert-cl-db-values params inst))
+      ;; convert parameter values using cl-db-fn
+      (setf params (loop for colstr in columns
+                         as colkey = (intern colstr :KEYWORD)
+                         as column-info = (loop for col in (slot-value inst 'clails/model/base-model::columns)
+                                                when (eq (getf col :name) colkey)
+                                                return col)
+                         for i from 0
+                         as value = (nth i params)
+                         collect (if column-info
+                                     (funcall (getf column-info :cl-db-fn) value)
+                                     value)))
 
-    (when (log-level-enabled-p :sql :debug)
-      (log.sql (format nil "sql: ~S" sql))
-      (log.sql (format nil "params: ~S" params)))
+      (when (log-level-enabled-p :sql :debug)
+        (log.sql (format nil "sql: ~S" sql))
+        (log.sql (format nil "params: ~S" params)))
 
-    (let ((body #'(lambda (connection)
-                    (dbi-cp:execute
-                     (dbi-cp:prepare connection sql)
-                     params)
-                    (let ((last-id (get-last-id connection)))
-                      (setf (ref inst :id) last-id)
-                      (setf (ref inst :created-at) current-datetime)
-                      (setf (ref inst :updated-at) current-datetime)
-                      (when version-column
-                        (setf (ref inst version-column) 1)))
-                    inst)))
+      (let ((body #'(lambda (connection)
+                      (dbi-cp:execute
+                       (dbi-cp:prepare connection sql)
+                       params)
+                      (let ((last-id (get-last-id connection)))
+                        (setf (ref inst :id) last-id)
+                        (setf (ref inst :created-at) current-datetime)
+                        (setf (ref inst :updated-at) current-datetime)
+                        (when version-column
+                          (setf (ref inst version-column) 1)))
+                      inst)))
 
-      (if connection
-          (funcall body connection)
-          (clails/model/connection:with-db-connection (connection)
-            (funcall body connection))))))
+        (if connection
+            (funcall body connection)
+            (clails/model/connection:with-db-connection (connection)
+              (funcall body connection)))))))
 
 
 (defun get-last-id (connection)

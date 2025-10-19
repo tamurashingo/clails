@@ -94,6 +94,48 @@
 (defun type-convert (type)
   (cdr (assoc type *mysql-type-convert*)))
 
+
+(defun convert-default-value (value column-type)
+  "Convert Lisp value to SQL DEFAULT clause string for MySQL.
+
+   @param value [t] Default value in Lisp representation
+   @param column-type [keyword] Column type (:string, :integer, :boolean, etc.)
+   @return [string] SQL DEFAULT clause value
+   "
+  (cond
+    ;; Special keywords
+    ((eq value :null) "NULL")
+    ((eq value :current-timestamp) "CURRENT_TIMESTAMP")
+
+    ;; Boolean type - MySQL uses TINYINT(1)
+    ((eq column-type :boolean)
+     (cond ((eq value t) "1")
+           ((null value) "0")
+           (t (error "Invalid boolean default value: ~A. Use T or NIL." value))))
+
+    ;; Numeric types
+    ((numberp value) (format nil "~A" value))
+
+    ;; String types - need to quote the value
+    ((and (or (eq column-type :string)
+              (eq column-type :text))
+          (stringp value))
+     (format nil "'~A'" value))
+
+    ;; Datetime types
+    ((and (or (eq column-type :datetime)
+              (eq column-type :date)
+              (eq column-type :time))
+          (stringp value))
+     (format nil "'~A'" value))
+
+    ;; Fallback for other string values
+    ((stringp value) value)
+
+    ;; Error for unsupported types
+    (t (error "Unsupported default value type: ~A for column type ~A"
+              value column-type))))
+
 (defmethod create-table-impl ((database-type <database-type-mysql>) connection &key table columns constraints)
   (mandatory-check table columns)
   (let ((query (gen-create-table table (append '(("id" :type :integer
@@ -231,7 +273,10 @@
          (not-null-p (getf attr :not-null))
          (primary-key-p (getf attr :primary-key))
          (auto-increment-p (getf attr :auto-increment))
-         (default-value (getf attr :default-value))
+         (default-value-raw (getf attr :default-value))
+         ;; Convert default value to SQL string
+         (default-value (when default-value-raw
+                          (convert-default-value default-value-raw type)))
          (precision (when (or (eq type :float)
                               (eq type :decimal))
                       (getf attr :precision)))
