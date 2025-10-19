@@ -230,7 +230,7 @@
   (load-migration-files)
   (format t " STATUS    MIGRATION NAME~%")
   (format t "-----------------------------------------~%")
-  (format t "~{~{ ~A~11T~A~}~%~}~%" (migrated-status))))
+  (format t "~{~{ ~A~11T~A~}~%~}~%" (migrated-status)))
 
 (defun check-type-valid (type)
   "Check if column type is valid.
