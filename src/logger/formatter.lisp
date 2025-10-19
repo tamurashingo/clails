@@ -31,6 +31,14 @@
   (:documentation "Formats log records into a human-readable text format."))
 
 (defmethod format-record ((formatter <text-formatter>) stream record)
+  "Format log record as human-readable text.
+   
+   Outputs format: [timestamp] LEVEL: message key1=value1 key2=value2
+   
+   @param formatter [<text-formatter>] Text formatter instance
+   @param stream [stream] Output stream
+   @param record [<log-record>] Log record to format
+   "
   (format stream "[~A] ~A: ~A~{ ~A=~S~}~%"
           (format-timestring nil (log-record-timestamp record) :format +rfc3339-format+)
           (string-upcase (log-record-level record))
@@ -43,6 +51,14 @@
   (:documentation "Formats log records into a JSON format."))
 
 (defmethod format-record ((formatter <json-formatter>) stream record)
+  "Format log record as JSON.
+   
+   Outputs a single-line JSON object with timestamp, level, message, and context fields.
+   
+   @param formatter [<json-formatter>] JSON formatter instance
+   @param stream [stream] Output stream
+   @param record [<log-record>] Log record to format
+   "
   (let ((payload (list :timestamp (format-timestring nil (log-record-timestamp record) :format +rfc3339-format+)
                        :level (log-record-level record)
                        :message (log-record-message record))))

@@ -57,13 +57,23 @@
   compiled-fn)
 
 (defun clear-template-cache ()
-  "Clear all cached templates"
+  "Clear all cached templates.
+   
+   @return [hash-table] The cleared cache
+   "
   (clrhash *template-cache*))
 
 (defun should-recompile-p (template-path cached-time)
   "Check if template should be recompiled.
-   In development mode, check file modification time.
-   In production mode, never recompile."
+   
+   In development mode, checks file modification time.
+   In production mode, never recompiles.
+   
+   @param template-path [pathname] Path to template file
+   @param template-path [string] Path to template file
+   @param cached-time [integer] Universal time of cached version
+   @return [boolean] T if recompilation needed, NIL otherwise
+   "
   (let ((env (or *project-environment* :develop)))
     (case env
       (:production

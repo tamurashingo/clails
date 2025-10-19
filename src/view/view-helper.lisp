@@ -12,5 +12,11 @@
 
 (defun view (key)
   "Access view data from current rendering context.
-   Example: (view :user) returns the value associated with :user key."
+   
+   Retrieves the value associated with the given key from the current
+   view context. Must be called within a view template rendering scope.
+   
+   @param key [keyword] Key to look up in the view context
+   @return [t] Value associated with the key, or NIL if not found
+   "
   (getf *view-context* key))

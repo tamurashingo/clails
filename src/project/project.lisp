@@ -18,14 +18,28 @@
     "db"
     "db/migrate"
     "tmp"
-    "public"))
+    "public")
+  "List of directories to create in a new Clails project.")
 
 (defun create-project (project-name project-dir database)
+  "Create a new Clails project with the specified configuration.
+   
+   Creates directory structure, generates initial files from templates,
+   and copies static assets.
+   
+   @param project-name [string] Name of the project
+   @param project-dir [pathname] Directory where project will be created
+   @param database [keyword] Database type (:sqlite3, :mysql, :postgresql)
+   "
   (create-directories project-dir)
   (create-initial-files project-name (namestring project-dir) database)
   (copy-asset-files project-dir))
 
 (defun create-directories (project-dir)
+  "Create all required directories for the project.
+   
+   @param project-dir [pathname] Project root directory
+   "
   ;; TODO: log here
   (ensure-directories-exist project-dir)
   (loop for d in *PROJECT-DIRECTORIES*
@@ -36,6 +50,17 @@
 
 
 (defun create-file-with-template (filename project-name project-dir database template &key (start-delimiter "<%") (start-echo-delimiter "<%=") (end-delimiter "%>"))
+  "Create a file by rendering a template with project configuration.
+   
+   @param filename [string] Relative path for the file to create
+   @param project-name [string] Name of the project
+   @param project-dir [string] Project directory path
+   @param database [keyword] Database type
+   @param template [string] Template content
+   @param start-delimiter [string] Template script start delimiter
+   @param start-echo-delimiter [string] Template expression start delimiter
+   @param end-delimiter [string] Template end delimiter
+   "
   (format T "create initial files: ~A~%" filename)
   (with-open-file (out (format nil "~A~A" project-dir filename)
                        :direction :output)
@@ -49,6 +74,16 @@
 
 
 (defun create-initial-files (project-name project-dir database)
+  "Create initial project files from templates.
+   
+   Generates all configuration, application, controller, view, and migration
+   files by rendering templates with project-specific values.
+   
+   @param project-name [string] Name of the project
+   @param project-dir [string] Project directory path
+   @param database [keyword] Database type (:sqlite3, :mysql, :postgresql)
+   @condition error Signaled when database type is not supported
+   "
   (flet ((read-template (filename)
            (let ((fullpath (asdf:system-relative-pathname
                             :clails
@@ -142,13 +177,28 @@
 
 
 (defun copy-asset-files (project-dir)
+  "Copy static asset files to the project.
+   
+   Copies all files from the template/public directory to the project's
+   public directory.
+   
+   @param project-dir [pathname] Project root directory
+   "
   (let ((src (asdf:system-relative-pathname :clails "template/public/"))
         (dst (merge-pathnames "public/" project-dir)))
     (copy-recursive src dst)))
 
 
 (defun copy-recursive (src dst)
-  "cp -r src dst"
+  "Recursively copy files and directories from source to destination.
+   
+   Equivalent to 'cp -r src dst'. Creates destination directories as needed
+   and copies all files and subdirectories.
+   
+   @param src [pathname] Source file or directory path
+   @param dst [pathname] Destination file or directory path
+   @condition error Signaled when source does not exist
+   "
   (format t "copy ~A -> ~A~%" src dst)
   (cond
     ((cl-fad:directory-pathname-p src)
