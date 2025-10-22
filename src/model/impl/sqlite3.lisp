@@ -348,7 +348,7 @@
 (defparameter CREATE-MIGRATION-TABLE
   (format NIL "CREATE TABLE IF NOT EXISTS migration (~
                   migration_name varchar(255) NOT NULL PRIMARY KEY, ~
-                  created_at dateteime NOT NULL DEFAULT CURRENT_TIMESTAMP)~
+                  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP)~
               "))
 
 (defmethod ensure-database-impl ((database-type <database-type-sqlite3>) connection)

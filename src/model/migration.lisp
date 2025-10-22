@@ -271,6 +271,7 @@
 
 (defun migrate-all ()
   (with-db-connection-direct (connection)
+    (ensure-migration-table-impl *database-type* connection)
     (loop for migration in *migrations*
           do (let ((*database-type* (if (not-migrated-p connection (getf migration :migration-name) t)
                                         *database-type*

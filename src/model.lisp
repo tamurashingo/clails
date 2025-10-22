@@ -17,6 +17,8 @@
                 #:save
                 #:make-record
                 #:destroy)
+  (:import-from #:clails/model/transaction
+                #:with-transaction)
   (:import-from #:clails/model/impl/sqlite3)
   (:import-from #:clails/model/impl/mysql)
   (:import-from #:clails/model/impl/postgresql)
@@ -35,7 +37,9 @@
            #:execute-query
            #:save
            #:make-record
-           #:destroy))
+           #:destroy
+
+           #:with-transaction))
 
 
 

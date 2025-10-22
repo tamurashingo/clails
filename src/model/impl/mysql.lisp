@@ -31,6 +31,11 @@
                 #:mandatory-check))
 (in-package #:clails/model/impl/mysql)
 
+
+;; ad hoc
+(defmethod dbi.driver:release-savepoint ((conn dbd.mysql:dbd-mysql-connection) &optional identifier)
+  (cl-dbi:do-sql conn (format nil "RELEASE SAVEPOINT ~A" identifier)))
+
 (defparameter *mysql-type-convert*
   '((:string . "varchar(255)")
     (:text . "text")
