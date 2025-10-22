@@ -9,5 +9,7 @@
 
 (defclass <error-handle-controller> (<web-controller>)
   ((exception :initarg :exception
-              :reader exception)))
+              :reader exception
+              :documentation "Exception object that was raised"))
+  (:documentation "Controller for handling and displaying error pages."))
 

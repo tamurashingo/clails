@@ -19,10 +19,18 @@
                                        (start-script "<%")
                                        (tag-end "%>"))
   "Parse template string and return list of nodes.
+   
    Supports:
    - <%= ... %> for expressions (evaluated and output)
    - <% ... %> for scriptlets (evaluated but not output)
-   - <cl:xxx> tags for control structures"
+   - <cl:xxx> tags for control structures
+   
+   @param template-string [string] Template content to parse
+   @param start-expr [string] Opening delimiter for expressions (default: \"<%=\")
+   @param start-script [string] Opening delimiter for scriptlets (default: \"<%\")
+   @param tag-end [string] Closing delimiter (default: \"%>\")
+   @return [list] List of parsed nodes
+   "
   (let ((pos 0)
         (len (length template-string))
         (nodes '()))
@@ -35,8 +43,17 @@
     (nreverse nodes)))
 
 (defun parse-next (template pos len start-expr start-script tag-end)
-  "Parse next node from template starting at pos.
-   Returns (values node new-position)"
+  "Parse next node from template starting at position.
+   
+   @param template [string] Template content
+   @param pos [integer] Starting position
+   @param len [integer] Template length
+   @param start-expr [string] Expression start delimiter
+   @param start-script [string] Scriptlet start delimiter
+   @param tag-end [string] End delimiter
+   @return [plist] Parsed node
+   @return [integer] New position after parsed node
+   "
   (let ((cl-tag-pos (search "<cl:" template :start2 pos))
         (expr-pos (search start-expr template :start2 pos))
         (script-pos (search start-script template :start2 pos)))
@@ -71,13 +88,28 @@
          (parse-scriptlet template next-pos len start-script tag-end))))))
 
 (defun min-position (&rest positions)
-  "Return the minimum non-nil position"
+  "Return the minimum non-nil position.
+   
+   @param positions [list] List of position values (may contain nil)
+   @return [integer] Minimum position
+   @return [nil] NIL if all positions are nil
+   "
   (let ((valid-positions (remove nil positions)))
     (when valid-positions
       (apply #'min valid-positions))))
 
 (defun parse-expression (template pos len start-expr tag-end)
-  "Parse <%= ... %> expression"
+  "Parse <%= ... %> expression.
+   
+   @param template [string] Template content
+   @param pos [integer] Start position (at <%=)
+   @param len [integer] Template length
+   @param start-expr [string] Expression start delimiter
+   @param tag-end [string] End delimiter
+   @return [plist] Parsed expression node
+   @return [integer] Position after the expression
+   @condition error Signaled when closing delimiter not found
+   "
   (let* ((start (+ pos (length start-expr)))
          (end-pos (search tag-end template :start2 start)))
     (if end-pos
@@ -88,7 +120,20 @@
         (error "Unclosed expression tag at position ~A" pos))))
 
 (defun parse-scriptlet (template pos len start-script tag-end)
-  "Parse <% ... %> scriptlet"
+  "Parse <% ... %> scriptlet.
+   
+   Scriptlets contain code that is evaluated but whose result is not output.
+   
+   @param template [string] Template content
+   @param pos [integer] Start position (at <%)
+   @param len [integer] Template length (unused)
+   @param start-script [string] Scriptlet start delimiter
+   @param tag-end [string] End delimiter
+   @return [plist] Parsed scriptlet node
+   @return [integer] Position after the scriptlet
+   @condition error Signaled when closing delimiter not found
+   "
+  (declare (ignore len))
   (let* ((start (+ pos (length start-script)))
          (end-pos (search tag-end template :start2 start)))
     (if end-pos
@@ -99,7 +144,15 @@
         (error "Unclosed scriptlet tag at position ~A" pos))))
 
 (defun find-closing-angle-bracket (template start)
-  "Find the closing > of a tag, skipping over quoted strings"
+  "Find the closing > of a tag, skipping over quoted strings.
+   
+   Handles quoted attribute values properly by tracking quote state.
+   
+   @param template [string] Template content
+   @param start [integer] Starting position for search
+   @return [integer] Position of closing >
+   @return [nil] NIL if closing > not found
+   "
   (let ((pos start)
         (len (length template))
         (in-quote nil))
@@ -116,7 +169,22 @@
     nil))
 
 (defun parse-cl-tag (template pos len start-expr start-script tag-end)
-  "Parse <cl:xxx> structured tags"
+  "Parse <cl:xxx> structured tags.
+   
+   Handles tags like <cl:loop>, <cl:if>, <cl:cond>, etc. Parses tag name,
+   attributes, body content, and closing tag.
+   
+   @param template [string] Template content
+   @param pos [integer] Start position (at <cl:)
+   @param len [integer] Template length (unused)
+   @param start-expr [string] Expression start delimiter for parsing children
+   @param start-script [string] Scriptlet start delimiter for parsing children
+   @param tag-end [string] End delimiter for parsing children
+   @return [plist] Parsed cl:tag node with :type, :attributes, and :children
+   @return [integer] Position after the closing tag
+   @condition error Signaled when tag is malformed or closing tag not found
+   "
+  (declare (ignore len))
   (let* ((tag-start pos)
          (tag-name-end (or (position #\Space template :start pos)
                           (position #\> template :start pos)))
@@ -147,7 +215,20 @@
                 (+ closing-pos (length closing-tag)))))))
 
 (defun parse-tag-body (tag-name body start-expr start-script tag-end)
-  "Parse the body of a cl: tag, handling special cases like cl:if/cl:else"
+  "Parse the body of a cl: tag, handling special cases.
+   
+   Different tag types require different parsing strategies:
+   - if tags need to handle <cl:else>
+   - cond tags need to handle <cl:when> and <cl:otherwise>
+   - other tags parse body normally
+   
+   @param tag-name [string] Name of the cl: tag (e.g., \"if\", \"loop\")
+   @param body [string] Body content between opening and closing tags
+   @param start-expr [string] Expression start delimiter
+   @param start-script [string] Scriptlet start delimiter
+   @param tag-end [string] End delimiter
+   @return [list] List of parsed child nodes
+   "
   (cond
     ;; For if tags, need to handle <cl:else>
     ((string= tag-name "if")
@@ -165,7 +246,17 @@
                     :tag-end tag-end))))
 
 (defun parse-if-body (body start-expr start-script tag-end)
-  "Parse if tag body, splitting on <cl:else>"
+  "Parse if tag body, splitting on <cl:else>.
+   
+   Splits the body into then-clause and optional else-clause.
+   
+   @param body [string] Body content of <cl:if> tag
+   @param start-expr [string] Expression start delimiter
+   @param start-script [string] Scriptlet start delimiter
+   @param tag-end [string] End delimiter
+   @return [list] List containing :then-clause and optionally :else-clause
+   @condition error Signaled when <cl:else> has no closing tag
+   "
   (let ((else-pos (search "<cl:else>" body)))
     (if else-pos
         (let* ((then-part (subseq body 0 else-pos))
@@ -193,7 +284,16 @@
                                             :tag-end tag-end))))))
 
 (defun parse-cond-body (body start-expr start-script tag-end)
-  "Parse cond tag body, extracting <cl:when> and <cl:otherwise> clauses"
+  "Parse cond tag body, extracting <cl:when> and <cl:otherwise> clauses.
+   
+   Searches for and parses all when and otherwise clauses within the body.
+   
+   @param body [string] Body content of <cl:cond> tag
+   @param start-expr [string] Expression start delimiter
+   @param start-script [string] Scriptlet start delimiter
+   @param tag-end [string] End delimiter
+   @return [list] List of :when-clause and :otherwise-clause nodes
+   "
   (let ((clauses '())
         (pos 0)
         (len (length body)))
@@ -228,7 +328,19 @@
     (nreverse clauses)))
 
 (defun parse-when-clause (body pos start-expr start-script tag-end)
-  "Parse a single <cl:when> clause"
+  "Parse a single <cl:when> clause.
+   
+   Extracts the test attribute and parses the body content.
+   
+   @param body [string] Content containing the when clause
+   @param pos [integer] Starting position of <cl:when
+   @param start-expr [string] Expression start delimiter
+   @param start-script [string] Scriptlet start delimiter
+   @param tag-end [string] End delimiter
+   @return [plist] Parsed :when-clause node with :attributes and :children
+   @return [integer] Position after </cl:when>
+   @condition error Signaled when closing tag not found
+   "
   (let* ((tag-end-pos (position #\> body :start pos))
          (attr-string (subseq body (+ pos (length "<cl:when")) tag-end-pos))
          (attributes (parse-attributes attr-string))
@@ -246,7 +358,19 @@
               (+ closing-pos (length "</cl:when>"))))))
 
 (defun parse-otherwise-clause (body pos start-expr start-script tag-end)
-  "Parse <cl:otherwise> clause"
+  "Parse <cl:otherwise> clause.
+   
+   Parses the default clause for <cl:cond>.
+   
+   @param body [string] Content containing the otherwise clause
+   @param pos [integer] Starting position of <cl:otherwise>
+   @param start-expr [string] Expression start delimiter
+   @param start-script [string] Scriptlet start delimiter
+   @param tag-end [string] End delimiter
+   @return [plist] Parsed :otherwise-clause node with :children
+   @return [integer] Position after </cl:otherwise>
+   @condition error Signaled when closing tag not found
+   "
   (let* ((content-start (+ pos (length "<cl:otherwise>")))
          (closing-pos (search "</cl:otherwise>" body :start2 content-start)))
     (unless closing-pos
@@ -261,7 +385,14 @@
 
 (defun parse-attributes (attr-string)
   "Parse tag attributes into a plist.
-   Example: ' test=\"(view :x)\" ' -> (:test \"(view :x)\")"
+   
+   Extracts attribute name-value pairs from tag attribute string.
+   
+   @param attr-string [string] Attribute string (e.g., ' test=\"(view :x)\" ')
+   @return [plist] Attribute plist (e.g., (:test \"(view :x)\"))
+   
+   Example: ' test=\"(view :x)\" ' => (:test \"(view :x)\")
+   "
   (let ((attributes '())
         (pos 0)
         (len (length attr-string)))

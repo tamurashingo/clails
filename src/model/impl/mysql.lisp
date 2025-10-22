@@ -31,6 +31,11 @@
                 #:mandatory-check))
 (in-package #:clails/model/impl/mysql)
 
+
+;; ad hoc
+(defmethod dbi.driver:release-savepoint ((conn dbd.mysql:dbd-mysql-connection) &optional identifier)
+  (cl-dbi:do-sql conn (format nil "RELEASE SAVEPOINT ~A" identifier)))
+
 (defparameter *mysql-type-convert*
   '((:string . "varchar(255)")
     (:text . "text")
@@ -267,6 +272,14 @@
 
 
 (defun parse-column (col)
+  "Parse a column definition for MySQL CREATE/ALTER TABLE statement.
+
+   Converts Lisp-style column definition to SQL column specification,
+   including automatic conversion of default values using convert-default-value.
+
+   @param col [list] Column definition: (name :type type :not-null bool :default-value value ...)
+   @return [string] SQL column specification
+   "
   (let* ((column-name (kebab->snake (first col)))
          (attr (rest col))
          (type (getf attr :type))

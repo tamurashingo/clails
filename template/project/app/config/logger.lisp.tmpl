@@ -111,7 +111,8 @@
   ;; root logger
   (register-logger
    :root
-   :appender (make-null-appender)
+   :appender (make-console-appender
+              :formatter (make-instance '<json-formatter>))
    :level :none)
   
   ;; project default logger

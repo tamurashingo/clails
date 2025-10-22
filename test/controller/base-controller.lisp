@@ -21,19 +21,14 @@
 
 (setf *routing-tables*
   '((:path "/"
-     :controller "clails-test/controller/base-controller::<test-controller>"
-     :type :all)
+     :controller "clails-test/controller/base-controller::<test-controller>")
     (:path "/blog/:blog-id"
-     :controller "clails-test/controller/base-controller::<test-detail-controller>"
-     :type :one)
+     :controller "clails-test/controller/base-controller::<test-detail-controller>")
     (:path "/blog/:blog-id/comment/:comment-id"
-     :controller "clails-test/controller/base-controller::<test-comment-controller>"
-     :type :one)))
+     :controller "clails-test/controller/base-controller::<test-comment-controller>")))
 
 (setup
   (initialize-routing-tables))
-
-
 
 
 (deftest create-scanner-test

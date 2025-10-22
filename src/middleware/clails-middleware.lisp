@@ -27,6 +27,12 @@
 
 (defparameter *lack-middleware-clails-controller*
   (lambda (app)
+    "Clails controller middleware for routing and dispatching requests.
+     
+     Routes requests to appropriate controllers based on URL patterns,
+     handles HTTP method dispatching (GET/POST/PUT/DELETE), and
+     resolves views for rendering.
+     "
     (lambda (env)
       (handler-case
           (let* ((controller (make-controller env))
@@ -61,10 +67,21 @@
                    nil))
             (resolve-view controller))
         (404/not-found (c)
-          (funcall app env))))))
+          (funcall app env)))))
+  "Lack middleware function for Clails controller routing and dispatching.")
 
 
 (defun make-controller (env)
+  "Create and initialize controller instance for the request.
+   
+   Finds the appropriate controller based on the request path,
+   initializes it with request parameters (both from URL and path),
+   and sets up the request and environment.
+   
+   @param env [plist] Lack environment containing request information
+   @return [<base-controller>] Initialized controller instance
+   @condition 404/not-found Signaled when no matching route found
+   "
   (let* ((path-info (getf env :path-info))
          (req (lack/request:make-request env))
          (controller-info (path-controller path-info)))
