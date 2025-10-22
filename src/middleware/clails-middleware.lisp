@@ -17,38 +17,71 @@
                 #:404/not-found)
   (:import-from #:clails/controller/error-handle-controller
                 #:<error-handle-controller>)
+  (:import-from #:clails/logger
+                #:log.web-access
+                #:log-package.trace
+                #:log-level-enabled-p)
   (:export #:*lack-middleware-clails-controller*))
 
 (in-package #:clails/middleware/clails-middleware)
 
 (defparameter *lack-middleware-clails-controller*
   (lambda (app)
+    "Clails controller middleware for routing and dispatching requests.
+     
+     Routes requests to appropriate controllers based on URL patterns,
+     handles HTTP method dispatching (GET/POST/PUT/DELETE), and
+     resolves views for rendering.
+     "
     (lambda (env)
       (handler-case
           (let* ((controller (make-controller env))
                  (method (request-method (request controller))))
+            (when (log-level-enabled-p :trace)
+              (log-package.trace (format nil "Request path: ~A" (getf env :path-info))))
             (cond ((eq method :get)
+                   (when (log-level-enabled-p :trace)
+                     (log-package.trace "Dispatching to do-get"))
                    (do-get controller))
                   ((or (eq method :put)
                        (and (eq method :post)
                             (string-equal "put"
                                      (gethash "_method" (params controller)))))
+                   (when (log-level-enabled-p :trace)
+                     (log-package.trace "Dispatching to do-put"))
                    (do-put controller))
                   ((or (eq method :delete)
                        (and (eq method :post)
                             (string-equal "delete"
                                      (gethash "_method" (params controller)))))
+                   (when (log-level-enabled-p :trace)
+                     (log-package.trace "Dispatching to do-delete"))
                    (do-delete controller))
                   ((eq method :post)
+                   (when (log-level-enabled-p :trace)
+                     (log-package.trace "Dispatching to do-post"))
                    (do-post controller))
                   (t
+                   (when (log-level-enabled-p :trace)
+                     (log-package.trace (format nil "Unsupported method: ~A" method)))
                    nil))
             (resolve-view controller))
         (404/not-found (c)
-          (funcall app env))))))
+          (funcall app env)))))
+  "Lack middleware function for Clails controller routing and dispatching.")
 
 
 (defun make-controller (env)
+  "Create and initialize controller instance for the request.
+   
+   Finds the appropriate controller based on the request path,
+   initializes it with request parameters (both from URL and path),
+   and sets up the request and environment.
+   
+   @param env [plist] Lack environment containing request information
+   @return [<base-controller>] Initialized controller instance
+   @condition 404/not-found Signaled when no matching route found
+   "
   (let* ((path-info (getf env :path-info))
          (req (lack/request:make-request env))
          (controller-info (path-controller path-info)))

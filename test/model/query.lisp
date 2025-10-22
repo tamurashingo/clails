@@ -6,6 +6,8 @@
   (:import-from #:clails/util
                 #:env-or-default)
   (:import-from #:clails/model/base-model
+                #:<base-model>
+                #:defmodel
                 #:ref))
 
 (defpackage #:clails-test/model/db
@@ -19,20 +21,16 @@
                 #:drop-column
                 #:drop-index))
 
-(defpackage #:clails-test-model
-  (:use #:cl)
-  (:import-from #:clails/model/base-model
-                #:defmodel
-                #:ref
-                #:<base-model>))
-(in-package #:clails-test-model)
-(defmodel <todo> (<base-model>)
-  (:table "todo"))
-
 (in-package #:clails-test/model/query)
 
 
 (setup
+  ;; clear table-information
+  (clrhash clails/model/base-model::*table-information*)
+  ;; define models
+  (defmodel <todo> (<base-model>)
+    (:table "todo"))
+
   (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
   (setf clails/environment:*project-environment* :test)
   (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
@@ -40,7 +38,7 @@
                                                       :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
                                                       :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
                                                       :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
-  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR" "/app/test"))
+  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR_0001" "/app/test/data/0001-migration-test"))
   (uiop:setup-temporary-directory)
   (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
   (setf clails/environment::*project-dir* uiop:*temporary-directory*)
@@ -50,7 +48,9 @@
     (dbi-cp:do-sql connection "insert into todo (created_at, updated_at, title, done, done_at) values ('2024-01-01 00:00:00', '2024-01-02 13:00:00', 'create program', true, '2024-01-02 13:00:00')")
     (dbi-cp:do-sql connection "insert into todo (created_at, updated_at, title, done, done_at) values ('2024-01-01 00:00:01', '2024-01-02 13:00:00', 'create pull request', false, null)")
     (dbi-cp:do-sql connection "insert into todo (created_at, updated_at, title, done, done_at) values ('2024-01-01 00:00:02', '2024-01-02 13:00:01', 'merge pr', false, null)"))
-  (clails/model/connection:startup-connection-pool))
+  (clails/model/connection:startup-connection-pool)
+  (clails/model/base-model:initialize-table-information))
+
 
 
 
@@ -59,44 +59,13 @@
   (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t)
   (clails/model/connection:shutdown-connection-pool))
 
-(deftest test-select-order-by
-  (testing "symbol"
-    ;; single symbol
-    (ok (equal '(("ID" "ASC"))
-                (clails/model/query::parse-order-by '(id))))
-    ;; single list
-    (ok (equal '(("ID" "ASC"))
-                (clails/model/query::parse-order-by '((id :ASC)))))
-    ;; multiple symbols
-    (ok (equal '(("ID" "ASC") ("CREATED_AT" "ASC"))
-                (clails/model/query::parse-order-by '(id created-at))))
-    ;; multiple list
-    (ok (equal '(("ID" "DESC") ("CREATED_AT" "ASC"))
-                (clails/model/query::parse-order-by '((id :DESC) (created-at :ASC))))))
-  (testing "string"
-    ;; single string
-    (ok (equal '(("id" "ASC"))
-                (clails/model/query::parse-order-by '("id"))))
-    ;; single list
-    (ok (equal '(("id" "ASC"))
-                (clails/model/query::parse-order-by '(("id" :ASC)))))
-    ;; multiple symbols
-    (ok (equal '(("ID" "ASC") ("CREATED_AT" "ASC"))
-                (clails/model/query::parse-order-by '("ID" "CREATED-AT"))))
-    ;; multiple list
-    (ok (equal '(("id" "DESC") ("created_at" "ASC"))
-                (clails/model/query::parse-order-by '(("id" :DESC) ("created-at" :ASC))))))
-  (testing "error"
-    ;; not symbol, not string
-    (ok (signals (clails/model/query::parse-order-by '(1))))
-    (ok (signals (clails/model/query::parse-order-by '((1 :ASC)))))
-    ;; not keyword :ASC or :DESC
-    (ok (signals (clails/model/query::parse-order-by '((id :ASCENDING)))))))
-
 
 (deftest test-select
   (testing "no condition"
-    (let* ((result (select 'clails-test-model::<todo> :order-by '(id)))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :order-by ((:todo :id))))
+           (result (execute-query query '()))
            (1st (first result))
            (2nd (second result))
            (3rd (third result)))
@@ -121,7 +90,11 @@
       (ok (null (ref 3rd :done-at)))))
 
   (testing "single condition"
-    (let* ((result (select 'clails-test-model::<todo> :where '(= done 0) :order-by '(id)))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:= (:todo :done) 0)
+                         :order-by ((:todo :id))))
+           (result (execute-query query '()))
            (1st (first result))
            (2nd (second result)))
       (ok (= 2 (length result)))
@@ -130,7 +103,11 @@
       (ok (string= "merge pr" (ref 2nd :title)))))
 
   (testing "is null condition"
-    (let* ((result (select 'clails-test-model::<todo> :where '(null done-at) :order-by '(id)))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:null (:todo :done-at))
+                         :order-by ((:todo :id))))
+           (result (execute-query query '()))
            (1st (first result))
            (2nd (second result)))
       (ok (= 2 (length result)))
@@ -140,25 +117,35 @@
 
 
   (testing "not null condition"
-    (let* ((result (select 'clails-test-model::<todo> :where '(not-null done-at) :order-by '(id)))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:not-null (:todo :done-at))
+                         :order-by ((:todo :id))))
+           (result (execute-query query '()))
            (1st (first result)))
       (ok (= 1 (length result)))
 
       (ok (string= "create program" (ref 1st :title)))))
 
   (testing "and condition"
-    (let* ((result (select 'clails-test-model::<todo> :where '(and (= done 0)
-                                                                   (= title "merge pr"))
-                                                      :order-by '(id)))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:and (:= (:todo :done) 0)
+                                      (:= (:todo :title) "merge pr"))
+                         :order-by ((:todo :id))))
+           (result (execute-query query '()))
            (1st (first result)))
       (ok (= 1 (length result)))
 
       (ok (string= "merge pr" (ref 1st :title)))))
 
   (testing "or condition"
-    (let* ((result (select 'clails-test-model::<todo> :where '(or (= done 1)
-                                                                   (= title "merge pr"))
-                                                      :order-by '(id)))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:or (:= (:todo :done) 1)
+                                     (:= (:todo :title) "merge pr"))
+                         :order-by ((:todo :id))))
+           (result (execute-query query '()))
            (1st (first result))
            (2nd (second result)))
       (ok (= 2 (length result)))
@@ -167,14 +154,21 @@
       (ok (string= "merge pr" (ref 2nd :title)))))
 
   (testing "other condition"
-    (let* ((result (select 'clails-test-model::<todo> :where `(<= created-at "2024-01-01 00:00:00") :order-by '(id)))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:<= (:todo :created-at) "2024-01-01 00:00:00")
+                         :order-by ((:todo :id))))
+           (result (execute-query query '()))
            (1st (first result)))
       (ok (= 1 (length result)))
 
       (ok (string= "create program" (ref 1st :title)))))
 
   (testing "sort order"
-    (let* ((result (select 'clails-test-model::<todo> :order-by '((id :desc))))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :order-by ((:todo :id :desc))))
+           (result (execute-query query '()))
            (1st (first result))
            (2nd (second result))
            (3rd (third result)))
@@ -184,7 +178,11 @@
       (ok (string= "create pull request" (ref 2nd :title)))
       (ok (string= "create program" (ref 3rd :title))))
 
-    (let* ((result (select 'clails-test-model::<todo> :order-by '((updated-at :desc) created-at)))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :order-by ((:todo :updated-at :desc)
+                                    (:todo :created-at))))
+           (result (execute-query query '()))
            (1st (first result))
            (2nd (second result))
            (3rd (third result)))
@@ -192,10 +190,112 @@
 
       (ok (string= "merge pr" (ref 1st :title)))
       (ok (string= "create program" (ref 2nd :title)))
-      (ok (string= "create pull request" (ref 3rd :title))))))
+      (ok (string= "create pull request" (ref 3rd :title)))))
+
+  (testing "in/not-in condition"
+    (testing "in with literal list"
+      (let* ((query (query <todo>
+                           :as :todo
+                           :where (:in (:todo :title) ("create program" "merge pr"))
+                           :order-by ((:todo :id))))
+             (result (execute-query query '())))
+        (ok (= 2 (length result)))
+        (ok (string= "create program" (ref (first result) :title)))
+        (ok (string= "merge pr" (ref (second result) :title)))))
+
+    (testing "in with keyword"
+      (let* ((query (query <todo>
+                           :as :todo
+                           :where (:in (:todo :id) :ids)
+                           :order-by ((:todo :id))))
+             (result (execute-query query '(:ids (1 3)))))
+        (ok (= 2 (length result)))
+        (ok (= 1 (ref (first result) :id)))
+        (ok (= 3 (ref (second result) :id)))))
+
+    (testing "not-in with literal list"
+      (let* ((query (query <todo>
+                           :as :todo
+                           :where (:not-in (:todo :title) ("create program"))
+                           :order-by ((:todo :id))))
+             (result (execute-query query '())))
+        (ok (= 2 (length result)))
+        (ok (string= "create pull request" (ref (first result) :title)))
+        (ok (string= "merge pr" (ref (second result) :title)))))
+
+    (testing "not-in with keyword"
+      (let* ((query (query <todo>
+                           :as :todo
+                           :where (:not-in (:todo :id) :ids)
+                           :order-by ((:todo :id))))
+             (result (execute-query query '(:ids (1 2)))))
+        (ok (= 1 (length result)))
+        (ok (= 3 (ref (first result) :id)))))
+
+    (testing "in with empty literal list"
+      (let* ((query (query <todo>
+                          :as :todo
+                          :where (:in (:todo :id) nil)
+                          :order-by ((:todo :id))))
+            (result (execute-query query '())))
+        (ok (= 0 (length result)))))
+
+    (testing "in with empty keyword list"
+      (let* ((query (query <todo>
+                          :as :todo
+                          :where (:in (:todo :id) :ids)
+                          :order-by ((:todo :id))))
+            (result (execute-query query '(:ids ()))))
+        (ok (= 0 (length result)))))
+
+    (testing "not-in with empty literal list"
+      (let* ((query (query <todo>
+                          :as :todo
+                          :where (:not-in (:todo :id) ())
+                          :order-by ((:todo :id))))
+            (result (execute-query query '())))
+        (ok (= 3 (length result)))))
+
+    (testing "not-in with empty keyword list"
+      (let* ((query (query <todo>
+                            :as :todo
+                            :where (:not-in (:todo :id) :ids)
+                            :order-by ((:todo :id))))
+              (result (execute-query query '(:ids ()))))
+        (ok (= 3 (length result))))))
+
+  (testing "between/not-between condition"
+    (testing "between with literal values"
+      (let* ((query (query <todo>
+                            :as :todo
+                            :where (:between (:todo :id) 2 3)
+                            :order-by ((:todo :id))))
+              (result (execute-query query '())))
+        (ok (= 2 (length result)))
+        (ok (= 2 (ref (first result) :id)))
+        (ok (= 3 (ref (second result) :id)))))
+
+    (testing "between with keyword"
+      (let* ((query (query <todo>
+                            :as :todo
+                            :where (:between (:todo :created-at) :start :end)
+                            :order-by ((:todo :id))))
+              (result (execute-query query '(:start "2024-01-01 00:00:01" :end "2024-01-01 00:00:02"))))
+        (ok (= 2 (length result)))
+        (ok (= 2 (ref (first result) :id)))
+        (ok (= 3 (ref (second result) :id)))))
+
+    (testing "not between"
+      (let* ((query (query <todo>
+                            :as :todo
+                            :where (:not-between (:todo :id) 2 3)
+                            :order-by ((:todo :id))))
+              (result (execute-query query '())))
+        (ok (= 1 (length result)))
+        (ok (= 1 (ref (first result) :id)))))))
 
 (deftest save
-  (let ((record (make-record 'clails-test-model::<todo> :title "create new project")))
+  (let ((record (make-record '<todo> :title "create new project")))
 
     ;; make sure id is set
     (ok (null (ref record :id)))
@@ -206,7 +306,10 @@
     (ok (not (null (ref record :created-at))))
     (ok (not (null (ref record :updated-at))))
 
-    (let ((result (select 'clails-test-model::<todo> :where `(= id ,(ref record :id)))))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:= (:todo :id) :target-id)))
+           (result (execute-query query `(:target-id ,(ref record :id)))))
       (ok (= (length result) 1))
       (ok (string= "create new project" (ref (first result) :title))))
 
@@ -218,10 +321,12 @@
 
     (save record)
 
-    (let ((result (select 'clails-test-model::<todo> :where `(= id ,(ref record :id)))))
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:= (:todo :id) :target-id)))
+           (result (execute-query query `(:target-id ,(ref record :id)))))
       (ok (= (length result)))
       (ok (string= "create clails project" (ref (first result) :title))))
 
     ;; debug output
     (clails/model/base-model::show-model-data record)))
-

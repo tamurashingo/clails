@@ -29,7 +29,9 @@
    (template
     :initarg :template
     :reader template
-    :type string)))
+    :type string
+    :documentation "Template content string"))
+  (:documentation "Template definition for project file generation."))
 
 
 (defparameter project-template
@@ -39,7 +41,8 @@
 
 (ql:quickload :<%= (@ project-name ) %>)
 (setf clails/environment:*project-dir* (uiop/os:getcwd))
-"))
+")
+  "Template for project boot file (clails.boot).")
 
 
 (defparameter asd-template
@@ -68,7 +71,8 @@
                 :components ((:file \"package\")
                              (:file \"environment\")
                              (:file \"database\")))))
-"))
+")
+  "Template for project ASDF system definition file.")
 
 (defparameter package-template
   (make-instance '<template>

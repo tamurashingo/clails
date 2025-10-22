@@ -4,7 +4,8 @@
         #:rove
         #:clails/controller/base-controller)
   (:import-from #:clails/environment
-                #:*routing-tables*))
+                #:*routing-tables*
+                #:*project-dir*))
 
 (in-package #:clails-test/controller/base-controller)
 
@@ -20,19 +21,14 @@
 
 (setf *routing-tables*
   '((:path "/"
-     :controller "clails-test/controller/base-controller::<test-controller>"
-     :type :all)
+     :controller "clails-test/controller/base-controller::<test-controller>")
     (:path "/blog/:blog-id"
-     :controller "clails-test/controller/base-controller::<test-detail-controller>"
-     :type :one)
+     :controller "clails-test/controller/base-controller::<test-detail-controller>")
     (:path "/blog/:blog-id/comment/:comment-id"
-     :controller "clails-test/controller/base-controller::<test-comment-controller>"
-     :type :one)))
+     :controller "clails-test/controller/base-controller::<test-comment-controller>")))
 
 (setup
   (initialize-routing-tables))
-
-
 
 
 (deftest create-scanner-test
@@ -87,6 +83,39 @@
                  "def"))))
 
 
+(deftest view-package-resolution-test
+  (testing "get-project-name extracts project name from *project-dir*"
+    (let ((clails/environment:*project-dir* #P"/home/user/projects/testapp/"))
+      (ok (string= (clails/controller/base-controller::get-project-name) "testapp"))))
+
+  (testing "split-view-path extracts directory parts"
+    (ok (equal (clails/controller/base-controller::split-view-path "index.html") nil))
+    (ok (equal (clails/controller/base-controller::split-view-path "todo/show.html") '("todo")))
+    (ok (equal (clails/controller/base-controller::split-view-path "admin/user/list.html") '("admin" "user"))))
+
+  (testing "make-keyword converts string to keyword"
+    (ok (eq (clails/controller/base-controller::make-keyword "testapp/views/package")
+            :testapp/views/package))
+    (ok (eq (clails/controller/base-controller::make-keyword "testapp/views/todo/package")
+            :testapp/views/todo/package)))
+
+  (testing "resolve-view-package resolves package name from view path"
+    (let ((clails/environment:*project-dir* #P"/home/user/projects/testapp/"))
+      (ok (eq (clails/controller/base-controller::resolve-view-package "index.html")
+              :testapp/views/package))
+      (ok (eq (clails/controller/base-controller::resolve-view-package "todo/show.html")
+              :testapp/views/todo/package))
+      (ok (eq (clails/controller/base-controller::resolve-view-package "admin/user/list.html")
+              :testapp/views/admin/user/package)))))
+
+
+(deftest set-view-with-package-test
+  (testing "set-view sets view-package slot"
+    (let* ((clails/environment:*project-dir* #P"/home/user/projects/testapp/")
+           (controller (make-instance '<web-controller>)))
+      (set-view controller "todo/show.html")
+      (ok (eq (view-package controller) :testapp/views/todo/package))
+      (ok (view controller)))))
 
 
 

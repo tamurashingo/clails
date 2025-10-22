@@ -1,0 +1,237 @@
+(in-package #:cl-user)
+(defpackage #:clails-test/model/transaction/transaction-mysql
+  (:use #:cl
+        #:rove
+        #:clails/model)
+  (:import-from #:clails/model/connection
+                #:startup-connection-pool
+                #:shutdown-connection-pool
+                #:get-connection
+                #:release-connection
+                #:<connection>)
+  (:import-from #:clails/model/transaction
+                #:with-transaction)
+  (:import-from #:clails/model/migration
+                #:create-table
+                #:drop-table
+                #:db-create
+                #:db-migrate)
+  (:import-from #:clails/logger
+                #:clear-loggers
+                #:register-logger
+                #:make-console-appender
+                #:<text-formatter>)
+  (:import-from #:clails/util
+                #:env-or-default))
+
+(defpackage #:clails-test/model/ransaction/db/transaction-mysql
+  (:use #:cl)
+  (:import-from #:clails/model/migration
+                #:defmigration
+                #:create-table
+                #:drop-table))
+
+(in-package #:clails-test/model/transaction/transaction-mysql)
+
+(defun cleanup-table ()
+  "Delete all records from transaction_tests table."
+  (let ((connection (get-connection)))
+    (dbi-cp:execute (dbi-cp:prepare connection "DELETE FROM transaction_tests") '())))
+
+(defun query-all-records ()
+  "Query all records from transaction_tests table."
+  (let ((connection (get-connection)))
+    (dbi-cp:fetch-all
+     (dbi-cp:execute
+      (dbi-cp:prepare connection "SELECT name, value FROM transaction_tests ORDER BY value")
+      '()))))
+
+(defun query-records-by-name (name)
+  "Query records from transaction_tests table by name."
+  (let ((connection (get-connection)))
+    (dbi-cp:fetch-all
+     (dbi-cp:execute
+      (dbi-cp:prepare connection "SELECT name, value FROM transaction_tests WHERE name = ?")
+      (list name)))))
+
+
+(setup
+  (shutdown-connection-pool)
+  (clear-loggers)
+  (register-logger
+   :sql
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :trace)
+
+  (clrhash clails/model/base-model::*table-information*)
+ ;; Test model definition
+ (defmodel <transaction-test-mysql> (<base-model>)
+   (:table "transaction_tests"))
+
+  (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-mysql>))
+  (setf clails/environment:*project-environment* :test)
+  (setf clails/environment:*database-config* `(:test (:database-name ,(env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
+                                                      :username ,(env-or-default "CLAILS_MYSQL_USERNAME" "root")
+                                                      :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
+                                                      :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
+                                                      :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
+  (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR_0006" "/app/test/data/0006-transaction-test"))
+  (uiop:setup-temporary-directory)
+  (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
+  (setf clails/environment::*project-dir* uiop:*temporary-directory*)
+  (db-create)
+  (db-migrate)
+  (startup-connection-pool)
+  (initialize-table-information))
+
+
+
+(deftest nested-transaction-savepoint-test-mysql
+  (testing "Nested transactions - both commit should persist all data (MySQL)"
+    (cleanup-table)
+
+    ;; Outer transaction with nested transaction
+    (with-transaction
+      (let ((inst1 (make-record '<transaction-test-mysql> :name "outer" :value 100)))
+        (save inst1))
+
+      ;; Nested transaction (savepoint)
+      (with-transaction
+        (let ((inst2 (make-record '<transaction-test-mysql> :name "inner" :value 200)))
+          (save inst2))))
+
+    ;; Verify both records were saved
+    (let ((result (query-all-records)))
+      (ok (= (length result) 2))
+      (ok (string= (getf (first result) :|name|) "outer"))
+      (ok (= (getf (first result) :|value|) 100))
+      (ok (string= (getf (second result) :|name|) "inner"))
+      (ok (= (getf (second result) :|value|) 200))))
+
+  (testing "Nested transactions - inner rollback should rollback only inner (MySQL)"
+    (cleanup-table)
+
+    ;; Outer transaction with nested transaction that fails
+    (with-transaction
+      (let ((inst1 (make-record '<transaction-test-mysql> :name "outer" :value 100)))
+        (save inst1))
+
+      ;; Nested transaction (savepoint) that will rollback
+      (handler-case
+          (with-transaction
+            (let ((inst2 (make-record '<transaction-test-mysql> :name "inner" :value 200)))
+              (save inst2))
+            (error "Rollback inner transaction"))
+        (error (c)
+          (declare (ignore c))
+          nil)))
+
+    ;; Verify only outer record was saved
+    (let ((result (query-all-records)))
+      (ok (= (length result) 1))
+      (ok (string= (getf (first result) :|name|) "outer"))
+      (ok (= (getf (first result) :|value|) 100))))
+
+  (testing "Nested transactions - outer rollback should rollback all (MySQL)"
+    (cleanup-table)
+
+    ;; Outer transaction that will fail
+    (handler-case
+        (with-transaction
+          (let ((inst1 (make-record '<transaction-test-mysql> :name "outer" :value 100)))
+            (save inst1))
+
+          ;; Nested transaction (savepoint)
+          (with-transaction
+            (let ((inst2 (make-record '<transaction-test-mysql> :name "inner" :value 200)))
+              (save inst2)))
+
+          (error "Rollback outer transaction"))
+      (error (c)
+        (declare (ignore c))
+        nil))
+
+    ;; Verify no data was saved
+    (let ((result (query-all-records)))
+      (ok (= (length result) 0)))))
+
+
+(deftest with-transaction-commit-test-mysql
+  (testing "with-transaction should commit on success (MySQL)"
+    (cleanup-table)
+
+    ;; Test with-transaction
+    (with-transaction
+      (let ((inst (make-record '<transaction-test-mysql> :name "test1" :value 100)))
+        (save inst)))
+
+    ;; Verify data was committed
+    (let ((result (query-records-by-name "test1")))
+      (ok (= (length result) 1))
+      (ok (string= (getf (first result) :|name|) "test1"))
+      (ok (= (getf (first result) :|value|) 100)))))
+
+
+(deftest with-transaction-rollback-test-mysql
+  (testing "with-transaction should rollback on error (MySQL)"
+    (cleanup-table)
+
+    ;; Test with-transaction with error
+    (handler-case
+        (with-transaction
+          (let ((inst (make-record '<transaction-test-mysql> :name "test2" :value 200)))
+            (save inst))
+          (error "Intentional error"))
+      (error (c)
+        (declare (ignore c))
+        nil))
+
+    ;; Verify data was NOT committed (rolled back)
+    (let ((result (query-records-by-name "test2")))
+      (ok (= (length result) 0)))))
+
+
+(deftest manual-commit-test-mysql
+  (testing "Manual transaction using with-transaction should persist data (MySQL)"
+    (cleanup-table)
+
+    ;; Manual transaction using with-transaction
+    (with-transaction
+      (let ((inst (make-record '<transaction-test-mysql> :name "test3" :value 300)))
+        (save inst)))
+
+    ;; Verify
+    (let ((result (query-records-by-name "test3")))
+      (ok (= (length result) 1))
+      (ok (= (getf (first result) :|value|) 300)))))
+
+
+(deftest manual-rollback-test-mysql
+  (testing "Manual transaction with error using with-transaction should discard data (MySQL)"
+    (cleanup-table)
+
+    ;; Manual transaction with rollback
+    (handler-case
+        (with-transaction
+          (let ((inst (make-record '<transaction-test-mysql> :name "test4" :value 400)))
+            (save inst))
+          (error "Force rollback"))
+      (error (c)
+        (declare (ignore c))
+        nil))
+
+    ;; Verify data was not saved
+    (let ((result (query-records-by-name "test4")))
+      (ok (= (length result) 0)))))
+
+
+(deftest connection-reuse-test-mysql
+  (testing "Multiple operations should reuse the same connection (MySQL)"
+    (let ((connection1 (get-connection))
+          (connection2 (get-connection)))
+      (unwind-protect
+          (progn
+            ;; Should return the same connection
+            (ok (eq connection1 connection2)))
+        (release-connection connection1)))))

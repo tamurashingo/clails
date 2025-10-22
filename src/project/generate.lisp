@@ -14,6 +14,18 @@
 
 
 (defun gen/template (base-name filename dir tmpl overwrite &key (start-delimiter "<%") (start-echo-delimiter "<%=") (end-delimiter "%>"))
+  "Generate a file from a template.
+   
+   @param base-name [string] Base name for the generated item
+   @param filename [string] Output filename
+   @param dir [string] Relative directory path from project root
+   @param tmpl [string] Path to template file (relative to clails system)
+   @param overwrite [boolean] Whether to overwrite existing files
+   @param start-delimiter [string] Template script start delimiter
+   @param start-echo-delimiter [string] Template expression start delimiter
+   @param end-delimiter [string] Template end delimiter
+   @condition error Signaled when file exists and overwrite is false
+   "
   (let* ((outfile (format nil "~A/~A/~A" *project-dir* dir filename))
          (template-file (asdf:system-relative-pathname :clails tmpl))
          (template-content (uiop:read-file-string template-file
@@ -36,6 +48,10 @@
 
 
 (defun add-routing (name)
+  "Add routing configuration for a controller.
+   
+   @param name [string] Controller name
+   "
   (let* ((outfile (format nil "~A/app/config/environment.lisp" *project-dir*))
          (template-file (asdf:system-relative-pathname :clails
                                                        "template/generate/config.lisp.tmpl"))
@@ -49,21 +65,57 @@
                                   :name ,name
                                   :current-datetime ,(current-datetime)))))))
 
-(defun add-load (name)
+(defun add-load (comment load-package)
+  "Add a load statement to application.lisp.
+   
+   @param comment [string] Comment describing the addition (can be nil)
+   @param comment [nil] No comment
+   @param load-package [string] Load statement to add
+   "
   (let ((outfile (format nil "~A/app/application.lisp" *project-dir*)))
     (with-open-file (out outfile
                          :direction :output
                          :if-exists :append)
-      (format out ";-- ~A : add ~A controller~%" (current-datetime) name)
-      (format out "(asdf:load-system :~A/controllers/~A-controller)~%~%" *project-name* name))))
+      (when comment
+        (format out "~A~%" comment))
+      (format out "~A~%" load-package))))
+
+(defun add-load-controller (name)
+  "Add controller load statement to application.lisp.
+   
+   @param name [string] Controller name
+   "
+  (let ((comment (format nil "; -- ~A : add ~A controller~%" (current-datetime) name))
+        (load-statement (format nil "(asdf:load-system :~A/controllers/~A-controller)~%" *project-name* name)))
+    (add-load comment load-statement)))
+
+
+(defun add-load-view-package (name)
+  "Add view package load statement to application.lisp.
+   
+   @param name [string] View package name
+   "
+  (let ((comment (format nil "; -- ~A : add ~A view package~%" (current-datetime) name))
+        (load-statement (format nil "(asdf:load-system :~A/views/~A/package)~%" *project-name* name)))
+    (add-load comment load-statement)))
 
 ;; ----------------------------------------
 ;; model
 (defun gen/model (model-name &key (overwrite T))
+  "Generate a model file.
+   
+   @param model-name [string] Model name
+   @param overwrite [boolean] Whether to overwrite existing file
+   "
   (let ((filename (format nil "~A.lisp" model-name)))
     (gen/template model-name filename "/app/models/" "template/generate/model.lisp.tmpl" overwrite)))
 
 (defun gen/migration (migration-name &key (overwrite T))
+  "Generate a migration file with unique timestamp prefix.
+   
+   @param migration-name [string] Migration name
+   @param overwrite [boolean] Whether to overwrite existing file
+   "
   (let* ((unique-name (gen-unique-name migration-name))
          (filename (format nil "~A.lisp" unique-name)))
     (gen/template unique-name filename "/db/migrate/" "template/generate/migration.lisp.tmpl" overwrite)))
@@ -72,8 +124,18 @@
 ;; ----------------------------------------
 ;; view
 (defun gen/view (view-name &key (overwrite T))
+  "Generate view files (package, show, new, edit, delete templates).
+   
+   @param view-name [string] View name
+   @param overwrite [boolean] Whether to overwrite existing files
+   "
   (let ((dir (format nil "app/views/~A/" view-name)))
     (ensure-directories-exist dir)
+    (gen/template view-name "package.lisp" dir "template/generate/views/package.lisp.tmpl"
+                  overwrite
+                  :start-delimiter "<%%"
+                  :start-echo-delimiter "<%%="
+                  :end-delimiter "%%>")
     (gen/template view-name "show.html" dir "template/generate/views/show.html.tmpl"
                   overwrite
                   :start-delimiter "<%%"
@@ -93,19 +155,30 @@
                   overwrite
                   :start-delimiter "<%%"
                   :start-echo-delimiter "<%%="
-                  :end-delimiter "%%>")))
+                  :end-delimiter "%%>")
+    (add-load-view-package view-name)))
 
 ;; ----------------------------------------
 ;; controller
 (defun gen/controller (controller-name &key (overwrite T))
+  "Generate a controller file.
+   
+   @param controller-name [string] Controller name
+   @param overwrite [boolean] Whether to overwrite existing file
+   "
   (let ((filename (format nil "~A-controller.lisp" controller-name)))
     (gen/template controller-name filename "/app/controllers/" "template/generate/controller.lisp.tmpl" overwrite))
   (add-routing controller-name)
-  (add-load controller-name))
+  (add-load-controller controller-name))
 
 ;; ----------------------------------------
 ;; scaffold
 (defun gen/scaffold (name &key (overwrite T))
+  "Generate scaffold (model, migration, view, controller) for a resource.
+   
+   @param name [string] Resource name
+   @param overwrite [boolean] Whether to overwrite existing files
+   "
   (gen/model name :overwrite overwrite)
   (gen/migration name :overwrite overwrite)
   (gen/view name :overwrite overwrite)
@@ -113,11 +186,20 @@
 
 
 (defun gen-unique-name (base-name)
+  "Generate unique name with timestamp prefix.
+   
+   @param base-name [string] Base name
+   @return [string] Unique name in format YYYYMMDDHHMMSS_basename
+   "
   (format NIL "~A_~A"
           (current-datetime)
           base-name))
 
 (defun current-datetime ()
+  "Get current datetime as formatted string.
+   
+   @return [string] Current datetime in format YYYYMMDDHHMMSS
+   "
   (multiple-value-bind (sec min hour day mon year)
       (get-decoded-time)
     (format NIL "~4,'0d~2,'0d~2,'0d~2,'0d~2,'0d~2,'0d" year mon day hour min sec)))
@@ -126,6 +208,10 @@
 ;; ----------------------------------------
 ;; schema
 (defun gen/schema (tables)
+  "Generate database schema file from table definitions.
+   
+   @param tables [list] List of table definitions
+   "
   (let* ((outfile (format nil "~A/db/schema.lisp" *project-dir*))
          (template-file (asdf:system-relative-pathname :clails "template/generate/db/schema.lisp.tmpl"))
          (template-content (uiop:read-file-string template-file

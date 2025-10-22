@@ -16,15 +16,25 @@
 
 (defclass <database-type> ()
   ((database-type :initform nil
-                  :accessor database-type)))
+                  :accessor database-type
+                  :documentation "Database type identifier"))
+  (:documentation "Base class for database type specifications."))
+
 (defclass <database-type-mysql> (<database-type>)
-  ((database-type :initform :mysql)))
+  ((database-type :initform :mysql))
+  (:documentation "MySQL database type specification."))
+
 (defclass <database-type-postgresql> (<database-type>)
-  ((database-type :initform :postgresql)))
+  ((database-type :initform :postgresql))
+  (:documentation "PostgreSQL database type specification."))
+
 (defclass <database-type-sqlite3> (<database-type>)
-  ((database-type :initform :sqlite3)))
+  ((database-type :initform :sqlite3))
+  (:documentation "SQLite3 database type specification."))
+
 (defclass <database-type-dummy> (<database-type>)
-  ((database-type :initform :dummy)))
+  ((database-type :initform :dummy))
+  (:documentation "Dummy database type specification for testing."))
 
 
 (defparameter *project-name* ""
@@ -59,12 +69,26 @@
   '("clails/model/connection:shutdown-connection-pool"))
 
 
-(defparameter +ENVIRONMENT-NAMES+ '("DEVELOP" "TEST" "PRODUCTION"))
+(defparameter +ENVIRONMENT-NAMES+ '("DEVELOP" "TEST" "PRODUCTION")
+  "List of valid environment names.")
 
 (defun check-environment-name (env-name)
+  "Check if the given environment name is valid.
+   
+   @param env-name [string] Environment name to validate
+   @return [boolean] T if valid, NIL otherwise
+   "
   (not (null (member env-name +ENVIRONMENT-NAMES+ :test #'string-equal))))
 
 (defun set-environment (env-name)
+  "Set the project environment if the name is valid.
+   
+   Valid environment names are DEVELOP, TEST, and PRODUCTION (case-insensitive).
+   Updates *project-environment* with the keyword version of the name.
+   
+   @param env-name [string] Environment name to set
+   @return [keyword] The set environment keyword, or NIL if invalid
+   "
   (let ((env (string-upcase env-name)))
     (when (check-environment-name env)
       (setf *project-environment* (intern env :KEYWORD)))))

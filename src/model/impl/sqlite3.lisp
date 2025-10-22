@@ -16,12 +16,15 @@
                 #:ensure-migration-table-impl
                 #:check-type-valid)
   (:import-from #:clails/model/base-model
-                #:fetch-columns-and-types-impl)
+                #:fetch-columns-and-types-impl
+                #:fetch-columns-and-types-plist-impl)
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl
                 #:create-connection-pool-impl)
   (:import-from #:clails/model/query
                 #:get-last-id-impl)
+  (:import-from #:clails/logger
+                #:log.sql)
   (:import-from #:clails/util
                 #:kebab->snake
                 #:snake->kebab
@@ -110,6 +113,48 @@
 (defun type-convert (type)
   (cdr (assoc type *sqlite3-type-convert*)))
 
+
+(defun convert-default-value (value column-type)
+  "Convert Lisp value to SQL DEFAULT clause string for SQLite3.
+
+   @param value [t] Default value in Lisp representation
+   @param column-type [keyword] Column type (:string, :integer, :boolean, etc.)
+   @return [string] SQL DEFAULT clause value
+   "
+  (cond
+    ;; Special keywords
+    ((eq value :null) "NULL")
+    ((eq value :current-timestamp) "CURRENT_TIMESTAMP")
+
+    ;; Boolean type - SQLite stores as INTEGER (0 or 1)
+    ((eq column-type :boolean)
+     (cond ((eq value t) "1")
+           ((null value) "0")
+           (t (error "Invalid boolean default value: ~A. Use T or NIL." value))))
+
+    ;; Numeric types
+    ((numberp value) (format nil "~A" value))
+
+    ;; String types - need to quote the value
+    ((and (or (eq column-type :string)
+              (eq column-type :text))
+          (stringp value))
+     (format nil "'~A'" value))
+
+    ;; Datetime types
+    ((and (or (eq column-type :datetime)
+              (eq column-type :date)
+              (eq column-type :time))
+          (stringp value))
+     (format nil "'~A'" value))
+
+    ;; Fallback for other string values
+    ((stringp value) value)
+
+    ;; Error for unsupported types
+    (t (error "Unsupported default value type: ~A for column type ~A"
+              value column-type))))
+
 (defmethod create-table-impl ((database-type <database-type-sqlite3>) connection &key table columns constraints)
   (declare (ignore database-type))
   (mandatory-check table columns)
@@ -122,61 +167,93 @@
                                                  ("updated-at" :type :datetime
                                                                :not-null T))
                                                columns))))
+    (log.sql query :table table :columns columns :constraints constraints)
     (dbi:do-sql connection query)))
 
 (defmethod add-column-impl ((database-type <database-type-sqlite3>) connection &key table columns)
   (declare (ignore database-type))
   (mandatory-check table columns)
   (let ((query (gen-add-column table columns)))
+    (log.sql query :table table :columns columns)
     (dbi:do-sql connection query)))
 
 (defmethod add-index-impl ((database-type <database-type-sqlite3>) connection &key table index columns)
   (declare (ignore database-type))
   (mandatory-check table index columns)
   (let ((query (gen-add-index table index columns)))
+    (log.sql query :table table :index index :columns columns)
     (dbi:do-sql connection query)))
 
 (defmethod drop-table-impl ((database-type <database-type-sqlite3>) connection &key table)
   (declare (ignore database-type))
   (mandatory-check table)
   (let ((query (gen-drop-table table)))
+    (log.sql query :table table)
     (dbi:do-sql connection query)))
 
 (defmethod drop-column-impl ((database-type <database-type-sqlite3>) connection &key table column)
   (declare (ignore database-type))
   (mandatory-check table column)
   (let ((query (gen-drop-column table column)))
+    (log.sql query :table table :column column)
     (dbi:do-sql connection query)))
 
 (defmethod drop-index-impl ((database-type <database-type-sqlite3>) connection &key table index)
   (declare (ignore database-type))
   (mandatory-check table index)
   (let ((query (gen-drop-index table index)))
+    (log.sql query :table table :index index)
     (dbi:do-sql connection query)))
 
 (defmethod fetch-columns-and-types-impl ((database-type <database-type-sqlite3>) connection table)
   (declare (ignore database-type))
-  (let* ((query (dbi:prepare connection (format NIL "pragma table_info('~A')" table)))
-         (result (dbi:execute query '())))
-    (loop for row = (dbi:fetch result)
-          while row
-;;          collect (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))))
-          collect (let* ((name (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))
-                         (access (intern (string-downcase (getf row :|name|)) :KEYWORD))
-                         ; ex: varcahr(255) -> varchar
-                         (column-type (car (str:split "(" (string-downcase (getf row :|type|)))))
-                         (inv (cdr (assoc column-type *sqlite3-type-convert-functions* :test #'string=)))
-                         (type (if inv (getf inv :type)
-                                       *sqlite3-type-convert-unknown-type*))
-                         (db-cl-fn (if inv (getf inv :db-cl-fn)
-                                           *sqlite3-type-convert-unknown-function*))
-                         (cl-db-fn (if inv (getf inv :cl-db-fn)
-                                           *sqlite3-type-convert-unknown-function*)))
-                    (list :name name
-                          :access access
-                          :type type
-                          :db-cl-fn db-cl-fn
-                          :cl-db-fn cl-db-fn)))))
+  (let ((sql (format NIL "pragma table_info('~A')" table)))
+    (log.sql sql :table table)
+    (let* ((query (dbi:prepare connection sql))
+          (result (dbi:execute query '())))
+      (loop for row = (dbi:fetch result)
+            while row
+            collect (let* ((name (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))
+                          (access (intern (string-downcase (getf row :|name|)) :KEYWORD))
+                          ; ex: varcahr(255) -> varchar
+                          (column-type (car (str:split "(" (string-downcase (getf row :|type|)))))
+                          (inv (cdr (assoc column-type *sqlite3-type-convert-functions* :test #'string=)))
+                          (type (if inv (getf inv :type)
+                                        *sqlite3-type-convert-unknown-type*))
+                          (db-cl-fn (if inv (getf inv :db-cl-fn)
+                                            *sqlite3-type-convert-unknown-function*))
+                          (cl-db-fn (if inv (getf inv :cl-db-fn)
+                                            *sqlite3-type-convert-unknown-function*)))
+                      (list :name name
+                            :access access
+                            :type type
+                            :db-cl-fn db-cl-fn
+                            :cl-db-fn cl-db-fn))))))
+
+(defmethod fetch-columns-and-types-plist-impl ((database-type <database-type-sqlite3>) connection table)
+  (declare (ignore database-type))
+  (let ((sql (format NIL "pragma table_info('~A')" table)))
+    (log.sql sql :table table)
+    (let* ((query (dbi:prepare connection sql))
+          (result (dbi:execute query '())))
+      (loop for row = (dbi:fetch result)
+            while row
+            append (let* ((name (intern (snake->kebab (string-upcase (getf row :|name|))) :KEYWORD))
+                          (access (intern (string-downcase (getf row :|name|)) :KEYWORD))
+                          ; ex: varcahr(255) -> varchar
+                          (column-type (car (str:split "(" (string-downcase (getf row :|type|)))))
+                          (inv (cdr (assoc column-type *sqlite3-type-convert-functions* :test #'string=)))
+                          (type (if inv (getf inv :type)
+                                    *sqlite3-type-convert-unknown-type*))
+                          (db-cl-fn (if inv (getf inv :db-cl-fn)
+                                        *sqlite3-type-convert-unknown-function*))
+                          (cl-db-fn (if inv (getf inv :cl-db-fn)
+                                        *sqlite3-type-convert-unknown-function*)))
+                    (list name (list :name name
+                                      :access access
+                                      :type type
+                                      :db-cl-fn db-cl-fn
+                                      :cl-db-fn cl-db-fn)))))))
 
 (defun gen-create-table (table columns)
   (format NIL "CREATE TABLE ~A (~{~A~^, ~})" (kebab->snake table)
@@ -212,13 +289,24 @@
 
 
 (defun parse-column (col)
+  "Parse a column definition for SQLite3 CREATE/ALTER TABLE statement.
+
+   Converts Lisp-style column definition to SQL column specification,
+   including automatic conversion of default values using convert-default-value.
+
+   @param col [list] Column definition: (name :type type :not-null bool :default-value value ...)
+   @return [string] SQL column specification
+   "
   (let* ((column-name (kebab->snake (first col)))
          (attr (rest col))
          (type (getf attr :type))
          (not-null-p (getf attr :not-null))
          (primary-key-p (getf attr :primary-key))
          (auto-increment-p (getf attr :auto-increment))
-         (default-value (getf attr :default-value))
+         (default-value-raw (getf attr :default-value))
+         ;; Convert default value to SQL string
+         (default-value (when default-value-raw
+                          (convert-default-value default-value-raw type)))
          (precision (when (or (eq type :decimal)
                               (eq type :float))
                       (getf attr :precision)))
@@ -260,7 +348,7 @@
 (defparameter CREATE-MIGRATION-TABLE
   (format NIL "CREATE TABLE IF NOT EXISTS migration (~
                   migration_name varchar(255) NOT NULL PRIMARY KEY, ~
-                  created_at dateteime NOT NULL DEFAULT CURRENT_TIMESTAMP)~
+                  created_at datetime NOT NULL DEFAULT CURRENT_TIMESTAMP)~
               "))
 
 (defmethod ensure-database-impl ((database-type <database-type-sqlite3>) connection)
