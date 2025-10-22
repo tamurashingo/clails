@@ -7,7 +7,10 @@
   (:export #:startup-connection-pool
            #:shutdown-connection-pool
            #:create-connection-pool-impl
-           #:with-db-connection))
+           #:with-db-connection
+           #:get-connection
+           #:release-connection
+           #:<connection>))
 (in-package #:clails/model/connection)
 
 
@@ -149,10 +152,27 @@
 (defun get-connection ()
   "Get database connection for the current thread.
    
+   If a connection is already associated with the thread, returns it.
+   Otherwise, acquires a new connection from the pool and associates it with the thread.
+   
    @return [dbi-cp.proxy::<dbi-connection-proxy>] Database connection
    "
   (let ((current-th (bt:current-thread)))
     (get-connection-by-thread current-th)))
+
+
+(defun release-connection (&optional connection)
+  "Release the connection for the current thread back to the pool.
+   
+   If connection is provided, releases that specific connection.
+   Otherwise, releases the connection associated with the current thread.
+   
+   @param connection [dbi-cp.proxy::<dbi-connection-proxy>] Optional connection to release
+   "
+  (let ((thread-id (sb-thread::thread-os-thread (bt:current-thread))))
+    (when connection
+      (remhash thread-id *thread-connection-pool*)
+      (dbi-cp:disconnect connection))))
 
 
 (defun disconnect (connection)
@@ -160,9 +180,7 @@
    
    @param connection [dbi-cp.proxy::<dbi-connection-proxy>] Connection to disconnect
    "
-  (let ((thread-id (sb-thread::thread-os-thread (bt:current-thread))))
-    (remhash thread-id *thread-connection-pool*)
-    (dbi-cp:disconnect connection)))
+  (release-connection connection))
 
 (defmacro with-db-connection ((connection) &body body)
   "Execute body with a pooled database connection.

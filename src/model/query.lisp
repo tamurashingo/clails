@@ -21,6 +21,8 @@
                 #:frozen-p
                 #:clear-error
                 #:clear-dirty-flag)
+  (:import-from #:clails/model/connection
+                #:get-connection)
   (:import-from #:clails/util
                 #:kebab->snake
                 #:snake->kebab
@@ -106,11 +108,11 @@
     (when (log-level-enabled-p :sql :debug)
       (log.sql (format nil "sql: ~S" query))
       (log.sql (format nil "params: ~S" params)))
-    (let ((result (clails/model/connection:with-db-connection (connection)
-                    (dbi-cp:fetch-all
-                     (dbi-cp:execute
-                      (dbi-cp:prepare connection sql)
-                      params)))))
+    (let* ((connection (get-connection))
+           (result (dbi-cp:fetch-all
+                    (dbi-cp:execute
+                     (dbi-cp:prepare connection sql)
+                     params))))
       (build-model-instances query result))))
 
 
@@ -205,14 +207,15 @@
           (when (log-level-enabled-p :sql :debug)
             (log.sql (format nil "sql: ~S" sql))
             (log.sql (format nil "params: ~S" params)))
-          (prog1
-            (clails/model/connection:with-db-connection (connection)
-              (dbi-cp:execute
-                (dbi-cp:prepare connection sql)
-              params)
-              (dbi-cp:row-count connection))
-            (clear-dirty-flag inst)
-            (setf (slot-value inst 'clails/model/base-model::frozen-p) T))))))
+          (let ((connection (get-connection)))
+            (prog1
+              (progn
+                (dbi-cp:execute
+                 (dbi-cp:prepare connection sql)
+                 params)
+                (dbi-cp:row-count connection))
+              (clear-dirty-flag inst)
+              (setf (slot-value inst 'clails/model/base-model::frozen-p) T)))))))
 
 (defmethod destroy ((insts list) &key cascade)
   "Delete multiple model instances from the database.
@@ -249,9 +252,9 @@
                (sql (format NIL "DELETE FROM ~A WHERE id IN (~{?~*~^, ~})" table-name ids)))
           (when (log-level-enabled-p :sql :debug)
             (log.sql (format nil "sql: ~S" sql))
-            (log.sql (format nil "params: ~S" params)))
+            (log.sql (format nil "ids: ~S" ids)))
           (prog1
-              (clails/model/connection:with-db-connection (connection)
+              (let ((connection (get-connection)))
                 (dbi-cp:execute
                   (dbi-cp:prepare connection sql)
                   ids)
@@ -927,7 +930,7 @@
 
         (if connection
             (funcall body connection)
-            (clails/model/connection:with-db-connection (connection)
+            (let ((connection (get-connection)))
               (funcall body connection)))))))
 
 
@@ -1005,7 +1008,7 @@
                       rows))))
       (if connection
           (funcall body connection)
-          (clails/model/connection:with-db-connection (connection)
+          (let ((connection (get-connection)))
             (funcall body connection))))))
 
 
