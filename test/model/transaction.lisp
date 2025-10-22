@@ -33,6 +33,26 @@
 
 (in-package #:clails-test/model/transaction)
 
+(defun cleanup-table ()
+  "Delete all records from transaction_tests table."
+  (let ((connection (get-connection)))
+    (dbi-cp:execute (dbi-cp:prepare connection "DELETE FROM transaction_tests") '())))
+
+(defun query-all-records ()
+  "Query all records from transaction_tests table."
+  (let ((connection (get-connection)))
+    (dbi-cp:fetch-all
+     (dbi-cp:execute
+      (dbi-cp:prepare connection "SELECT name, value FROM transaction_tests ORDER BY value")
+      '()))))
+
+(defun query-records-by-name (name)
+  "Query records from transaction_tests table by name."
+  (let ((connection (get-connection)))
+    (dbi-cp:fetch-all
+     (dbi-cp:execute
+      (dbi-cp:prepare connection "SELECT name, value FROM transaction_tests WHERE name = ?")
+      (list name)))))
 
 
 (setup
@@ -43,7 +63,7 @@
    :appender (make-console-appender
               :formatter (make-instance '<text-formatter>))
    :level :trace)
- 
+
   (clrhash clails/model/base-model::*table-information*)
  ;; Test model definition
  (defmodel <transaction-test> (<base-model>)
@@ -69,215 +89,141 @@
 
 (deftest nested-transaction-savepoint-test
   (testing "Nested transactions - both commit should persist all data"
-    (let ((connection (get-connection)))
-      (unwind-protect
-          (progn
-            ;; Clean up
-            (dbi-cp:with-transaction connection
-              (format t "DELETE FROM transaction_tests~%")
-              (dbi-cp:execute (dbi-cp:prepare connection "DELETE FROM transaction_tests") '()))
-            
-            ;; Outer transaction with nested transaction
-            (dbi-cp:with-transaction connection
-                                                  (format t "outer~%")
-              (let ((inst1 (make-record '<transaction-test> :name "outer" :value 100)))
-                (save inst1))
-              
-              ;; Nested transaction (savepoint)
-              (dbi-cp:with-transaction connection
-                                                                           (format t "inner~%")
-                (let ((inst2 (make-record '<transaction-test> :name "inner" :value 200)))
-                  (save inst2))))
-                         (format t "saved~%")
-            
-            ;; Verify both records were saved
-            (dbi-cp:with-transaction connection
-              (let ((result (dbi-cp:fetch-all
-                             (dbi-cp:execute
-                              (dbi-cp:prepare connection "SELECT name, value FROM transaction_tests ORDER BY value")
-                              '()))))
-                (ok (= (length result) 2))
-                (ok (string= (getf (first result) :|name|) "outer"))
-                (ok (= (getf (first result) :|value|) 100))
-                (ok (string= (getf (second result) :|name|) "inner"))
-                (ok (= (getf (second result) :|value|) 200)))))
-        (release-connection connection))))
-  
+    (cleanup-table)
+
+    ;; Outer transaction with nested transaction
+    (with-transaction
+      (let ((inst1 (make-record '<transaction-test> :name "outer" :value 100)))
+        (save inst1))
+
+      ;; Nested transaction (savepoint)
+      (with-transaction
+        (let ((inst2 (make-record '<transaction-test> :name "inner" :value 200)))
+          (save inst2))))
+
+    ;; Verify both records were saved
+    (let ((result (query-all-records)))
+      (ok (= (length result) 2))
+      (ok (string= (getf (first result) :|name|) "outer"))
+      (ok (= (getf (first result) :|value|) 100))
+      (ok (string= (getf (second result) :|name|) "inner"))
+      (ok (= (getf (second result) :|value|) 200))))
+
   (testing "Nested transactions - inner rollback should rollback only inner"
-    (let ((connection (get-connection)))
-      (unwind-protect
-          (progn
-            ;; Clean up
-            (dbi-cp:with-transaction connection
-              (dbi-cp:execute (dbi-cp:prepare connection "DELETE FROM transaction_tests") '()))
-            
-            ;; Outer transaction with nested transaction that fails
-            (dbi-cp:with-transaction connection
-              (let ((inst1 (make-record '<transaction-test> :name "outer" :value 100)))
-                (save inst1))
-              
-              ;; Nested transaction (savepoint) that will rollback
-              (handler-case
-                  (dbi-cp:with-transaction connection
-                    (let ((inst2 (make-record '<transaction-test> :name "inner" :value 200)))
-                      (save inst2))
-                    (error "Rollback inner transaction"))
-                (error (c)
-                  (declare (ignore c))
-                  nil)))
-            
-            ;; Verify only outer record was saved
-            (dbi-cp:with-transaction connection
-              (let ((result (dbi-cp:fetch-all
-                             (dbi-cp:execute
-                              (dbi-cp:prepare connection "SELECT name, value FROM transaction_tests")
-                              '()))))
-                (ok (= (length result) 1))
-                (ok (string= (getf (first result) :|name|) "outer"))
-                (ok (= (getf (first result) :|value|) 100)))))
-        (release-connection connection))))
-  
+    (cleanup-table)
+
+    ;; Outer transaction with nested transaction that fails
+    (with-transaction
+      (let ((inst1 (make-record '<transaction-test> :name "outer" :value 100)))
+        (save inst1))
+
+      ;; Nested transaction (savepoint) that will rollback
+      (handler-case
+          (with-transaction
+            (let ((inst2 (make-record '<transaction-test> :name "inner" :value 200)))
+              (save inst2))
+            (error "Rollback inner transaction"))
+        (error (c)
+          (declare (ignore c))
+          nil)))
+
+    ;; Verify only outer record was saved
+    (let ((result (query-all-records)))
+      (ok (= (length result) 1))
+      (ok (string= (getf (first result) :|name|) "outer"))
+      (ok (= (getf (first result) :|value|) 100))))
+
   (testing "Nested transactions - outer rollback should rollback all"
-    (let ((connection (get-connection)))
-      (unwind-protect
-          (progn
-            ;; Clean up
-            (dbi-cp:with-transaction connection
-              (dbi-cp:execute (dbi-cp:prepare connection "DELETE FROM transaction_tests") '()))
-            
-            ;; Outer transaction that will fail
-            (handler-case
-                (dbi-cp:with-transaction connection
-                  (let ((inst1 (make-record '<transaction-test> :name "outer" :value 100)))
-                    (save inst1))
-                  
-                  ;; Nested transaction (savepoint)
-                  (dbi-cp:with-transaction connection
-                    (let ((inst2 (make-record '<transaction-test> :name "inner" :value 200)))
-                      (save inst2)))
-                  
-                  (error "Rollback outer transaction"))
-              (error (c)
-                (declare (ignore c))
-                nil))
-            
-            ;; Verify no data was saved
-            (dbi-cp:with-transaction connection
-              (let ((result (dbi-cp:fetch-all
-                             (dbi-cp:execute
-                              (dbi-cp:prepare connection "SELECT name FROM transaction_tests")
-                              '()))))
-                (ok (= (length result) 0)))))
-        (release-connection connection)))))
+    (cleanup-table)
+
+    ;; Outer transaction that will fail
+    (handler-case
+        (with-transaction
+          (let ((inst1 (make-record '<transaction-test> :name "outer" :value 100)))
+            (save inst1))
+
+          ;; Nested transaction (savepoint)
+          (with-transaction
+            (let ((inst2 (make-record '<transaction-test> :name "inner" :value 200)))
+              (save inst2)))
+
+          (error "Rollback outer transaction"))
+      (error (c)
+        (declare (ignore c))
+        nil))
+
+    ;; Verify no data was saved
+    (let ((result (query-all-records)))
+      (ok (= (length result) 0)))))
 
 
 (deftest with-transaction-commit-test
   (testing "with-transaction should commit on success"
-    (let ((connection (get-connection)))
-      (unwind-protect
-          (progn
-            ;; Clean up
-            (dbi-cp:with-transaction connection
-              (dbi-cp:execute (dbi-cp:prepare connection "DELETE FROM transaction_tests") '()))
-            
-            ;; Test with-transaction
-            (with-transaction
-              (let ((inst (make-record '<transaction-test> :name "test1" :value 100)))
-                (save inst)))
-            
-            ;; Verify data was committed
-            (dbi-cp:with-transaction connection
-              (let ((result (dbi-cp:fetch-all
-                             (dbi-cp:execute
-                              (dbi-cp:prepare connection "SELECT name, value FROM transaction_tests WHERE name = ?")
-                              '("test1")))))
-                (ok (= (length result) 1))
-                (ok (string= (getf (first result) :|name|) "test1"))
-                (ok (= (getf (first result) :|value|) 100)))))
-        (release-connection connection)))))
+    (cleanup-table)
+
+    ;; Test with-transaction
+    (with-transaction
+      (let ((inst (make-record '<transaction-test> :name "test1" :value 100)))
+        (save inst)))
+
+    ;; Verify data was committed
+    (let ((result (query-records-by-name "test1")))
+      (ok (= (length result) 1))
+      (ok (string= (getf (first result) :|name|) "test1"))
+      (ok (= (getf (first result) :|value|) 100)))))
 
 
 (deftest with-transaction-rollback-test
   (testing "with-transaction should rollback on error"
-    (let ((connection (get-connection)))
-      (unwind-protect
-          (progn
-            ;; Clean up
-            (dbi-cp:with-transaction connection
-              (dbi-cp:execute (dbi-cp:prepare connection "DELETE FROM transaction_tests") '()))
-            
-            ;; Test with-transaction with error
-            (handler-case
-                (with-transaction
-                  (let ((inst (make-record '<transaction-test> :name "test2" :value 200)))
-                    (save inst))
-                  (error "Intentional error"))
-              (error (c)
-                (declare (ignore c))
-                nil))
-            
-            ;; Verify data was NOT committed (rolled back)
-            (dbi-cp:with-transaction connection
-              (let ((result (dbi-cp:fetch-all
-                             (dbi-cp:execute
-                              (dbi-cp:prepare connection "SELECT name FROM transaction_tests WHERE name = ?")
-                              '("test2")))))
-                (ok (= (length result) 0)))))
-        (release-connection connection)))))
+    (cleanup-table)
+
+    ;; Test with-transaction with error
+    (handler-case
+        (with-transaction
+          (let ((inst (make-record '<transaction-test> :name "test2" :value 200)))
+            (save inst))
+          (error "Intentional error"))
+      (error (c)
+        (declare (ignore c))
+        nil))
+
+    ;; Verify data was NOT committed (rolled back)
+    (let ((result (query-records-by-name "test2")))
+      (ok (= (length result) 0)))))
 
 
 (deftest manual-commit-test
-  (testing "Manual transaction using dbi-cp:with-transaction should persist data"
-    (let ((connection (get-connection)))
-      (unwind-protect
-          (progn
-            ;; Clean up
-            (dbi-cp:with-transaction connection
-              (dbi-cp:execute (dbi-cp:prepare connection "DELETE FROM transaction_tests") '()))
-            
-            ;; Manual transaction using dbi-cp:with-transaction
-            (dbi-cp:with-transaction connection
-              (let ((inst (make-record '<transaction-test> :name "test3" :value 300)))
-                (save inst)))
-            
-            ;; Verify
-            (dbi-cp:with-transaction connection
-              (let ((result (dbi-cp:fetch-all
-                             (dbi-cp:execute
-                              (dbi-cp:prepare connection "SELECT value FROM transaction_tests WHERE name = ?")
-                              '("test3")))))
-                (ok (= (length result) 1))
-                (ok (= (getf (first result) :|value|) 300)))))
-        (release-connection connection)))))
+  (testing "Manual transaction using with-transaction should persist data"
+    (cleanup-table)
+
+    ;; Manual transaction using with-transaction
+    (with-transaction
+      (let ((inst (make-record '<transaction-test> :name "test3" :value 300)))
+        (save inst)))
+
+    ;; Verify
+    (let ((result (query-records-by-name "test3")))
+      (ok (= (length result) 1))
+      (ok (= (getf (first result) :|value|) 300)))))
 
 
 (deftest manual-rollback-test
-  (testing "Manual transaction with error using dbi-cp:with-transaction should discard data"
-    (let ((connection (get-connection)))
-      (unwind-protect
-          (progn
-            ;; Clean up
-            (dbi-cp:with-transaction connection
-              (dbi-cp:execute (dbi-cp:prepare connection "DELETE FROM transaction_tests") '()))
-            
-            ;; Manual transaction with rollback
-            (handler-case
-                (dbi-cp:with-transaction connection
-                  (let ((inst (make-record '<transaction-test> :name "test4" :value 400)))
-                    (save inst))
-                  (error "Force rollback"))
-              (error (c)
-                (declare (ignore c))
-                nil))
-            
-            ;; Verify data was not saved
-            (dbi-cp:with-transaction connection
-              (let ((result (dbi-cp:fetch-all
-                             (dbi-cp:execute
-                              (dbi-cp:prepare connection "SELECT name FROM transaction_tests WHERE name = ?")
-                              '("test4")))))
-                (ok (= (length result) 0)))))
-        (release-connection connection)))))
+  (testing "Manual transaction with error using with-transaction should discard data"
+    (cleanup-table)
+
+    ;; Manual transaction with rollback
+    (handler-case
+        (with-transaction
+          (let ((inst (make-record '<transaction-test> :name "test4" :value 400)))
+            (save inst))
+          (error "Force rollback"))
+      (error (c)
+        (declare (ignore c))
+        nil))
+
+    ;; Verify data was not saved
+    (let ((result (query-records-by-name "test4")))
+      (ok (= (length result) 0)))))
 
 
 (deftest connection-reuse-test
