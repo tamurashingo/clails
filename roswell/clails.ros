@@ -52,11 +52,13 @@ exec ros -Q -- $0 "$@"
   (clails/cmd:db/create))
 
 (defun db/migrate/up (&optional version)
+  (declare (ignore version))
   (load-project)
   (load "db/package.lisp")
   (clails/cmd:db/migrate))
 
 (defun db/migrate/down (&optional version)
+  (declare (ignore version))
   (format t "down~%"))
 
 (defun db/status ()
@@ -153,7 +155,10 @@ exec ros -Q -- $0 "$@"
                           (:short-option "b"
                            :long-option "bind"
                            :keyword :bind
-                           :consume T))))))
+                           :consume T)))
+               (:command "stop"
+                :function ,#'stop))))
+
 
 
 (defun main (&rest argv)

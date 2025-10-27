@@ -4,6 +4,9 @@ DEV_NW_EXISTS := $(shell docker network ls --filter name=$(DEV_NW) --format '{{ 
 TEST_BUILDER = .test_image_built
 TEST_DEPS = Dockerfile docker-compose.test.yml docker-compose.test-runner.yml qlfile clails.asd
 
+E2E_BUILDER = .e2e_image_build
+E2E_DEPS = Dockerfile.e2e docker-compose.e2e.yml qlfile clails.asd
+
 .PHONY: setup
 setup: dev.setup
 	@echo "Setting up..."
@@ -73,3 +76,27 @@ test.sqlite3:
 test.clean:
 	docker compose -f docker-compose.test-runner.yml down -v
 	rm $(TEST_BUILDER)
+
+
+# ----------------------------------------
+# E2E testing
+# ----------------------------------------
+.PHONY: e2e.build e2e.test e2e.clean e2e.console
+
+e2e.build: $(E2E_BUILDER)
+
+$(E2E_BUILDER): $(E2E_DEPS)
+	docker compose -f docker-compose.e2e.yml build
+
+e2e.test: $(E2E_BUILDER)
+	@echo "Running E2E tests..."
+	docker compose -f docker-compose.e2e.yml run --rm --entrypoint /bin/bash e2e-test /app/script/e2e.sh
+
+e2e.clean:
+	rm $(E2E_BUILDER)
+	docker compose -f docker-compose.e2e.yml down -v
+
+e2e.console:
+	@echo "Starting E2E test console..."
+	docker compose -f docker-compose.e2e.yml run --rm e2e-test bash
+
