@@ -81,21 +81,7 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
 
-    - name: Build and run E2E tests
-      uses: docker/build-push-action@v4
-      with:
-        context: .
-        file: ./Dockerfile.e2e
-        push: false
-        tags: clails-e2e:latest
-
     - name: Run E2E tests
-      run: |
-        docker run --rm \
-          -v ${{ github.workspace }}:/app \
-          -e CL_SOURCE_REGISTRY=/app \
-          -e TMPDIR=/tmp \
-          clails-e2e:latest \
-          /bin/bash /app/script/e2e.sh
+      run: docker compose -f docker-compose.e2e.yml run --rm --entrypoint /bin/bash e2e-test /app/script/e2e.sh
 
 
