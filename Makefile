@@ -40,7 +40,7 @@ dev.down:
 test.build: $(TEST_BUILDER)
 
 $(TEST_BUILDER): $(TEST_DEPS)
-	docker compose -f docker-compose.test-runner.yml build
+	docker compose -f docker-compose.test-runner.yml build --no-cache
 
 .PHONY: test.prev
 test.prev:
@@ -59,7 +59,7 @@ test: $(TEST_BUILDER) test.prev
 
 .PHONY: test.down
 test.down:
-	@Echo "Shutting down..."
+	@echo "Shutting down..."
 	docker compose -f docker-compose.test.yml down
 
 .PHONY: test.console test.postgresql test.mysql test.sqlite3
@@ -75,7 +75,7 @@ test.sqlite3:
 .PHONY: test.clean
 test.clean:
 	docker compose -f docker-compose.test-runner.yml down -v
-	rm $(TEST_BUILDER)
+	rm -f $(TEST_BUILDER)
 
 
 # ----------------------------------------
@@ -86,14 +86,14 @@ test.clean:
 e2e.build: $(E2E_BUILDER)
 
 $(E2E_BUILDER): $(E2E_DEPS)
-	docker compose -f docker-compose.e2e.yml build
+	docker compose -f docker-compose.e2e.yml build --no-cache
 
 e2e.test: $(E2E_BUILDER)
 	@echo "Running E2E tests..."
 	docker compose -f docker-compose.e2e.yml run --rm --entrypoint /bin/bash e2e-test /app/script/e2e.sh
 
 e2e.clean:
-	rm $(E2E_BUILDER)
+	rm -f $(E2E_BUILDER)
 	docker compose -f docker-compose.e2e.yml down -v
 
 e2e.console:
