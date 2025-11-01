@@ -17,7 +17,7 @@
                 #:check-type-valid)
   (:import-from #:clails/model/base-model
                 #:fetch-columns-and-types-impl
-                :fetch-columns-and-types-plist-impl)
+                #:fetch-columns-and-types-plist-impl)
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl
                 #:create-connection-pool-impl)
@@ -31,10 +31,6 @@
                 #:mandatory-check))
 (in-package #:clails/model/impl/mysql)
 
-
-;; ad hoc
-(defmethod dbi.driver:release-savepoint ((conn dbd.mysql:dbd-mysql-connection) &optional identifier)
-  (cl-dbi:do-sql conn (format nil "RELEASE SAVEPOINT ~A" identifier)))
 
 (defparameter *mysql-type-convert*
   '((:string . "varchar(255)")

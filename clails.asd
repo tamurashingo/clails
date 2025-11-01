@@ -22,7 +22,6 @@
                "cl-ppcre"
                "cl-template"
                "clack"
-               "dbd-mysql" ;; ad hoc
                "getcmd"
                "jonathan"
                "lack"
