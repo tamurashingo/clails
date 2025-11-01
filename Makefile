@@ -4,6 +4,9 @@ DEV_NW_EXISTS := $(shell docker network ls --filter name=$(DEV_NW) --format '{{ 
 TEST_BUILDER = .test_image_built
 TEST_DEPS = Dockerfile docker-compose.test.yml docker-compose.test-runner.yml qlfile clails.asd
 
+E2E_BUILDER = .e2e_image_build
+E2E_DEPS = Dockerfile.e2e docker-compose.e2e.yml qlfile clails.asd
+
 .PHONY: setup
 setup: dev.setup
 	@echo "Setting up..."
@@ -37,7 +40,7 @@ dev.down:
 test.build: $(TEST_BUILDER)
 
 $(TEST_BUILDER): $(TEST_DEPS)
-	docker compose -f docker-compose.test-runner.yml build
+	docker compose -f docker-compose.test-runner.yml build --no-cache
 
 .PHONY: test.prev
 test.prev:
@@ -56,7 +59,7 @@ test: $(TEST_BUILDER) test.prev
 
 .PHONY: test.down
 test.down:
-	@Echo "Shutting down..."
+	@echo "Shutting down..."
 	docker compose -f docker-compose.test.yml down
 
 .PHONY: test.console test.postgresql test.mysql test.sqlite3
@@ -72,4 +75,28 @@ test.sqlite3:
 .PHONY: test.clean
 test.clean:
 	docker compose -f docker-compose.test-runner.yml down -v
-	rm $(TEST_BUILDER)
+	rm -f $(TEST_BUILDER)
+
+
+# ----------------------------------------
+# E2E testing
+# ----------------------------------------
+.PHONY: e2e.build e2e.test e2e.clean e2e.console
+
+e2e.build: $(E2E_BUILDER)
+
+$(E2E_BUILDER): $(E2E_DEPS)
+	docker compose -f docker-compose.e2e.yml build --no-cache
+
+e2e.test: $(E2E_BUILDER)
+	@echo "Running E2E tests..."
+	docker compose -f docker-compose.e2e.yml run --rm --entrypoint /bin/bash e2e-test /app/script/e2e.sh
+
+e2e.clean:
+	rm -f $(E2E_BUILDER)
+	docker compose -f docker-compose.e2e.yml down -v
+
+e2e.console:
+	@echo "Starting E2E test console..."
+	docker compose -f docker-compose.e2e.yml run --rm e2e-test bash
+

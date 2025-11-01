@@ -1,0 +1,10 @@
+services:
+  e2e-test:
+    image: clails-e2e
+    build:
+      context: .
+      dockerfile: ./Dockerfile.e2e
+    container_name: clails_test_e2e
+    volumes:
+      - ./:/app
+    working_dir: /qlot
