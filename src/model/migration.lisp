@@ -259,7 +259,7 @@
     (dolist (file files)
       (format t "loading migration file: ~A" file)
       (load file)
-      (format t " ... done"))))
+      (format t " ... done~%"))))
 
 (defun migrated-status ()
   (with-db-connection-direct (connection)
