@@ -15,6 +15,9 @@
   (:import-from #:clails/model/migration
                 #:db-create
                 #:db-migrate
+                #:migrate-up-version
+                #:migrate-down-version
+                #:db-rollback
                 #:db-status)
   (:import-from #:clails/controller/base-controller
                 #:initialize-routing-tables)
@@ -31,6 +34,9 @@
            #:generate/scaffold
            #:db/create
            #:db/migrate
+           #:db/migrate-up
+           #:db/migrate-down
+           #:db/rollback
            #:db/status
            #:console
            #:server
@@ -115,13 +121,14 @@
    "
   (db-create))
 
-(defun db/migrate (&key (env :development))
+(defun db/migrate (&key (env :development) version)
   "Run pending database migrations for the specified environment.
 
    @param env [keyword] Environment name (:development, :test, :production, default: :development)
+   @param version [string] Migration name to migrate up to (optional). If nil, runs all pending migrations.
    @return [t] Migration execution result
    "
-  (db-migrate))
+  (db-migrate :version version))
 
 (defun db/status ()
   "Display the status of database migrations.
@@ -130,14 +137,38 @@
    "
   (db-status))
 
-(defun db/rollback ()
-  "Rollback the last database migration.
+(defun db/migrate-up (version &key (env :development))
+  "Run a specific database migration for the specified environment.
 
-   Not yet implemented.
-
-   @return [nil] Always returns nil
+   @param version [string] Migration name to apply (required)
+   @param env [keyword] Environment name (:development, :test, :production, default: :development)
+   @return [t] Migration execution result
+   @condition error Version parameter is required
    "
-  nil)
+  (when (null version)
+    (error "VERSION parameter is required for db:migrate:up"))
+  (migrate-up-version version))
+
+(defun db/migrate-down (version &key (env :development))
+  "Rollback a specific database migration for the specified environment.
+
+   @param version [string] Migration name to rollback (required)
+   @param env [keyword] Environment name (:development, :test, :production, default: :development)
+   @return [t] Rollback execution result
+   @condition error Version parameter is required
+   "
+  (when (null version)
+    (error "VERSION parameter is required for db:migrate:down"))
+  (migrate-down-version version))
+
+(defun db/rollback (&key (env :development) (step 1))
+  "Rollback database migrations for the specified environment.
+
+   @param env [keyword] Environment name (:development, :test, :production, default: :development)
+   @param step [integer] Number of migrations to rollback (default: 1)
+   @return [t] Rollback execution result
+   "
+  (db-rollback :step step))
 
 
 (defun console ()

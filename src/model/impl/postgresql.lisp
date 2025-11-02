@@ -200,7 +200,8 @@
 (defmethod drop-column-impl ((database-type <database-type-postgresql>) connection &key table column)
   (declare (ignore database-type))
   (mandatory-check table column)
-  (let ((query (gen-drop-column table column)))
+  (let* ((columns (if (listp column) column (list column)))
+         (query (gen-drop-column table columns)))
     (log.sql query :table table :column column)
     (dbi:do-sql connection query)))
 

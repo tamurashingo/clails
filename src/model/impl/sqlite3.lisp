@@ -194,9 +194,11 @@
 (defmethod drop-column-impl ((database-type <database-type-sqlite3>) connection &key table column)
   (declare (ignore database-type))
   (mandatory-check table column)
-  (let ((query (gen-drop-column table column)))
-    (log.sql query :table table :column column)
-    (dbi:do-sql connection query)))
+  (let ((columns (if (listp column) column (list column))))
+    (loop for col in columns
+          do (let ((query (gen-drop-column table (list col))))
+               (log.sql query :table table :column col)
+               (dbi:do-sql connection query)))))
 
 (defmethod drop-index-impl ((database-type <database-type-sqlite3>) connection &key table index)
   (declare (ignore database-type))
