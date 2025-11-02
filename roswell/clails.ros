@@ -51,15 +51,35 @@ exec ros -Q -- $0 "$@"
   (load-project)
   (clails/cmd:db/create))
 
-(defun db/migrate/up (&optional version)
-  (declare (ignore version))
+(defun db/migrate (&optional version)
   (load-project)
   (load "db/package.lisp")
-  (clails/cmd:db/migrate))
+  (if version
+      (clails/cmd:db/migrate :version version)
+      (clails/cmd:db/migrate)))
 
-(defun db/migrate/down (&optional version)
-  (declare (ignore version))
-  (format t "down~%"))
+(defun db/migrate/up (version)
+  (when (null version)
+     (format *error-output* "ERROR: VERSION parameter is required for db:migrate:up~%")
+     (uiop:quit 1))
+  (load-project)
+  (load "db/package.lisp")
+  (clails/cmd:db/migrate-up version))
+
+(defun db/migrate/down (version)
+  (when (null version)
+     (format *error-output* "ERROR: VERSION parameter is required for db:migrate:down~%")
+     (uiop:quit 1))
+  (load-project)
+  (load "db/package.lisp")
+  (clails/cmd:db/migrate-down version))
+
+(defun db/rollback (&optional step)
+  (load-project)
+  (load "db/package.lisp")
+  (if step
+      (clails/cmd:db/rollback :step (parse-integer step))
+      (clails/cmd:db/rollback)))
 
 (defun db/status ()
   (load-project)
@@ -116,11 +136,13 @@ exec ros -Q -- $0 "$@"
                (:command "db:create"
                 :function ,#'db/create)
                (:command "db:migrate"
-                :function ,#'db/migrate/up)
+                :function ,#'db/migrate)
                (:command "db:migrate:up"
                 :function ,#'db/migrate/up)
                (:command "db:migrate:down"
                 :function ,#'db/migrate/down)
+               (:command "db:rollback"
+                :function ,#'db/rollback)
                (:command "db:status"
                 :function ,#'db/status)
                (:command "generate:model"
