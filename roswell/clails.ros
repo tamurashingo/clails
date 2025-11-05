@@ -36,8 +36,130 @@ exec ros -Q -- $0 "$@"
   (:use :cl))
 (in-package :ros.script.clails.3961085205)
 
+;; Help functions (defined before command functions to avoid warnings)
+(defun help ()
+  (format t "clails - Common Lisp web application framework~%~%")
+  (format t "Usage: clails COMMAND [OPTIONS] [ARGS...]~%~%")
+  (format t "Commands:~%")
+  (format t "  new <name>                        Create a new project~%")
+  (format t "  generate:model <name>             Generate model files~%")
+  (format t "  generate:migration <name>         Generate migration file~%")
+  (format t "  generate:view <name>              Generate view files~%")
+  (format t "  generate:controller <name>        Generate controller file~%")
+  (format t "  generate:scaffold <name>          Generate scaffold~%")
+  (format t "  db:create                         Create database~%")
+  (format t "  db:migrate                        Run migrations~%")
+  (format t "  db:migrate:up <version>           Migrate up to version~%")
+  (format t "  db:migrate:down <version>         Migrate down to version~%")
+  (format t "  db:rollback                       Rollback migrations~%")
+  (format t "  db:status                         Show migration status~%")
+  (format t "  test [packages...]                Run tests~%")
+  (format t "  server                            Start web server~%")
+  (format t "  stop                              Stop web server~%")
+  (format t "~%")
+  (format t "Run 'clails COMMAND --help' for more information on a command.~%"))
+
+(defun help/new ()
+  (format t "Usage: clails new PROJECT-NAME [OPTIONS]~%~%")
+  (format t "Create a new clails project.~%~%")
+  (format t "Options:~%")
+  (format t "  -p, --path PATH           Project directory path (default: current directory)~%")
+  (format t "  -d, --database TYPE       Database type: sqlite3, mysql, postgresql (default: sqlite3)~%")
+  (format t "  -h, --help                Show this help message~%")
+  (format t "~%")
+  (format t "Examples:~%")
+  (format t "  clails new myapp~%")
+  (format t "  clails new myapp --path /projects~%")
+  (format t "  clails new myapp --database mysql~%"))
+
+(defun help/generate ()
+  (format t "Usage: clails generate:TYPE NAME [OPTIONS]~%~%")
+  (format t "Generate files for model, migration, view, controller, or scaffold.~%~%")
+  (format t "Commands:~%")
+  (format t "  generate:model <name>             Generate model file~%")
+  (format t "  generate:migration <name>         Generate migration file~%")
+  (format t "  generate:view <name>              Generate view file~%")
+  (format t "  generate:controller <name>        Generate controller file~%")
+  (format t "  generate:scaffold <name>          Generate model, view, and controller~%")
+  (format t "~%")
+  (format t "Options:~%")
+  (format t "  --no-overwrite            Do not overwrite existing files~%")
+  (format t "  -n, --no-migration        Skip migration file generation (model only)~%")
+  (format t "  -h, --help                Show this help message~%"))
+
+(defun help/db ()
+  (format t "Usage: clails db:COMMAND [OPTIONS]~%~%")
+  (format t "Database management commands.~%~%")
+  (format t "Commands:~%")
+  (format t "  db:create                 Create database~%")
+  (format t "  db:migrate                Run all pending migrations~%")
+  (format t "  db:migrate --version VER  Run migrations up to specific version~%")
+  (format t "  db:migrate:up <version>   Run specific migration up~%")
+  (format t "  db:migrate:down <version> Rollback specific migration~%")
+  (format t "  db:rollback               Rollback 1 migration (default)~%")
+  (format t "  db:rollback --step N      Rollback N migrations~%")
+  (format t "  db:status                 Show migration status~%")
+  (format t "~%")
+  (format t "Options:~%")
+  (format t "  --version VERSION         Migration version (for db:migrate)~%")
+  (format t "  --step N                  Number of steps to rollback (for db:rollback)~%")
+  (format t "  -h, --help                Show this help message~%")
+  (format t "~%")
+  (format t "Examples:~%")
+  (format t "  clails db:create~%")
+  (format t "  clails db:migrate~%")
+  (format t "  clails db:migrate --version 20231105120000~%")
+  (format t "  clails db:migrate:up 20231105120000~%")
+  (format t "  clails db:rollback~%")
+  (format t "  clails db:rollback --step 3~%"))
+
+(defun help/test ()
+  (format t "Usage: clails test [PACKAGES...] [OPTIONS]~%~%")
+  (format t "Run tests with optional filtering.~%~%")
+  (format t "Arguments:~%")
+  (format t "  PACKAGES...               Package names to test (exact match)~%")
+  (format t "~%")
+  (format t "Options:~%")
+  (format t "  --tag TAG                 Include tests with TAG (can be specified multiple times)~%")
+  (format t "  --exclude TAG             Exclude tests with TAG (can be specified multiple times)~%")
+  (format t "  --list-tags               List all available tags~%")
+  (format t "  --list-packages           List all available packages~%")
+  (format t "  --list-tests-tag TAG      List tests with specific tag~%")
+  (format t "  --list-tests-pkg PKG      List tests in specific package~%")
+  (format t "  -h, --help                Show this help message~%")
+  (format t "~%")
+  (format t "Examples:~%")
+  (format t "  clails test                                 Run all tests~%")
+  (format t "  clails test pkg1 pkg2                       Run tests in pkg1 and pkg2~%")
+  (format t "  clails test --tag :model                    Run tests with :model tag~%")
+  (format t "  clails test --tag :model --tag :sqlite3     Run tests with multiple tags~%")
+  (format t "  clails test --exclude :slow                 Exclude slow tests~%")
+  (format t "  clails test --list-tags                     List all available tags~%")
+  (format t "  clails test todoapp/models/user             Test specific package~%"))
+
+(defun help/server ()
+  (format t "Usage: clails server [OPTIONS]~%~%")
+  (format t "Start the web server.~%~%")
+  (format t "Options:~%")
+  (format t "  -p, --port PORT           Port number (default: 5000)~%")
+  (format t "  -b, --bind ADDRESS        Bind address (default: 127.0.0.1)~%")
+  (format t "  -h, --help                Show this help message~%")
+  (format t "~%")
+  (format t "Examples:~%")
+  (format t "  clails server~%")
+  (format t "  clails server --port 8080~%")
+  (format t "  clails server --bind 0.0.0.0 --port 3000~%"))
+
+;; Command functions
+
 ;(defun create-project (project-name &key (project-path (uiop/os:getcwd)) (database :sqlite3))
 ;  (clails/cmd:create-project project-name project-path database))
+
+(defun new/project (project-name &key project-path (database :sqlite3) help)
+  (when help
+    (help/new)
+    (uiop:quit 0))
+  (clails/cmd:create-project project-name :project-path project-path :database database))
 
 (defun load-project ()
   (push (uiop/os:getcwd) ql:*local-project-directories*)
@@ -47,18 +169,27 @@ exec ros -Q -- $0 "$@"
   (load-project)
   (format t "environment:~A~%" clails/environment:*project-environment*))
 
-(defun db/create ()
+(defun db/create (&key help)
+  (when help
+    (help/db)
+    (uiop:quit 0))
   (load-project)
   (clails/cmd:db/create))
 
-(defun db/migrate (&optional version)
+(defun db/migrate (&key version help)
+  (when help
+    (help/db)
+    (uiop:quit 0))
   (load-project)
   (load "db/package.lisp")
   (if version
       (clails/cmd:db/migrate :version version)
       (clails/cmd:db/migrate)))
 
-(defun db/migrate/up (version)
+(defun db/migrate/up (version &key help)
+  (when help
+    (help/db)
+    (uiop:quit 0))
   (when (null version)
      (format *error-output* "ERROR: VERSION parameter is required for db:migrate:up~%")
      (uiop:quit 1))
@@ -66,7 +197,10 @@ exec ros -Q -- $0 "$@"
   (load "db/package.lisp")
   (clails/cmd:db/migrate-up version))
 
-(defun db/migrate/down (version)
+(defun db/migrate/down (version &key help)
+  (when help
+    (help/db)
+    (uiop:quit 0))
   (when (null version)
      (format *error-output* "ERROR: VERSION parameter is required for db:migrate:down~%")
      (uiop:quit 1))
@@ -74,39 +208,127 @@ exec ros -Q -- $0 "$@"
   (load "db/package.lisp")
   (clails/cmd:db/migrate-down version))
 
-(defun db/rollback (&optional step)
+(defun db/rollback (&key step help)
+  (when help
+    (help/db)
+    (uiop:quit 0))
   (load-project)
   (load "db/package.lisp")
   (if step
       (clails/cmd:db/rollback :step (parse-integer step))
       (clails/cmd:db/rollback)))
 
-(defun db/status ()
+(defun db/status (&key help)
+  (when help
+    (help/db)
+    (uiop:quit 0))
   (load-project)
   (load "db/package.lisp")
   (clails/cmd:db/status))
 
-(defun generate/model (model-name &key no-overwrite no-migration)
+(defun generate/model (model-name &key no-overwrite no-migration help)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
   (load-project)
   (clails/cmd:generate/model model-name :no-overwrite no-overwrite :no-migration no-migration))
 
-(defun generate/migration (migration-name)
+(defun generate/migration (migration-name &key help)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
   (load-project)
   (clails/cmd:generate/migration migration-name))
 
-(defun generate/view (view-name &key no-overwrite)
+(defun generate/view (view-name &key no-overwrite help)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
   (load-project)
   (clails/cmd:generate/view view-name :no-overwrite no-overwrite))
 
-(defun generate/controller (controller-name &key no-overwrite)
+(defun generate/controller (controller-name &key no-overwrite help)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
   (load-project)
   (clails/cmd:generate/controller controller-name :no-overwrite no-overwrite))
 
-(defun generate/scaffold (name &key no-overwrite)
+(defun generate/scaffold (name &key no-overwrite help)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
   (load-project)
   (clails/cmd:generate/scaffold name :no-overwrite no-overwrite))
 
-(defun server (&key (port "5000") (bind "127.0.0.1"))
+(defun test/run (&rest all-args)
+  ;; Check for help option first (before loading project)
+  (when (or (member "-h" all-args :test #'string=)
+            (member "--help" all-args :test #'string=))
+    (help/test)
+    (uiop:quit 0))
+
+  (load-project)
+  ;; Separate positional args (package names) from keyword args
+  (let* ((package-names nil)
+         (keyword-args nil)
+         (in-keywords nil))
+    ;; Parse arguments
+    (loop for arg in all-args
+          do (cond
+               ((keywordp arg)
+                (setf in-keywords t)
+                (push arg keyword-args))
+               (in-keywords
+                (push arg keyword-args))
+               (t
+                (push arg package-names))))
+    (setf package-names (nreverse package-names))
+    (setf keyword-args (nreverse keyword-args))
+
+    ;; Helper function to convert string to keyword
+    (labels ((string-to-keyword (s)
+               (if (stringp s)
+                   (if (and (> (length s) 0) (char= (char s 0) #\:))
+                       (intern (subseq s 1) :keyword)
+                       (intern (string-upcase s) :keyword))
+                   s))
+             (ensure-keyword-list (val)
+               (when val
+                 (let ((lst (if (listp val) val (list val))))
+                   (mapcar #'string-to-keyword lst))))
+             (normalize-package-names (names)
+               (mapcar #'string-upcase names)))
+
+      ;; Extract keyword arguments and ensure they are lists of keywords
+      (let* ((tags (ensure-keyword-list (getf keyword-args :tags)))
+             (exclude (ensure-keyword-list (getf keyword-args :exclude)))
+             (list-tags (getf keyword-args :list-tags))
+             (list-packages (getf keyword-args :list-packages))
+             (list-tests-tag-raw (getf keyword-args :list-tests-tag))
+             (list-tests-tag (when list-tests-tag-raw
+                               (string-to-keyword list-tests-tag-raw)))
+             (list-tests-pkg-raw (getf keyword-args :list-tests-pkg))
+             (list-tests-pkg (when list-tests-pkg-raw
+                               (string-upcase list-tests-pkg-raw)))
+             (normalized-packages (normalize-package-names package-names)))
+
+        (let ((test-result
+               (clails/cmd:test :packages normalized-packages
+                                :tags tags
+                                :exclude-tags exclude
+                                :list-tags list-tags
+                                :list-packages list-packages
+                                :list-tests-tag list-tests-tag
+                                :list-tests-pkg list-tests-pkg)))
+          (if test-result
+              (uiop:quit 0)
+              (uiop:quit 1)))))))
+
+(defun server (&key (port "5000") (bind "127.0.0.1") help)
+  (when help
+    (help/server)
+    (uiop:quit 0))
   (load-project)
   (clails/cmd:server :port port :bind bind))
 
@@ -114,13 +336,10 @@ exec ros -Q -- $0 "$@"
   (load-project)
   (clails/cmd:stop))
 
-(defun help ()
-  (format t "clails CMD [OPTIONS] [args...]~%"))
-
 
 (defparameter *config*
   `(:commands ((:command "new"
-                :function ,#'clails/cmd:create-project
+                :function ,#'new/project
                 :options ((:short-option "p"
                            :long-option "path"
                            :keyword :project-path
@@ -130,44 +349,110 @@ exec ros -Q -- $0 "$@"
                            :keyword :database
                            :consume T
                            :converter ,#'(lambda (s)
-                                           (intern (string-upcase s) :KEYWORD)))))
+                                           (intern (string-upcase s) :KEYWORD)))
+                          (:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "environment"
                 :function ,#'environment/show)
                (:command "db:create"
-                :function ,#'db/create)
+                :function ,#'db/create
+                :options ((:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "db:migrate"
-                :function ,#'db/migrate)
+                :function ,#'db/migrate
+                :options ((:long-option "version"
+                           :keyword :version
+                           :consume T)
+                          (:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "db:migrate:up"
-                :function ,#'db/migrate/up)
+                :function ,#'db/migrate/up
+                :options ((:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "db:migrate:down"
-                :function ,#'db/migrate/down)
+                :function ,#'db/migrate/down
+                :options ((:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "db:rollback"
-                :function ,#'db/rollback)
+                :function ,#'db/rollback
+                :options ((:long-option "step"
+                           :keyword :step
+                           :consume T)
+                          (:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "db:status"
-                :function ,#'db/status)
+                :function ,#'db/status
+                :options ((:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "generate:model"
                 :function ,#'generate/model
                 :options ((:long-option "no-overwrite"
                            :keyword :no-overwrite)
                           (:short-option "n"
                            :long-option "no-migration"
-                           :keyword :no-migration)))
+                           :keyword :no-migration)
+                          (:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "generate:migration"
                 :function ,#'generate/migration
                 :options ((:long-option "no-overwrite"
-                           :keyword :no-overwrite)))
+                           :keyword :no-overwrite)
+                          (:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "generate:view"
                 :function ,#'generate/view
                 :options ((:long-option "no-overwrite"
-                           :keyword :no-overwrite)))
+                           :keyword :no-overwrite)
+                          (:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "generate:controller"
                 :function ,#'generate/controller
                 :options ((:long-option "no-overwrite"
-                           :keyword :no-overwrite)))
+                           :keyword :no-overwrite)
+                          (:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "generate:scaffold"
                 :function ,#'generate/scaffold
                 :options ((:long-option "no-overwrite"
-                           :keyword :no-overwrite)))
+                           :keyword :no-overwrite)
+                          (:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
+               (:command "test"
+                :function ,#'test/run
+                :options ((:long-option "tag"
+                           :keyword :tags
+                           :consume T
+                           :multiple T)
+                          (:long-option "exclude"
+                           :keyword :exclude
+                           :consume T
+                           :multiple T)
+                          (:long-option "list-tags"
+                           :keyword :list-tags)
+                          (:long-option "list-packages"
+                           :keyword :list-packages)
+                          (:long-option "list-tests-tag"
+                           :keyword :list-tests-tag
+                           :consume T)
+                          (:long-option "list-tests-pkg"
+                           :keyword :list-tests-pkg
+                           :consume T)
+                          (:short-option "h"
+                           :long-option "help"
+                           :keyword :help))
+                :args T)
                (:command "server"
                 :function ,#'server
                 :options ((:short-option "p"
@@ -177,13 +462,23 @@ exec ros -Q -- $0 "$@"
                           (:short-option "b"
                            :long-option "bind"
                            :keyword :bind
-                           :consume T)))
+                           :consume T)
+                          (:short-option "h"
+                           :long-option "help"
+                           :keyword :help)))
                (:command "stop"
                 :function ,#'stop))))
 
 
 
 (defun main (&rest argv)
+  ;; Check for help option or no arguments
+  (when (or (null argv)
+            (member "-h" argv :test #'string=)
+            (member "--help" argv :test #'string=))
+    (help)
+    (uiop:quit 0))
+
   (let ((c (getcmd:getcmd argv *config* #'help)))
     (apply (getf c :function)
            (getf c :args))))
