@@ -12,5 +12,6 @@
   :license ""
   :pathname "app"
   :depends-on ("clails"
-               "<%= (@ project-name ) %>/application"))
+               "<%= (@ project-name ) %>/application")
+  :in-order-to ((test-op (test-op "<%= (@ project-name ) %>-test"))))
 

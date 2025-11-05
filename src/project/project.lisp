@@ -18,7 +18,11 @@
     "db"
     "db/migrate"
     "tmp"
-    "public")
+    "public"
+    "test"
+    "test/models"
+    "test/controllers"
+    "test/views")
   "List of directories to create in a new Clails project.")
 
 (defun create-project (project-name project-dir database)
@@ -173,7 +177,21 @@
                                project-name
                                project-dir
                                database
-                               (read-template "db/package.lisp.tmpl"))))
+                               (read-template "db/package.lisp.tmpl"))
+
+    ;; test system
+    (create-file-with-template (format nil "~A-test.asd" project-name)
+                               project-name
+                               project-dir
+                               database
+                               (read-template "test.asd.tmpl"))
+
+    ;; sample test
+    (create-file-with-template "test/sample.lisp"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "test/sample.lisp.tmpl"))))
 
 
 (defun copy-asset-files (project-dir)

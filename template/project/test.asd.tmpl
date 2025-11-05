@@ -1,0 +1,15 @@
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>-test-system
+  (:use #:asdf #:cl))
+(in-package #:<%= (@ project-name ) %>-test-system)
+
+(defsystem <%= (@ project-name ) %>-test
+  :class :package-inferred-system
+  :pathname "test"
+  :depends-on ("clails"
+               "rove"
+               "<%= (@ project-name ) %>"
+               "<%= (@ project-name ) %>-test/sample")
+  :perform (test-op (o c)
+             (uiop:symbol-call :rove :run c)))
