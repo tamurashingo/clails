@@ -285,4 +285,5 @@
                          :direction :output
                          :if-exists :supersede)
       (format out "~A" (funcall (cl-template:compile-template template-content)
-                                `(:tables ,tables))))))
+                                `(:project-name ,*project-name*
+                                  :tables ,tables))))))
