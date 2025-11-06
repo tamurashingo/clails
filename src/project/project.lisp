@@ -109,12 +109,12 @@
                                database
                                (read-template "base.asd.tmpl"))
 
-    ;; appliation
-    (create-file-with-template "app/application.lisp"
+    ;; application loader
+    (create-file-with-template "app/application-loader.lisp"
                                project-name
                                project-dir
                                database
-                               (read-template "app/application.lisp.tmpl"))
+                               (read-template "app/application-loader.lisp.tmpl"))
 
     ;; config
     (create-file-with-template "app/config/environment.lisp"
@@ -185,6 +185,13 @@
                                project-dir
                                database
                                (read-template "test.asd.tmpl"))
+
+    ;; test loader
+    (create-file-with-template "test/test-loader.lisp"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "test/test-loader.lisp.tmpl"))
 
     ;; sample test
     (create-file-with-template "test/sample.lisp"

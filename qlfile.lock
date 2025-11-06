@@ -13,7 +13,7 @@
 ("getcmd" .
  (:class qlot/source/github:source-github
   :initargs (:repos "tamurashingo/getcmd" :ref nil :branch nil :tag nil)
-  :version "github-e5c45537eb0ed07b6bebc0099af0a0a566d67358"))
+  :version "github-f98bb726e19f7652f583d9b6977b59acfa50c5dd"))
 ("uiop" .
  (:class qlot/source/http:source-http
   :initargs (:url "https://asdf.common-lisp.dev/archives/uiop-3.3.1.tar.gz" :archive-md5 nil)

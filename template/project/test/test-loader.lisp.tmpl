@@ -1,0 +1,6 @@
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>-test/test-loader
+  (:use #:cl)
+  (:import-from #:<%= (@ project-name ) %>-test/sample))
+(in-package #:<%= (@ project-name ) %>-test/test-loader)

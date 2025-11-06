@@ -168,10 +168,19 @@ exec ros -Q -- $0 "$@"
 (defmacro define-command (name params &body body)
   (let* ((sanitized (substitute #\_ #\: name))
          (fname (intern (string-upcase (format nil "CMD__~A" sanitized)) *package*))
+         (help-fname (intern (string-upcase (format nil "HELP__~A" sanitized)) *package*))
          (required-params '())
          (keyword-specs '())
          (options '())
-         (state 'required))
+         (state 'required)
+         (help-function nil)
+         (arguments-as-list nil))
+    ;; Check if first element of body is a help function declaration
+    (when (and (consp (first body))
+               (eq (car (first body)) :help-function))
+      (setf help-function (second (first body)))
+      (setf body (rest body)))
+
     (dolist (p params)
       (cond
         ((eq p '&key)
@@ -204,14 +213,28 @@ exec ros -Q -- $0 "$@"
     (setf required-params (nreverse required-params))
     (setf keyword-specs (nreverse keyword-specs))
     (setf options (nreverse options))
+
+    ;; Check if first required param looks like a list (e.g., args, files, etc.)
+    ;; or if there's exactly one required param - enable arguments-as-list
+    (when (and (= (length required-params) 1)
+               (not (null required-params)))
+      (setf arguments-as-list t))
+
     `(progn
        (defun ,fname (,@required-params
                       ,@(when keyword-specs `(&key ,@keyword-specs)))
          ,@body)
+       ,@(when help-function
+           `((defun ,help-fname ()
+               (funcall ,help-function))))
        (setf (getf *config* :commands)
              (append (getf *config* :commands)
                      (list (list :command ,name
                                  :function (function ,fname)
+                                 ,@(when help-function
+                                     `(:help-function (function ,help-fname)))
+                                 ,@(when arguments-as-list
+                                     `(:arguments-as-list t))
                                  ,@(when options
                                      `(:options (list ,@(mapcar (lambda (opt) `(list ,@opt)) options)))))))))))
 
@@ -219,22 +242,28 @@ exec ros -Q -- $0 "$@"
 (defparameter *config* '(:commands ()))
 
 ;; Command definitions
-(define-command "new" (project-name &key (project-path :short-option "p"
-                                                       :long-option "path"
-                                                       :consume t)
-                                         (database :default :sqlite3
-                                                   :short-option "d"
-                                                   :long-option "database"
-                                                   :consume t
-                                                   :converter #'(lambda (s) (intern (string-upcase s) :keyword)))
-                                         (help :short-option "h"
-                                               :long-option "help"))
-  (when (or help (null project-name))
+(define-command "new" (args &key (project-path :short-option "p"
+                                                :long-option "path"
+                                                :consume t)
+                                 (database :default :sqlite3
+                                           :short-option "d"
+                                           :long-option "database"
+                                           :consume t
+                                           :converter #'(lambda (s) (intern (string-upcase s) :keyword)))
+                                 (help :short-option "h"
+                                       :long-option "help"))
+  (:help-function #'help/new)
+  (when help
     (help/new)
-    (uiop:quit (if help 0 1)))
-  (clails/cmd:create-project project-name :project-path project-path :database database))
+    (uiop:quit 0))
+  (let ((project-name (first args)))
+    (when (null project-name)
+      (format *error-output* "ERROR: PROJECT-NAME parameter is required for new command~%")
+      (uiop:quit 1))
+    (clails/cmd:create-project project-name :project-path project-path :database database)))
 
-(define-command "environment" (&key (help :short-option "h" :long-option "help"))
+(define-command "environment" (&key (help :short-option "h"
+                                          :long-option "help"))
   (when help
     (format t "Usage: clails environment~%~%")
     (format t "Show current environment.~%")
@@ -242,15 +271,20 @@ exec ros -Q -- $0 "$@"
   (load-project)
   (format t "environment:~A~%" clails/environment:*project-environment*))
 
-(define-command "db:create" (&key (help :short-option "h" :long-option "help"))
+(define-command "db:create" (&key (help :short-option "h"
+                                        :long-option "help"))
+  (:help-function #'help/db)
   (when help
     (help/db)
     (uiop:quit 0))
   (load-project)
   (clails/cmd:db/create))
 
-(define-command "db:migrate" (&key (version :long-option "version" :consume t)
-                                   (help :short-option "h" :long-option "help"))
+(define-command "db:migrate" (&key (version :long-option "version"
+                                            :consume t)
+                                   (help :short-option "h"
+                                         :long-option "help"))
+  (:help-function #'help/db)
   (when help
     (help/db)
     (uiop:quit 0))
@@ -260,14 +294,13 @@ exec ros -Q -- $0 "$@"
       (clails/cmd:db/migrate :version version)
       (clails/cmd:db/migrate)))
 
-(define-command "db:migrate:up" (&rest all-args &key (help :short-option "h" :long-option "help"))
-  (let* ((non-keywords (loop for arg in all-args
-                             while (not (keywordp arg))
-                             collect arg))
-         (version (first non-keywords)))
-    (when help
-      (help/db)
-      (uiop:quit 0))
+(define-command "db:migrate:up" (args &key (help :short-option "h"
+                                                 :long-option "help"))
+  (:help-function #'help/db)
+  (when help
+    (help/db)
+    (uiop:quit 0))
+  (let ((version (first args)))
     (when (null version)
       (format *error-output* "ERROR: VERSION parameter is required for db:migrate:up~%")
       (uiop:quit 1))
@@ -275,14 +308,13 @@ exec ros -Q -- $0 "$@"
     (load "db/package.lisp")
     (clails/cmd:db/migrate-up version)))
 
-(define-command "db:migrate:down" (&rest all-args &key (help :short-option "h" :long-option "help"))
-  (let* ((non-keywords (loop for arg in all-args
-                             while (not (keywordp arg))
-                             collect arg))
-         (version (first non-keywords)))
-    (when help
-      (help/db)
-      (uiop:quit 0))
+(define-command "db:migrate:down" (args &key (help :short-option "h"
+                                                   :long-option "help"))
+  (:help-function #'help/db)
+  (when help
+    (help/db)
+    (uiop:quit 0))
+  (let ((version (first args)))
     (when (null version)
       (format *error-output* "ERROR: VERSION parameter is required for db:migrate:down~%")
       (uiop:quit 1))
@@ -290,8 +322,11 @@ exec ros -Q -- $0 "$@"
     (load "db/package.lisp")
     (clails/cmd:db/migrate-down version)))
 
-(define-command "db:rollback" (&key (step :long-option "step" :consume t)
-                                    (help :short-option "h" :long-option "help"))
+(define-command "db:rollback" (&key (step :long-option "step"
+                                          :consume t)
+                                    (help :short-option "h"
+                                          :long-option "help"))
+  (:help-function #'help/db)
   (when help
     (help/db)
     (uiop:quit 0))
@@ -301,7 +336,9 @@ exec ros -Q -- $0 "$@"
       (clails/cmd:db/rollback :step (parse-integer step))
       (clails/cmd:db/rollback)))
 
-(define-command "db:status" (&key (help :short-option "h" :long-option "help"))
+(define-command "db:status" (&key (help :short-option "h"
+                                        :long-option "help"))
+  (:help-function #'help/db)
   (when help
     (help/db)
     (uiop:quit 0))
@@ -309,103 +346,99 @@ exec ros -Q -- $0 "$@"
   (load "db/package.lisp")
   (clails/cmd:db/status))
 
-(define-command "generate:model" (&rest all-args &key (no-overwrite :long-option "no-overwrite")
-                                                  (no-migration :short-option "n"
-                                                                :long-option "no-migration")
-                                                  (help :short-option "h"
-                                                        :long-option "help"))
-  (let* ((non-keywords (loop for arg in all-args
-                             while (not (keywordp arg))
-                             collect arg))
-         (model-name (first non-keywords)))
-    (when help
-      (help/generate)
-      (uiop:quit 0))
+(define-command "generate:model" (args &key (no-overwrite :long-option "no-overwrite")
+                                            (no-migration :short-option "n"
+                                                          :long-option "no-migration")
+                                            (help :short-option "h"
+                                                  :long-option "help"))
+  (:help-function #'help/generate)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
+  (let ((model-name (first args)))
     (when (null model-name)
       (format *error-output* "ERROR: NAME parameter is required for generate:model~%")
       (uiop:quit 1))
     (load-project)
     (clails/cmd:generate/model model-name :no-overwrite no-overwrite :no-migration no-migration)))
 
-(define-command "generate:migration" (&rest all-args &key (help :short-option "h"
-                                                                :long-option "help"))
-  (let* ((non-keywords (loop for arg in all-args
-                             while (not (keywordp arg))
-                             collect arg))
-         (migration-name (first non-keywords)))
-    (when help
-      (help/generate)
-      (uiop:quit 0))
+(define-command "generate:migration" (args &key (help :short-option "h"
+                                                      :long-option "help"))
+  (:help-function #'help/generate)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
+  (let ((migration-name (first args)))
     (when (null migration-name)
       (format *error-output* "ERROR: NAME parameter is required for generate:migration~%")
       (uiop:quit 1))
     (load-project)
     (clails/cmd:generate/migration migration-name)))
 
-(define-command "generate:view" (&rest all-args &key (no-overwrite :long-option "no-overwrite")
-                                                (help :short-option "h"
-                                                      :long-option "help"))
-  (let* ((non-keywords (loop for arg in all-args
-                             while (not (keywordp arg))
-                             collect arg))
-         (view-name (first non-keywords)))
-    (when help
-      (help/generate)
-      (uiop:quit 0))
+(define-command "generate:view" (args &key (no-overwrite :long-option "no-overwrite")
+                                           (help :short-option "h"
+                                                 :long-option "help"))
+  (:help-function #'help/generate)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
+  (let ((view-name (first args)))
     (when (null view-name)
       (format *error-output* "ERROR: NAME parameter is required for generate:view~%")
       (uiop:quit 1))
     (load-project)
     (clails/cmd:generate/view view-name :no-overwrite no-overwrite)))
 
-(define-command "generate:controller" (&rest all-args &key (no-overwrite :long-option "no-overwrite")
-                                                            (help :short-option "h"
-                                                                  :long-option "help"))
-  (let* ((non-keywords (loop for arg in all-args
-                             while (not (keywordp arg))
-                             collect arg))
-         (controller-name (first non-keywords)))
-    (when help
-      (help/generate)
-      (uiop:quit 0))
+(define-command "generate:controller" (args &key (no-overwrite :long-option "no-overwrite")
+                                                 (help :short-option "h"
+                                                       :long-option "help"))
+  (:help-function #'help/generate)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
+  (let ((controller-name (first args)))
     (when (null controller-name)
       (format *error-output* "ERROR: NAME parameter is required for generate:controller~%")
       (uiop:quit 1))
     (load-project)
     (clails/cmd:generate/controller controller-name :no-overwrite no-overwrite)))
 
-(define-command "generate:scaffold" (&rest all-args &key (no-overwrite :long-option "no-overwrite")
+(define-command "generate:scaffold" (args &key (no-overwrite :long-option "no-overwrite")
                                                (help :short-option "h"
                                                      :long-option "help"))
-  (let* ((non-keywords (loop for arg in all-args
-                             while (not (keywordp arg))
-                             collect arg))
-         (name (first non-keywords)))
-    (when help
-      (help/generate)
-      (uiop:quit 0))
+  (:help-function #'help/generate)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
+  (let ((name (first args)))
     (when (null name)
       (format *error-output* "ERROR: NAME parameter is required for generate:scaffold~%")
       (uiop:quit 1))
     (load-project)
     (clails/cmd:generate/scaffold name :no-overwrite no-overwrite)))
 
-(define-command "test" (&rest test-args &key (tags :long-option "tag" :consume t :multiple t)
-                                             (exclude :long-option "exclude" :consume t :multiple t)
-                                             (list-tags :long-option "list-tags")
-                                             (list-packages :long-option "list-packages")
-                                             (list-tests-tag :long-option "list-tests-tag" :consume t)
-                                             (list-tests-pkg :long-option "list-tests-pkg" :consume t)
-                                             (help :short-option "h" :long-option "help"))
+(define-command "test" (args &key (tags :long-option "tag"
+                                        :consume t
+                                        :multiple t)
+                                  (exclude :long-option "exclude"
+                                           :consume t
+                                           :multiple t)
+                                  (list-tags :long-option "list-tags")
+                                  (list-packages :long-option "list-packages")
+                                  (list-tests-tag :long-option "list-tests-tag"
+                                                  :consume t)
+                                  (list-tests-pkg :long-option "list-tests-pkg"
+                                                  :consume t)
+                                  (help :short-option "h"
+                                        :long-option "help"))
+  (:help-function #'help/test)
   (when help
     (help/test)
     (uiop:quit 0))
   (load-project)
-  
-  ;; Extract package names (non-keyword arguments)
-  (let* ((package-names (loop for arg in test-args
-                              while (not (keywordp arg))
-                              collect (string-upcase arg)))
+
+  ;; Convert args (list of package names) to uppercase
+  (let* ((package-names (mapcar #'string-upcase args))
          ;; Helper function to convert string to keyword
          (string-to-keyword (lambda (s)
                               (if (stringp s)
@@ -423,7 +456,7 @@ exec ros -Q -- $0 "$@"
                               (funcall string-to-keyword list-tests-tag)))
          (list-tests-pkg-upper (when list-tests-pkg
                                  (string-upcase list-tests-pkg))))
-    
+
     (let ((test-result
            (clails/cmd:test :packages package-names
                             :tags tags-keywords
@@ -446,13 +479,16 @@ exec ros -Q -- $0 "$@"
                                      :consume t)
                                (help :short-option "h"
                                      :long-option "help"))
+  (:help-function #'help/server)
   (when help
     (help/server)
     (uiop:quit 0))
   (load-project)
   (clails/cmd:server :port port :bind bind))
 
-(define-command "stop" (&key (help :short-option "h" :long-option "help"))
+(define-command "stop" (&key (help :short-option "h"
+                                   :long-option "help"))
+  (:help-function #'help/stop)
   (when help
     (help/stop)
     (uiop:quit 0))
@@ -467,6 +503,19 @@ exec ros -Q -- $0 "$@"
             (string= (first argv) "--help"))
     (help)
     (uiop:quit 0))
+
+  ;; Check for command-specific help
+  (when (and (>= (length argv) 2)
+             (or (member "-h" argv :test #'string=)
+                 (member "--help" argv :test #'string=)))
+    (let* ((cmd-name (first argv))
+           (cmd-config (find cmd-name (getf *config* :commands)
+                            :key (lambda (cmd) (getf cmd :command))
+                            :test #'string=)))
+      (if (and cmd-config (getf cmd-config :help-function))
+          (funcall (getf cmd-config :help-function))
+          (help))
+      (uiop:quit 0)))
 
   (let ((c (getcmd:getcmd argv *config* #'help)))
     (apply (getf c :function)
