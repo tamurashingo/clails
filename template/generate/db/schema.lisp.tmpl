@@ -1,5 +1,5 @@
 ; -*- mode: lisp -*-
-(in-package #:todoapp/db)
+(in-package #:<%= (@ project-name ) %>-db)
 
 (lambda (connection)<% loop for tbl in (@ tables ) do %>
   (create-table connection :table <%= (format nil "~S" (getf tbl :table)) %>

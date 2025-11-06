@@ -179,6 +179,13 @@
                                database
                                (read-template "db/package.lisp.tmpl"))
 
+    ;; seeds file
+    (create-file-with-template "db/seeds.lisp"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "db/seeds.lisp.tmpl"))
+
     ;; test system
     (create-file-with-template (format nil "~A-test.asd" project-name)
                                project-name

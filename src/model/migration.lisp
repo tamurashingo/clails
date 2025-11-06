@@ -8,7 +8,11 @@
                 #:kebab->snake)
   (:import-from #:clails/model/connection
                 #:with-db-connection-direct
-                #:with-db-connection)
+                #:with-db-connection
+                #:startup-connection-pool
+                #:shutdown-connection-pool)
+  (:import-from #:clails/model/base-model
+                #:initialize-table-information)
   (:import-from #:clails/logger
                 #:log.sql)
   (:export #:defmigration
@@ -29,7 +33,8 @@
            #:migrate-up-version
            #:migrate-down-version
            #:db-rollback
-           #:check-type-valid))
+           #:check-type-valid
+           #:db-seed))
 (in-package #:clails/model/migration)
 
 ;;; migration list
@@ -424,3 +429,28 @@
 (defun export-schema-file ()
   (clails/project/generate:gen/schema *tables*))
 
+(defun db-seed ()
+  "Seed the database with initial data from db/seeds.lisp.
+
+   Implementation of db/seed command.
+   Loads all model files before executing seeds to ensure models are available.
+   Initializes and shuts down connection pool to ensure proper cleanup.
+   "
+  (let ((seeds-file (format nil "~A/db/seeds.lisp" *migration-base-dir*))
+        (models-dir (format nil "~A/app/models/" *migration-base-dir*)))
+    ;; Load all model files
+    (when (probe-file models-dir)
+      (dolist (model-file (uiop:directory-files models-dir "*.lisp"))
+        (load model-file)))
+    ;; Initialize connection pool and load seeds file
+    (when (probe-file seeds-file)
+      (format t "Seeding database from: ~A~%" seeds-file)
+      (startup-connection-pool)
+      (unwind-protect
+          (progn
+            ;; Initialize table information (load column metadata)
+            (initialize-table-information)
+            ;; Load and execute seeds file
+            (with-db-connection (_connection)
+              (load seeds-file)))
+        (shutdown-connection-pool)))))

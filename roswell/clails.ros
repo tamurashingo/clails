@@ -98,6 +98,7 @@ exec ros -Q -- $0 "$@"
   (format t "  db:migrate:down <version> Rollback specific migration~%")
   (format t "  db:rollback               Rollback 1 migration (default)~%")
   (format t "  db:rollback --step N      Rollback N migrations~%")
+  (format t "  db:seed                   Seed the database~%")
   (format t "  db:status                 Show migration status~%")
   (format t "~%")
   (format t "Options:~%")
@@ -335,6 +336,16 @@ exec ros -Q -- $0 "$@"
   (if step
       (clails/cmd:db/rollback :step (parse-integer step))
       (clails/cmd:db/rollback)))
+
+(define-command "db:seed" (&key (help :short-option "h"
+                                      :long-option "help"))
+  (:help-function #'help/db)
+  (when help
+    (help/db)
+    (uiop:quit 0))
+  (load-project)
+  (load "db/package.lisp")
+  (clails/cmd:db/seed))
 
 (define-command "db:status" (&key (help :short-option "h"
                                         :long-option "help"))

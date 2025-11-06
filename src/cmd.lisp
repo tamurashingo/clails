@@ -18,7 +18,8 @@
                 #:migrate-up-version
                 #:migrate-down-version
                 #:db-rollback
-                #:db-status)
+                #:db-status
+                #:db-seed)
   (:import-from #:clails/controller/base-controller
                 #:initialize-routing-tables)
   (:import-from #:clails/middleware
@@ -46,6 +47,7 @@
            #:db/migrate-up
            #:db/migrate-down
            #:db/rollback
+           #:db/seed
            #:db/status
            #:console
            #:server
@@ -179,6 +181,13 @@
    @return [t] Rollback execution result
    "
   (db-rollback :step step))
+
+(defun db/seed ()
+  "Seed the database with initial data.
+
+   @return [t] Seeding execution result
+   "
+  (db-seed))
 
 
 (defun console ()
