@@ -26,6 +26,15 @@
                 #:*lack-middleware-clails-controller*)
   (:import-from #:clails/util
                 #:function-from-string)
+  (:import-from #:clails/test
+                #:run-suite-tests
+                #:run-suite-tests-by-tags
+                #:run-suite-tests-by-packages
+                #:list-all-tags
+                #:list-test-packages
+                #:list-tests-by-tag
+                #:list-tests-by-package
+                #:ensure-test-modules-loaded)
   (:export #:create-project
            #:generate/model
            #:generate/migration
@@ -40,7 +49,8 @@
            #:db/status
            #:console
            #:server
-           #:stop))
+           #:stop
+           #:test))
 (in-package #:clails/cmd)
 
 (defparameter *app* nil
@@ -249,4 +259,44 @@
                       (string
                        (function-from-string fn))
                       (function fn)))))
+
+(defun test (&key packages tags exclude-tags list-tags list-packages
+                  list-tests-tag list-tests-pkg asd-systems
+                  (style :spec))
+  "Run tests with optional filtering.
+
+   @param packages [list] Package names to test (exact match)
+   @param tags [list] Tags to include
+   @param exclude-tags [list] Tags to exclude
+   @param list-tags [boolean] List all available tags
+   @param list-packages [boolean] List all available packages
+   @param list-tests-tag [keyword] List tests with specific tag
+   @param list-tests-pkg [string] List tests in specific package
+   @param asd-systems [list] Specific ASD system names to load instead of auto-detection
+   @param style [keyword] Reporter style (default: :spec)
+   @return [boolean] Test results
+   "
+  ;; Ensure test modules are loaded before any test operations
+  (ensure-test-modules-loaded :asd-systems asd-systems)
+
+  (cond
+    ;; List mode operations
+    (list-tags
+     (list-all-tags)
+     t)
+    (list-packages
+     (list-test-packages)
+     t)
+    (list-tests-tag
+     (list-tests-by-tag list-tests-tag)
+     t)
+    (list-tests-pkg
+     (list-tests-by-package list-tests-pkg)
+     t)
+    ;; Run tests
+    (t
+     (run-suite-tests :tags tags
+                      :excluded-tags exclude-tags
+                      :packages packages
+                      :style style))))
 

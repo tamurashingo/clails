@@ -1,9 +1,10 @@
 ; -*- mode: lisp -*-
 (in-package #:cl-user)
-(defpackage #:<%= (@ project-name ) %>/application
+(defpackage #:<%= (@ project-name ) %>/application-loader
   (:use #:cl)
   (:import-from #:<%= (@ project-name ) %>/config/environment)
   (:import-from #:<%= (@ project-name ) %>/config/logger)
   (:import-from #:<%= (@ project-name ) %>/config/database)
   (:import-from #:<%= (@ project-name ) %>/controllers/application-controller)
   (:import-from #:<%= (@ project-name ) %>/views/package))
+(in-package #:<%= (@ project-name ) %>/application-loader)

@@ -29,6 +29,9 @@
                "local-time"
                "str"
                "quri"
-               "clails/main"))
+               "rove"
+               "clails/main"
+               "clails/test")
+  :in-order-to ((test-op (test-op "clails-test"))))
 
 

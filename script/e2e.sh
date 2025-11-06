@@ -23,3 +23,13 @@ sleep 10
 curl http://localhost:15000/
 
 clails stop
+
+echo '=== List all available test tags ==='
+clails test --list-tags
+
+echo '=== List all available test packages ==='
+clails test --list-packages
+
+
+echo '=== Run Tests ==='
+clails test

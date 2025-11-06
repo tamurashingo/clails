@@ -15,7 +15,7 @@
 
 (defun gen/template (base-name filename dir tmpl overwrite &key (start-delimiter "<%") (start-echo-delimiter "<%=") (end-delimiter "%>"))
   "Generate a file from a template.
-   
+
    @param base-name [string] Base name for the generated item
    @param filename [string] Output filename
    @param dir [string] Relative directory path from project root
@@ -49,7 +49,7 @@
 
 (defun add-routing (name)
   "Add routing configuration for a controller.
-   
+
    @param name [string] Controller name
    "
   (let* ((outfile (format nil "~A/app/config/environment.lisp" *project-dir*))
@@ -65,54 +65,113 @@
                                   :name ,name
                                   :current-datetime ,(current-datetime)))))))
 
-(defun add-load (comment load-package)
-  "Add a load statement to application.lisp.
-   
-   @param comment [string] Comment describing the addition (can be nil)
-   @param comment [nil] No comment
-   @param load-package [string] Load statement to add
-   "
-  (let ((outfile (format nil "~A/app/application.lisp" *project-dir*)))
-    (with-open-file (out outfile
-                         :direction :output
-                         :if-exists :append)
-      (when comment
-        (format out "~A~%" comment))
-      (format out "~A~%" load-package))))
+(defun add-import-controller (name)
+  "Add controller import-from to application-loader.lisp.
 
-(defun add-load-controller (name)
-  "Add controller load statement to application.lisp.
-   
    @param name [string] Controller name
    "
-  (let ((comment (format nil "; -- ~A : add ~A controller~%" (current-datetime) name))
-        (load-statement (format nil "(asdf:load-system :~A/controllers/~A-controller)~%" *project-name* name)))
-    (add-load comment load-statement)))
+  (let ((filepath (format nil "~A/app/application-loader.lisp" *project-dir*))
+        (package-name (format nil "~A/controllers/~A-controller" *project-name* name)))
+    (add-import-to-defpackage filepath package-name)))
 
 
-(defun add-load-view-package (name)
-  "Add view package load statement to application.lisp.
-   
+(defun add-import-view-package (name)
+  "Add view package import-from to application-loader.lisp.
+
    @param name [string] View package name
    "
-  (let ((comment (format nil "; -- ~A : add ~A view package~%" (current-datetime) name))
-        (load-statement (format nil "(asdf:load-system :~A/views/~A/package)~%" *project-name* name)))
-    (add-load comment load-statement)))
+  (let ((filepath (format nil "~A/app/application-loader.lisp" *project-dir*))
+        (package-name (format nil "~A/views/~A/package" *project-name* name)))
+    (add-import-to-defpackage filepath package-name)))
+
+(defun add-import-to-defpackage (filepath package-name)
+  "Add an import-from clause to a defpackage form in a file.
+
+   Reads the file, finds the defpackage form, adds the package to :import-from list,
+   and rewrites the entire file.
+
+   @param filepath [string] Path to the file containing defpackage
+   @param package-name [string] Package name to import
+   "
+  (let* ((forms '()))
+    ;; Read all forms from file
+    (with-open-file (in filepath :direction :input)
+      (loop for form = (read in nil :eof)
+            until (eq form :eof)
+            do (push form forms)))
+    (setf forms (nreverse forms))
+
+    ;; Find and modify defpackage form
+    (let ((modified-forms
+           (mapcar
+            (lambda (form)
+              (if (and (consp form)
+                       (eq (first form) 'defpackage))
+                  ;; This is a defpackage form
+                  (let* ((pkg-name (second form))
+                         (options (cddr form))
+                         (new-options (copy-list options))
+                         (import-found nil)
+                         (pkg-symbol (intern (string-upcase package-name) :keyword)))
+                    ;; Look for existing :import-from with the same package
+                    (dolist (opt new-options)
+                      (when (and (consp opt)
+                                 (eq (first opt) :import-from)
+                                 (string-equal (string (second opt)) package-name))
+                        (setf import-found t)))
+                    ;; Add new :import-from if not found
+                    (unless import-found
+                      (setf new-options (append new-options
+                                                (list (list :import-from pkg-symbol)))))
+                    (list* 'defpackage pkg-name new-options))
+                  form))
+            forms)))
+
+      ;; Write back to file
+      (with-open-file (out filepath
+                           :direction :output
+                           :if-exists :supersede)
+        (format out "; -*- mode: lisp -*-~%")
+        (dolist (form modified-forms)
+          (write form :stream out :case :downcase :pretty t)
+          (terpri out))))))
+
+(defun add-test-import-model (name)
+  "Add model test import-from to test/test-loader.lisp.
+
+   @param name [string] Model name
+   "
+  (let ((filepath (format nil "~A/test/test-loader.lisp" *project-dir*))
+        (package-name (format nil "~A-test/models/~A" *project-name* name)))
+    (add-import-to-defpackage filepath package-name)))
+
+(defun add-test-import-controller (name)
+  "Add controller test import-from to test/test-loader.lisp.
+
+   @param name [string] Controller name
+   "
+  (let ((filepath (format nil "~A/test/test-loader.lisp" *project-dir*))
+        (package-name (format nil "~A-test/controllers/~A-controller" *project-name* name)))
+    (add-import-to-defpackage filepath package-name)))
 
 ;; ----------------------------------------
 ;; model
 (defun gen/model (model-name &key (overwrite T))
   "Generate a model file.
-   
+
    @param model-name [string] Model name
    @param overwrite [boolean] Whether to overwrite existing file
    "
   (let ((filename (format nil "~A.lisp" model-name)))
-    (gen/template model-name filename "/app/models/" "template/generate/model.lisp.tmpl" overwrite)))
+    (gen/template model-name filename "/app/models/" "template/generate/model.lisp.tmpl" overwrite))
+  (let ((test-filename (format nil "~A.lisp" model-name)))
+    (gen/template model-name test-filename "/test/models/" "template/generate/test/model.lisp.tmpl" overwrite))
+  ;; Add to test-loader.lisp
+  (add-test-import-model model-name))
 
 (defun gen/migration (migration-name &key (overwrite T))
   "Generate a migration file with unique timestamp prefix.
-   
+
    @param migration-name [string] Migration name
    @param overwrite [boolean] Whether to overwrite existing file
    "
@@ -125,7 +184,7 @@
 ;; view
 (defun gen/view (view-name &key (overwrite T))
   "Generate view files (package, show, new, edit, delete templates).
-   
+
    @param view-name [string] View name
    @param overwrite [boolean] Whether to overwrite existing files
    "
@@ -156,26 +215,30 @@
                   :start-delimiter "<%%"
                   :start-echo-delimiter "<%%="
                   :end-delimiter "%%>")
-    (add-load-view-package view-name)))
+    (add-import-view-package view-name)))
 
 ;; ----------------------------------------
 ;; controller
 (defun gen/controller (controller-name &key (overwrite T))
   "Generate a controller file.
-   
+
    @param controller-name [string] Controller name
    @param overwrite [boolean] Whether to overwrite existing file
    "
   (let ((filename (format nil "~A-controller.lisp" controller-name)))
     (gen/template controller-name filename "/app/controllers/" "template/generate/controller.lisp.tmpl" overwrite))
+  (let ((test-filename (format nil "~A-controller.lisp" controller-name)))
+    (gen/template controller-name test-filename "/test/controllers/" "template/generate/test/controller.lisp.tmpl" overwrite))
   (add-routing controller-name)
-  (add-load-controller controller-name))
+  (add-import-controller controller-name)
+  ;; Add to test-loader.lisp
+  (add-test-import-controller controller-name))
 
 ;; ----------------------------------------
 ;; scaffold
 (defun gen/scaffold (name &key (overwrite T))
   "Generate scaffold (model, migration, view, controller) for a resource.
-   
+
    @param name [string] Resource name
    @param overwrite [boolean] Whether to overwrite existing files
    "
@@ -187,7 +250,7 @@
 
 (defun gen-unique-name (base-name)
   "Generate unique name with timestamp prefix.
-   
+
    @param base-name [string] Base name
    @return [string] Unique name in format YYYYMMDDHHMMSS_basename
    "
@@ -197,7 +260,7 @@
 
 (defun current-datetime ()
   "Get current datetime as formatted string.
-   
+
    @return [string] Current datetime in format YYYYMMDDHHMMSS
    "
   (multiple-value-bind (sec min hour day mon year)
@@ -209,7 +272,7 @@
 ;; schema
 (defun gen/schema (tables)
   "Generate database schema file from table definitions.
-   
+
    @param tables [list] List of table definitions
    "
   (let* ((outfile (format nil "~A/db/schema.lisp" *project-dir*))
