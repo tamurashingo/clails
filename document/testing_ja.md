@@ -2,482 +2,649 @@
 
 ## 概要
 
-clailsのテストフレームワークは、シンプルで表現力豊かなテスト構文を提供するCommon Lispテストフレームワーク **Rove** を使用しています。
-テストはコンポーネント（model、controller、view、helperなど）ごとに整理され、複数のデータベースをサポートするDockerベースの環境で実行できます。
+このガイドでは、clailsで構築されたアプリケーションのテストの書き方と実行方法を説明します。
+clailsは、タグやパッケージフィルタリングなどの追加機能を備えた、**Rove**ベースのテストフレームワークを提供しています。
 
 ## 基本概念
 
-- テストはRoveテストフレームワークを使用
-- テストファイルはソースコードの構造をミラーリング（例：モデルテストは `test/model/`）
-- 複数のデータベースバックエンド（SQLite3、MySQL、PostgreSQL）をサポート
-- Dockerベースのテスト環境により一貫性と分離を確保
-- Makefileコマンドでテスト実行を簡素化
+- テストはclails拡張機能を備えた**Rove**テストフレームワークを使用
+- テストは`deftest-suite`マクロを使用して定義し、タグ付けをサポート
+- テストはタグまたはパッケージでフィルタリングして実行可能
+- アプリケーション内でテストを実行するには`clails test`コマンドを使用
+- テストファイルは`test/`ディレクトリに整理され、アプリケーション構造をミラーリング
 
 ---
 
-## 1. テスト構造
+## 1. テストプロジェクトの構造
 
-### ファイル構成
-
-テストは `test/` ディレクトリにソースコードと同じ構造で整理されています：
+新しいclailsプロジェクトを作成すると、テスト構造が自動的に生成されます：
 
 ```
-test/
-├── controller/         # コントローラーテスト
-├── helper/             # ヘルパー関数テスト
-├── model/              # モデルとデータベーステスト
-├── view/               # ビューテンプレートテスト
-├── datetime/           # DateTimeユーティリティテスト
-├── logger/             # ロガーテスト
-├── e2e/                # エンドツーエンド統合テスト
-└── util.lisp           # テストユーティリティ
+your-app/
+├── app/
+│   ├── controllers/
+│   ├── models/
+│   └── views/
+├── test/
+│   ├── controllers/      # コントローラーテスト
+│   ├── models/           # モデルテスト
+│   ├── views/            # ビューテスト
+│   ├── sample.lisp       # サンプルテストファイル
+│   └── test-loader.lisp  # テストローダー設定
+├── your-app.asd          # アプリケーションシステム定義
+└── your-app-test.asd     # テストシステム定義
 ```
 
-### テストファイルの命名規則
+### テストシステム定義
 
-テストファイルはテストするソースファイルと同じ名前に従います：
+テストシステムは`your-app-test.asd`で定義されています：
 
-- ソース: `src/model/query.lisp` → テスト: `test/model/query.lisp`
-- ソース: `src/helper/date-helper.lisp` → テスト: `test/helper/date-helper.lisp`
+```common-lisp
+(defsystem your-app-test
+  :class :package-inferred-system
+  :pathname "test"
+  :depends-on ("clails"
+               "rove"
+               "your-app"
+               "your-app-test/test-loader")
+  :perform (test-op (o c)
+             (uiop:symbol-call :rove :run c)))
+```
 
 ---
 
-## 2. Roveでテストを書く
+## 2. テストの作成
 
-### 基本的なテスト構造
+### deftest-suiteを使用した基本的なテスト構造
+
+clailsはRoveを`deftest-suite`マクロで拡張し、テストにタグを付けることができます：
 
 ```common-lisp
 (in-package #:cl-user)
-(defpackage #:your-app-test/component-name
+(defpackage #:your-app-test/models/user
   (:use #:cl
         #:rove
-        #:your-app/component-name))
+        #:clails/test))
+(in-package #:your-app-test/models/user)
 
-(in-package #:your-app-test/component-name)
+(deftest-suite :model test-user-creation
+  (testing "新しいユーザーを作成"
+    (let ((user (make-record '<user> :name "Alice")))
+      (ok (save user) "ユーザーが正常に保存された")
+      (ok (ref user :id) "保存後にユーザーがIDを持つ"))))
 
-(deftest test-name
-  (testing "テストケースの説明"
-    (ok (= 1 1)
-        "1は1と等しい")
-    (ng (= 1 2)
-        "1は2と等しくない")))
+(deftest-suite (:model :validation) test-user-validation
+  (testing "ユーザーバリデーション"
+    (let ((user (make-record '<user> :name "")))
+      (ok (not (save user)) "空の名前はバリデーションに失敗する")
+      (ok (has-error-p user) "ユーザーにバリデーションエラーがある"))))
 ```
 
-### Roveのアサーション
+### deftest-suite 構文
 
-Roveはいくつかのアサーション関数を提供します：
+```common-lisp
+(deftest-suite tags test-name
+  body...)
+```
 
-#### `ok` - 式が真であることをアサート
+- **tags**: 単一のキーワード (`:model`) またはキーワードのリスト (`(:model :validation)`)
+- **test-name**: テストに名前を付けるシンボル
+- **body**: Roveアサーションを使用したテストコード
+
+### サンプルテストファイル
+
+新しいプロジェクトを作成すると、`test/sample.lisp`にサンプルテストファイルが生成されます：
+
+```common-lisp
+(in-package #:cl-user)
+(defpackage #:your-app-test/sample
+  (:use #:cl
+        #:rove
+        #:clails/test))
+(in-package #:your-app-test/sample)
+
+(deftest-suite :sample sample-basic-test
+  (testing "サンプル基本テスト"
+    (ok t "常に成功")))
+
+(deftest-suite (:sample :number) sample-number-test
+  (testing "サンプル数値テスト"
+    (ok (= 1 1) "1は1と等しい")
+    (ok (> 2 1) "2は1より大きい")))
+
+(deftest-suite (:sample :string) sample-string-test
+  (testing "サンプル文字列テスト"
+    (ok (stringp "hello world") "文字列は文字列型")
+    (ok (string= "hello" "hello") "文字列が等しい")))
+```
+
+---
+
+## 3. Roveアサーション
+
+clailsはRoveのアサーション関数を使用します：
+
+### ok - 式が真であることをアサート
 
 ```common-lisp
 (ok (= 2 (+ 1 1))
     "1 + 1は2と等しい")
 ```
 
-#### `ng` - 式が偽であることをアサート
+### ng - 式が偽であることをアサート
 
 ```common-lisp
-(ng (= 3 (+ 1 1))
-    "1 + 1は3と等しくない")
+(ng (string= "hello" "world")
+    "文字列は等しくない")
 ```
 
-#### `signals` - コードがエラーをシグナルすることをアサート
+### signals - コードがエラーをシグナルすることをアサート
 
 ```common-lisp
-(ok (signals
-      (error "テストエラー"))
+(ok (signals (error "テストエラー"))
     "エラーをシグナルする")
 ```
 
-### セットアップとティアダウン
-
-テストの初期化とクリーンアップには `setup` と `teardown` を使用します：
+### testing - 関連するアサーションをグループ化
 
 ```common-lisp
-(setup
-  ;; 初期化コード
-  (initialize-database)
-  (seed-test-data))
-
-(teardown
-  ;; クリーンアップコード
-  (cleanup-database))
-
-(deftest my-test
-  ;; テストはsetupとteardownの間で実行されます
-  (ok (test-something)))
+(testing "ユーザー作成"
+  (ok (create-user "Alice"))
+  (ok (find-user-by-name "Alice")))
 ```
 
 ---
 
-## 3. テストの実行
-
-### 前提条件
-
-テストを実行する前に、以下がインストールされていることを確認してください：
-
-- DockerとDocker Compose
-- Makeユーティリティ
+## 4. テストの実行
 
 ### すべてのテストを実行
 
-すべてのテストをビルドして実行：
+プロジェクトディレクトリから：
 
 ```bash
-make test.build
-make test
+clails test
 ```
 
-これにより：
-1. テストDockerイメージをビルド
-2. データベースコンテナ（MySQL、PostgreSQL、SQLite3）を起動
-3. qlotで依存関係をインストール
-4. Roveを使用してすべてのテストを実行
+これにより、アプリケーション内のすべてのテストが実行されます。
 
-### テスト環境のクリーンアップ
+### パッケージでテストを実行
 
-テストコンテナとイメージをクリーンアップ：
+特定のパッケージのテストを実行：
 
 ```bash
-make test.down    # データベースコンテナを停止
-make test.clean   # コンテナとボリュームを削除
+clails test your-app-test/models/user
+clails test your-app-test/controllers/user-controller
+```
+
+複数のパッケージ：
+
+```bash
+clails test your-app-test/models/user your-app-test/models/post
+```
+
+### タグでテストを実行
+
+特定のタグを持つすべてのテストを実行：
+
+```bash
+clails test --tag model
+```
+
+複数のタグでテストを実行：
+
+```bash
+clails test --tag model --tag validation
+```
+
+### タグでテストを除外
+
+遅いテストや特定のテストを除外：
+
+```bash
+clails test --exclude slow
+clails test --exclude integration
+```
+
+### フィルタの組み合わせ
+
+パッケージとタグのフィルタを組み合わせることができます：
+
+```bash
+clails test your-app-test/models --tag validation
+clails test --tag model --exclude slow
 ```
 
 ---
 
-## 4. モデルのテスト
+## 5. テスト検索とリスト表示
 
-モデルテストは通常、データベース操作を伴い、データベースのセットアップが必要です。
+### 利用可能なすべてのタグをリスト表示
+
+```bash
+clails test --list-tags
+```
+
+出力：
+```
+Available tags:
+  :CONTROLLER
+  :MODEL
+  :SAMPLE
+  :STRING
+  :NUMBER
+  :VALIDATION
+```
+
+### すべてのテストパッケージをリスト表示
+
+```bash
+clails test --list-packages
+```
+
+出力：
+```
+Available packages:
+  YOUR-APP-TEST/SAMPLE
+  YOUR-APP-TEST/MODELS/USER
+  YOUR-APP-TEST/CONTROLLERS/USER-CONTROLLER
+```
+
+### 特定のタグを持つテストをリスト表示
+
+```bash
+clails test --list-tests-tag model
+```
+
+出力：
+```
+Tests with tag :MODEL:
+  TEST-USER-CREATION (YOUR-APP-TEST/MODELS/USER)
+  TEST-USER-VALIDATION (YOUR-APP-TEST/MODELS/USER)
+  TEST-POST-CREATION (YOUR-APP-TEST/MODELS/POST)
+```
+
+### 特定のパッケージ内のテストをリスト表示
+
+```bash
+clails test --list-tests-pkg your-app-test/models/user
+```
+
+出力：
+```
+Tests in package YOUR-APP-TEST/MODELS/USER:
+  TEST-USER-CREATION [:MODEL]
+  TEST-USER-VALIDATION [:MODEL :VALIDATION]
+```
+
+---
+
+## 6. テストの生成
+
+### モデルテストの生成
+
+モデルを生成すると、対応するテストファイルが作成されます：
+
+```bash
+clails generate:model user
+```
+
+これにより以下が作成されます：
+- `app/models/user.lisp` - モデルファイル
+- `test/models/user.lisp` - テストファイル
+
+生成されたテストファイル：
+
+```common-lisp
+(in-package #:cl-user)
+(defpackage #:your-app-test/models/user
+  (:use #:cl
+        #:rove
+        #:clails/test))
+(in-package #:your-app-test/models/user)
+
+(deftest-suite :model test-user-model
+  (testing "Test user model"
+    (ok (= 1 0) "This test should be replaced with actual test")))
+```
+
+### コントローラーテストの生成
+
+コントローラーを生成する場合：
+
+```bash
+clails generate:controller user
+```
+
+これにより以下が作成されます：
+- `app/controllers/user-controller.lisp` - コントローラーファイル
+- `test/controllers/user-controller.lisp` - テストファイル
+
+---
+
+## 7. モデルのテスト
 
 ### モデルテストの例
 
 ```common-lisp
 (in-package #:cl-user)
-(defpackage #:clails-test/model/save
+(defpackage #:your-app-test/models/user
   (:use #:cl
         #:rove
-        #:clails/model/query)
-  (:import-from #:clails/model/base-model
-                #:<base-model>
-                #:defmodel
-                #:ref
-                #:save
-                #:destroy))
+        #:clails/test
+        #:your-app/models/user))
+(in-package #:your-app-test/models/user)
 
-(in-package #:clails-test/model/save)
-
-(setup
-  ;; テストモデルを定義
-  (defmodel <user> (<base-model>)
-    (:table "users"))
-  
-  ;; データベースを初期化
-  (initialize-database)
-  (migrate-database))
-
-(teardown
-  (cleanup-database))
-
-(deftest save-record-test
-  (testing "新しいレコードの保存"
-    (let ((user (make-record '<user> :name "John")))
+(deftest-suite :model test-user-save
+  (testing "新しいユーザーを保存"
+    (let ((user (make-record '<user> 
+                  :name "Alice"
+                  :email "alice@example.com")))
       (ok (save user)
-          "正常に保存される")
+          "ユーザーが正常に保存される")
       (ok (ref user :id)
-          "保存後にレコードがIDを持つ"))))
-```
+          "保存後にユーザーがIDを持つ")
+      (ok (string= (ref user :name) "Alice")
+          "ユーザー名が保持される"))))
 
-### データベース設定
+(deftest-suite (:model :query) test-user-query
+  (testing "ユーザーをクエリ"
+    (let ((users (execute-query 
+                   (query <user>
+                          :as :user
+                          :where (:= (:user :name) :name))
+                   '(:name "Alice"))))
+      (ok (> (length users) 0)
+          "Aliceという名前のユーザーが見つかった"))))
 
-環境変数を使用して、異なるデータベース用にテストを設定できます：
-
-```common-lisp
-(setf clails/environment:*database-type* 
-      (make-instance 'clails/environment::<database-type-mysql>))
-
-(setf clails/environment:*database-config* 
-      `(:test (:database-name ,(env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
-               :username ,(env-or-default "CLAILS_MYSQL_USERNAME" "root")
-               :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
-               :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
-               :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
+(deftest-suite (:model :validation) test-user-validation
+  (testing "ユーザーバリデーション"
+    (let ((user (make-record '<user> :name "" :email "")))
+      (ng (save user)
+          "空の名前とメールは失敗する")
+      (ok (has-error-p user)
+          "ユーザーにバリデーションエラーがある")
+      (ok (ref-error user :name)
+          "名前エラーが設定されている")
+      (ok (ref-error user :email)
+          "メールエラーが設定されている"))))
 ```
 
 ---
 
-## 5. コントローラーのテスト
-
-コントローラーテストは、リクエスト処理、パラメータ処理、レスポンス生成を検証します。
+## 8. コントローラーのテスト
 
 ### コントローラーテストの例
 
 ```common-lisp
 (in-package #:cl-user)
-(defpackage #:clails-test/controller/base-controller
+(defpackage #:your-app-test/controllers/user-controller
   (:use #:cl
         #:rove
-        #:clails/controller/base-controller))
+        #:clails/test))
+(in-package #:your-app-test/controllers/user-controller)
 
-(in-package #:clails-test/controller/base-controller)
-
-(defclass <test-controller> (<base-controller>)
-  ())
-
-(deftest path-matching-test
-  (testing "ルートパスにマッチ"
-    (let ((result (match-path "/")))
-      (ok result
-          "ルートパスにマッチする")))
-  
-  (testing "パラメータ付きパスにマッチ"
-    (let ((result (match-path "/users/123")))
-      (ok result
-          "パラメータ付きパスにマッチする")
-      (ok (string= (getf result :id) "123")
-          "パラメータを正しく抽出する"))))
+(deftest-suite :controller test-user-controller-list
+  (testing "ユーザーをリスト表示"
+    ;; コントローラーロジックをテスト
+    (ok t "コントローラーテストのプレースホルダー")))
 ```
 
 ---
 
-## 6. ビューのテスト
+## 9. テスト整理のベストプラクティス
 
-ビューテストは、テンプレートの解析、コンパイル、レンダリングを検証します。
+### タグでテストを整理
 
-### ビューテストの例
+タグを使用してテストを分類します：
+
+- `:model` - モデル/データベーステスト
+- `:controller` - コントローラーテスト
+- `:view` - ビューレンダリングテスト
+- `:integration` - 統合テスト
+- `:unit` - ユニットテスト
+- `:slow` - 実行速度が遅いテスト
+- `:validation` - バリデーションテスト
+
+### タグの使用例
+
+```common-lisp
+;; ユニットテスト - 高速、分離
+(deftest-suite (:model :unit) test-user-name-formatting
+  (testing "ユーザー名をフォーマット"
+    (ok (string= (format-name "alice") "Alice"))))
+
+;; 統合テスト - 遅い、データベースを使用
+(deftest-suite (:model :integration) test-user-with-posts
+  (testing "投稿を持つユーザー"
+    (let ((user (find-user-by-id 1)))
+      (ok (> (length (ref user :posts)) 0)))))
+
+;; 遅いテスト - 高速実行時に除外するためのマーク
+(deftest-suite (:model :slow) test-bulk-user-creation
+  (testing "1000人のユーザーを作成"
+    (ok (create-many-users 1000))))
+```
+
+### 推奨されるテストファイル構造
 
 ```common-lisp
 (in-package #:cl-user)
-(defpackage #:clails-test/view/renderer
+(defpackage #:your-app-test/models/user
   (:use #:cl
         #:rove
-        #:clails/view/renderer))
+        #:clails/test
+        #:your-app/models/user))
+(in-package #:your-app-test/models/user)
 
-(in-package #:clails-test/view/renderer)
+;; セットアップ - テスト前に実行
+(setup
+  ;; テストデータ、データベースなどを初期化
+  )
 
-(deftest render-template-test
-  (testing "シンプルなテンプレートのレンダリング"
-    (let ((result (render-string "<p>Hello, <%= name %>!</p>"
-                                  :name "World")))
-      (ok (string= result "<p>Hello, World!</p>")
-          "変数を含むテンプレートをレンダリングする"))))
+;; ティアダウン - テスト後に実行
+(teardown
+  ;; テストデータをクリーンアップ
+  )
+
+;; 機能ごとにグループ化されたテスト
+(deftest-suite :model test-user-creation
+  ...)
+
+(deftest-suite :model test-user-update
+  ...)
+
+(deftest-suite :model test-user-deletion
+  ...)
+
+(deftest-suite (:model :validation) test-user-validation
+  ...)
 ```
 
 ---
 
-## 7. ヘルパーのテスト
+## 10. テストローダー設定
 
-ヘルパーテストは、ユーティリティ関数とヘルパーメソッドを検証します。
-
-### ヘルパーテストの例
+`test/test-loader.lisp`ファイルは、すべてのテストモジュールがロードされることを保証します：
 
 ```common-lisp
 (in-package #:cl-user)
-(defpackage #:clails-test/helper/date-helper
-  (:use #:cl
-        #:rove
-        #:clails/helper/date-helper))
-
-(in-package #:clails-test/helper/date-helper)
-
-(deftest datetime-format-test
-  (let ((ut (encode-universal-time 45 34 13 02 01 1998)))
-    (ok (string= (view/datetime ut)
-                 "1998/01/02 13:34:45")
-        "デフォルトフォーマットで日時をフォーマットする")
-    
-    (ok (string= (view/datetime ut :fmt "%Y")
-                 "1998")
-        "カスタムフォーマットで日時をフォーマットする")))
+(defpackage #:your-app-test/test-loader
+  (:use #:cl)
+  (:import-from #:your-app-test/sample)
+  (:import-from #:your-app-test/models/user)
+  (:import-from #:your-app-test/controllers/user-controller))
+(in-package #:your-app-test/test-loader)
 ```
+
+**重要**: テストを実行する際にロードされるように、作成した新しいテストファイルごとにインポートを追加してください。
 
 ---
 
-## 8. エンドツーエンド（E2E）テスト
+## 11. コマンドリファレンス
 
-E2Eテストは、完全なアプリケーションを作成してテストすることで、アプリケーション全体のワークフローを検証します。
+### clails test
 
-### E2Eテストの実行
-
-```bash
-make e2e.build   # E2Eテストイメージをビルド
-make e2e.test    # E2Eテストを実行
-make e2e.clean   # E2E環境をクリーンアップ
-```
-
-### E2Eテスト構造
-
-E2Eテストは `test/e2e/` に定義されており、以下を含みます：
-
-- `todo-app-e2e.sh` - 完全なアプリケーションを作成してテストするシェルスクリプト
-- `templates/` - テストアプリケーション用のテンプレートファイル
-
-E2Eテストは：
-1. 新しいclailsアプリケーションを作成
-2. スキャフォールディングを生成
-3. マイグレーションを作成してデータをシード
-4. アプリケーションを実行
-5. 機能を検証
-
----
-
-## 9. データベース固有のテスト
-
-### SQLite3でのテスト
+オプションのフィルタリングでテストを実行します。
 
 ```bash
-make test.sqlite3
+clails test [PACKAGES...] [OPTIONS]
 ```
 
-これによりテストデータベースに接続されたSQLite3コンソールが開きます。
+#### 引数
 
-### MySQLでのテスト
+- `PACKAGES...` - テストするパッケージ名（完全一致）
+
+#### オプション
+
+- `--tag TAG` - TAGを持つテストを含める（複数回指定可能）
+- `--exclude TAG` - TAGを持つテストを除外（複数回指定可能）
+- `--list-tags` - 利用可能なすべてのタグをリスト表示
+- `--list-packages` - 利用可能なすべてのパッケージをリスト表示
+- `--list-tests-tag TAG` - 特定のタグを持つテストをリスト表示
+- `--list-tests-pkg PKG` - 特定のパッケージ内のテストをリスト表示
+- `-h, --help` - ヘルプメッセージを表示
+
+#### 例
 
 ```bash
-make test.mysql
+# すべてのテストを実行
+clails test
+
+# 特定のパッケージでテストを実行
+clails test your-app-test/models/user
+clails test your-app-test/models/user your-app-test/models/post
+
+# 特定のタグでテストを実行
+clails test --tag model
+
+# 複数のタグでテストを実行
+clails test --tag model --tag validation
+
+# 遅いテストを除外
+clails test --exclude slow
+
+# フィルタを組み合わせる
+clails test --tag model --exclude slow
+clails test your-app-test/models --tag validation
+
+# 利用可能なタグをリスト表示
+clails test --list-tags
+
+# 利用可能なパッケージをリスト表示
+clails test --list-packages
+
+# 特定のタグを持つテストをリスト表示
+clails test --list-tests-tag model
+
+# 特定のパッケージ内のテストをリスト表示
+clails test --list-tests-pkg your-app-test/models/user
 ```
-
-これによりテストデータベースに接続されたMySQLコンソールが開きます。
-
-### PostgreSQLでのテスト
-
-```bash
-make test.postgresql
-```
-
-これによりテストデータベースに接続されたPostgreSQLコンソールが開きます。
-
----
-
-## 10. 対話型テストコンソール
-
-デバッグと対話型テストのため：
-
-```bash
-make test.console
-```
-
-これによりテストコンテナ内のbashシェルが開き、以下が可能になります：
-- 個別のテストを実行
-- テスト環境を検査
-- テストの失敗をデバッグ
-- コードを実験
-
-コンソール内で、特定のテストを実行できます：
-
-```bash
-qlot exec rove test/model/save.lisp
-```
-
----
-
-## 11. テストシステム定義
-
-テストは `clails-test.asd` で定義されています：
-
-```common-lisp
-(defsystem clails-test
-  :class :package-inferred-system
-  :pathname "test"
-  :depends-on (#:babel
-               #:clails
-               #:rove
-               #:clails-test/util
-               #:clails-test/model/impl/sqlite3
-               #:clails-test/model/impl/mysql
-               #:clails-test/model/impl/postgresql
-               #:clails-test/model/connection
-               #:clails-test/model/query
-               #:clails-test/controller/base-controller
-               #:clails-test/helper/date-helper
-               #:clails-test/view/parser
-               #:clails-test/view/compiler
-               #:clails-test/view/renderer
-               #:clails-test/logger/registry
-               #:clails-test/datetime/all
-               ;; ... その他多くのテストモジュール
-               )
-  :perform (test-op (o c)
-             (uiop:symbol-call :rove :run c)))
-```
-
-新しいテストを追加するには、`:depends-on` リストに含めます。
 
 ---
 
 ## 12. ベストプラクティス
 
-### 分離
-
-- 各テストは独立している必要があります
-- クリーンな状態を確保するために `setup` と `teardown` を使用
-- 実行順序に依存しない
-
-### 説明的なテスト名
+### 説明的なテスト名を書く
 
 ```common-lisp
 ;; 良い
-(deftest user-validation-requires-email
+(deftest-suite :model test-user-validates-email-format
   ...)
 
 ;; 不明確
-(deftest test1
+(deftest-suite :model test1
   ...)
 ```
 
-### エッジケースのテスト
-
-ハッピーパスだけでなく、以下もテスト：
-- 空の入力
-- Nil値
-- 境界条件
-- エラー条件
-
-### 意味のあるアサーションを使用
+### 意味のあるアサーションメッセージを使用
 
 ```common-lisp
 ;; 良い
-(ok (= (length users) 3)
-    "正確に3人のユーザーを返す")
+(ok (string= (ref user :name) "Alice")
+    "ユーザー名は'Alice'である")
 
 ;; 役に立たない
-(ok (= (length users) 3))
+(ok (string= (ref user :name) "Alice"))
 ```
 
-### データベーステスト
+### テストに適切にタグを付ける
 
-- トランザクションを使用して変更をロールバック
-- SQLiteデータベースには一時ディレクトリを使用
-- `teardown` でテストデータをクリーンアップ
+```common-lisp
+;; コンポーネントでタグ付け
+(deftest-suite :model ...)
+(deftest-suite :controller ...)
 
-### 外部依存関係をモック
+;; テストタイプでタグ付け
+(deftest-suite :unit ...)
+(deftest-suite :integration ...)
 
-外部サービスに依存するコンポーネントをテストする場合、以下のためにモックを検討：
-- テスト速度の向上
-- テストの信頼性の確保
-- 副作用の回避
+;; 柔軟性のために複数のタグ
+(deftest-suite (:model :validation :slow) ...)
+```
 
----
+### テストを独立させる
 
-## 13. 継続的インテグレーション
+各テストは独立して実行できる必要があります：
 
-テストはDockerを使用してCI環境で実行されるように設計されており、以下を保証します：
-- マシン間で一貫したテスト環境
-- 分離されたデータベースインスタンス
-- 再現可能なテスト結果
+```common-lisp
+;; 良い - 各テストが独自のデータを作成
+(deftest-suite :model test-user-creation
+  (let ((user (make-record '<user> :name "Test")))
+    (ok (save user))))
 
-テスト設定はdocker-composeを使用して複数のデータベースコンテナを調整し、CIパイプラインに適しています。
+(deftest-suite :model test-user-deletion
+  (let ((user (make-record '<user> :name "Test")))
+    (save user)
+    (ok (destroy user))))
+```
+
+### セットアップとティアダウンを使用
+
+初期化を共有するテストの場合：
+
+```common-lisp
+(setup
+  (clails/model/connection:startup-connection-pool)
+  (seed-test-data))
+
+(teardown
+  (clean-test-data)
+  (clails/model/connection:shutdown-connection-pool))
+```
+
+### 成功と失敗の両方のケースをテスト
+
+```common-lisp
+(deftest-suite :model test-user-validation
+  (testing "有効なユーザー"
+    (let ((user (make-record '<user> 
+                  :name "Alice" 
+                  :email "alice@example.com")))
+      (ok (save user) "有効なユーザーが保存される")))
+  
+  (testing "無効なユーザー - 空の名前"
+    (let ((user (make-record '<user> 
+                  :name "" 
+                  :email "alice@example.com")))
+      (ng (save user) "空の名前はバリデーションに失敗")))
+  
+  (testing "無効なユーザー - 無効なメール"
+    (let ((user (make-record '<user> 
+                  :name "Alice" 
+                  :email "not-an-email")))
+      (ng (save user) "無効なメールはバリデーションに失敗"))))
+```
 
 ---
 
 ## まとめ
 
-clailsテストフレームワークは以下を提供します：
+clailsはアプリケーションのための包括的なテストフレームワークを提供します：
 
-- **Rove** による表現力豊かで読みやすいテスト
-- **Dockerベース** の環境による一貫性
-- **マルチデータベース** サポートによる包括的なテスト
-- **Makeコマンド** による簡単なテスト実行
-- **E2Eテスト** による完全なアプリケーション検証
-- **対話型コンソール** によるデバッグ
+- **deftest-suite** - 簡単なフィルタリングのためのタグ付きテストを定義
+- **clails test** - 柔軟なフィルタリングオプションでテストを実行
+- **タグとパッケージ** - 効率的な実行のためにテストを整理
+- **自動生成** - モデルとコントローラーと共にテストファイルを生成
+- **Rove統合** - 使い慣れたRoveアサーションと構文を使用
 
-これらのガイドラインとパターンに従うことで、clailsアプリケーションの品質と信頼性を保証する効果的なテストを書くことができます。
+このガイドとベストプラクティスに従うことで、clailsアプリケーションの品質と信頼性を保証する効果的なテストを書くことができます。

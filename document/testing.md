@@ -2,482 +2,649 @@
 
 ## Overview
 
-The clails testing framework uses **Rove**, a Common Lisp testing framework that provides simple and expressive test syntax.
-Tests are organized by component (model, controller, view, helper, etc.) and can be run using Docker-based environments that support multiple databases.
+This guide explains how to write and run tests for applications built with clails.
+clails provides a testing framework based on **Rove** with additional features like tags and package filtering to organize and run your tests efficiently.
 
 ## Basic Concepts
 
-- Tests use the Rove testing framework
-- Test files mirror the source code structure (e.g., `test/model/` for model tests)
-- Tests support multiple database backends (SQLite3, MySQL, PostgreSQL)
-- Docker-based test environments ensure consistency and isolation
-- Makefile commands simplify test execution
+- Tests use the **Rove** testing framework with clails extensions
+- Tests are defined using `deftest-suite` macro which supports tagging
+- Tests can be filtered and run by tags or packages
+- Use the `clails test` command to run tests in your application
+- Test files are organized in the `test/` directory, mirroring your application structure
 
 ---
 
-## 1. Test Structure
+## 1. Test Project Structure
 
-### File Organization
-
-Tests are organized in the `test/` directory with the same structure as the source code:
+When you create a new clails project, the test structure is automatically generated:
 
 ```
-test/
-├── controller/         # Controller tests
-├── helper/             # Helper function tests
-├── model/              # Model and database tests
-├── view/               # View template tests
-├── datetime/           # DateTime utility tests
-├── logger/             # Logger tests
-├── e2e/                # End-to-end integration tests
-└── util.lisp           # Test utilities
+your-app/
+├── app/
+│   ├── controllers/
+│   ├── models/
+│   └── views/
+├── test/
+│   ├── controllers/      # Controller tests
+│   ├── models/           # Model tests
+│   ├── views/            # View tests
+│   ├── sample.lisp       # Sample test file
+│   └── test-loader.lisp  # Test loader configuration
+├── your-app.asd          # Application system definition
+└── your-app-test.asd     # Test system definition
 ```
 
-### Test File Naming
+### Test System Definition
 
-Test files follow the same naming as the source files they test:
+The test system is defined in `your-app-test.asd`:
 
-- Source: `src/model/query.lisp` → Test: `test/model/query.lisp`
-- Source: `src/helper/date-helper.lisp` → Test: `test/helper/date-helper.lisp`
+```common-lisp
+(defsystem your-app-test
+  :class :package-inferred-system
+  :pathname "test"
+  :depends-on ("clails"
+               "rove"
+               "your-app"
+               "your-app-test/test-loader")
+  :perform (test-op (o c)
+             (uiop:symbol-call :rove :run c)))
+```
 
 ---
 
-## 2. Writing Tests with Rove
+## 2. Writing Tests
 
-### Basic Test Structure
+### Basic Test Structure with deftest-suite
+
+clails extends Rove with the `deftest-suite` macro, which allows you to tag tests:
 
 ```common-lisp
 (in-package #:cl-user)
-(defpackage #:your-app-test/component-name
+(defpackage #:your-app-test/models/user
   (:use #:cl
         #:rove
-        #:your-app/component-name))
+        #:clails/test))
+(in-package #:your-app-test/models/user)
 
-(in-package #:your-app-test/component-name)
+(deftest-suite :model test-user-creation
+  (testing "Create a new user"
+    (let ((user (make-record '<user> :name "Alice")))
+      (ok (save user) "User saved successfully")
+      (ok (ref user :id) "User has an ID after save"))))
 
-(deftest test-name
-  (testing "description of test case"
-    (ok (= 1 1)
-        "1 equals 1")
-    (ng (= 1 2)
-        "1 does not equal 2")))
+(deftest-suite (:model :validation) test-user-validation
+  (testing "User validation"
+    (let ((user (make-record '<user> :name "")))
+      (ok (not (save user)) "Empty name should fail validation")
+      (ok (has-error-p user) "User should have validation errors"))))
 ```
 
-### Rove Assertions
+### deftest-suite Syntax
 
-Rove provides several assertion functions:
+```common-lisp
+(deftest-suite tags test-name
+  body...)
+```
 
-#### `ok` - Assert that expression is truthy
+- **tags**: A single keyword (`:model`) or list of keywords (`(:model :validation)`)
+- **test-name**: Symbol naming the test
+- **body**: Test code using Rove assertions
+
+### Sample Test File
+
+When you create a new project, a sample test file is generated at `test/sample.lisp`:
+
+```common-lisp
+(in-package #:cl-user)
+(defpackage #:your-app-test/sample
+  (:use #:cl
+        #:rove
+        #:clails/test))
+(in-package #:your-app-test/sample)
+
+(deftest-suite :sample sample-basic-test
+  (testing "Sample basic test"
+    (ok t "Always passes")))
+
+(deftest-suite (:sample :number) sample-number-test
+  (testing "Sample number test"
+    (ok (= 1 1) "1 equals 1")
+    (ok (> 2 1) "2 is greater than 1")))
+
+(deftest-suite (:sample :string) sample-string-test
+  (testing "Sample string test"
+    (ok (stringp "hello world") "String is a string")
+    (ok (string= "hello" "hello") "Strings are equal")))
+```
+
+---
+
+## 3. Rove Assertions
+
+clails uses Rove's assertion functions:
+
+### ok - Assert that expression is truthy
 
 ```common-lisp
 (ok (= 2 (+ 1 1))
     "1 + 1 equals 2")
 ```
 
-#### `ng` - Assert that expression is falsy
+### ng - Assert that expression is falsy
 
 ```common-lisp
-(ng (= 3 (+ 1 1))
-    "1 + 1 does not equal 3")
+(ng (string= "hello" "world")
+    "Strings are not equal")
 ```
 
-#### `signals` - Assert that code signals an error
+### signals - Assert that code signals an error
 
 ```common-lisp
-(ok (signals
-      (error "test error"))
-    "signals an error")
+(ok (signals (error "test error"))
+    "Should signal an error")
 ```
 
-### Setup and Teardown
-
-Use `setup` and `teardown` for test initialization and cleanup:
+### testing - Group related assertions
 
 ```common-lisp
-(setup
-  ;; Initialization code
-  (initialize-database)
-  (seed-test-data))
-
-(teardown
-  ;; Cleanup code
-  (cleanup-database))
-
-(deftest my-test
-  ;; Test runs between setup and teardown
-  (ok (test-something)))
+(testing "User creation"
+  (ok (create-user "Alice"))
+  (ok (find-user-by-name "Alice")))
 ```
 
 ---
 
-## 3. Running Tests
+## 4. Running Tests
 
-### Prerequisites
+### Run All Tests
 
-Before running tests, ensure you have:
-
-- Docker and Docker Compose installed
-- Make utility installed
-
-### Running All Tests
-
-Build and run all tests:
+From your project directory:
 
 ```bash
-make test.build
-make test
+clails test
 ```
 
-This will:
-1. Build the test Docker image
-2. Start database containers (MySQL, PostgreSQL, SQLite3)
-3. Install dependencies with qlot
-4. Run all tests using Rove
+This runs all tests in your application.
 
-### Cleaning Test Environment
+### Run Tests by Package
 
-Clean up test containers and images:
+Run tests for specific packages:
 
 ```bash
-make test.down    # Stop database containers
-make test.clean   # Remove containers and volumes
+clails test your-app-test/models/user
+clails test your-app-test/controllers/user-controller
+```
+
+Multiple packages:
+
+```bash
+clails test your-app-test/models/user your-app-test/models/post
+```
+
+### Run Tests by Tag
+
+Run all tests with a specific tag:
+
+```bash
+clails test --tag model
+```
+
+Run tests with multiple tags:
+
+```bash
+clails test --tag model --tag validation
+```
+
+### Exclude Tests by Tag
+
+Exclude slow or specific tests:
+
+```bash
+clails test --exclude slow
+clails test --exclude integration
+```
+
+### Combine Filters
+
+You can combine package and tag filters:
+
+```bash
+clails test your-app-test/models --tag validation
+clails test --tag model --exclude slow
 ```
 
 ---
 
-## 4. Testing Models
+## 5. Test Discovery and Listing
 
-Model tests typically involve database operations and require database setup.
+### List All Available Tags
+
+```bash
+clails test --list-tags
+```
+
+Output:
+```
+Available tags:
+  :CONTROLLER
+  :MODEL
+  :SAMPLE
+  :STRING
+  :NUMBER
+  :VALIDATION
+```
+
+### List All Test Packages
+
+```bash
+clails test --list-packages
+```
+
+Output:
+```
+Available packages:
+  YOUR-APP-TEST/SAMPLE
+  YOUR-APP-TEST/MODELS/USER
+  YOUR-APP-TEST/CONTROLLERS/USER-CONTROLLER
+```
+
+### List Tests with Specific Tag
+
+```bash
+clails test --list-tests-tag model
+```
+
+Output:
+```
+Tests with tag :MODEL:
+  TEST-USER-CREATION (YOUR-APP-TEST/MODELS/USER)
+  TEST-USER-VALIDATION (YOUR-APP-TEST/MODELS/USER)
+  TEST-POST-CREATION (YOUR-APP-TEST/MODELS/POST)
+```
+
+### List Tests in Specific Package
+
+```bash
+clails test --list-tests-pkg your-app-test/models/user
+```
+
+Output:
+```
+Tests in package YOUR-APP-TEST/MODELS/USER:
+  TEST-USER-CREATION [:MODEL]
+  TEST-USER-VALIDATION [:MODEL :VALIDATION]
+```
+
+---
+
+## 6. Generating Tests
+
+### Generate Model Test
+
+When you generate a model, a corresponding test file is created:
+
+```bash
+clails generate:model user
+```
+
+This creates:
+- `app/models/user.lisp` - Model file
+- `test/models/user.lisp` - Test file
+
+The generated test file:
+
+```common-lisp
+(in-package #:cl-user)
+(defpackage #:your-app-test/models/user
+  (:use #:cl
+        #:rove
+        #:clails/test))
+(in-package #:your-app-test/models/user)
+
+(deftest-suite :model test-user-model
+  (testing "Test user model"
+    (ok (= 1 0) "This test should be replaced with actual test")))
+```
+
+### Generate Controller Test
+
+When you generate a controller:
+
+```bash
+clails generate:controller user
+```
+
+This creates:
+- `app/controllers/user-controller.lisp` - Controller file
+- `test/controllers/user-controller.lisp` - Test file
+
+---
+
+## 7. Testing Models
 
 ### Example Model Test
 
 ```common-lisp
 (in-package #:cl-user)
-(defpackage #:clails-test/model/save
+(defpackage #:your-app-test/models/user
   (:use #:cl
         #:rove
-        #:clails/model/query)
-  (:import-from #:clails/model/base-model
-                #:<base-model>
-                #:defmodel
-                #:ref
-                #:save
-                #:destroy))
+        #:clails/test
+        #:your-app/models/user))
+(in-package #:your-app-test/models/user)
 
-(in-package #:clails-test/model/save)
-
-(setup
-  ;; Define test models
-  (defmodel <user> (<base-model>)
-    (:table "users"))
-  
-  ;; Initialize database
-  (initialize-database)
-  (migrate-database))
-
-(teardown
-  (cleanup-database))
-
-(deftest save-record-test
-  (testing "saving a new record"
-    (let ((user (make-record '<user> :name "John")))
+(deftest-suite :model test-user-save
+  (testing "Save a new user"
+    (let ((user (make-record '<user> 
+                  :name "Alice"
+                  :email "alice@example.com")))
       (ok (save user)
-          "saves successfully")
+          "User saves successfully")
       (ok (ref user :id)
-          "record has an ID after save"))))
-```
+          "User has ID after save")
+      (ok (string= (ref user :name) "Alice")
+          "User name is preserved"))))
 
-### Database Configuration
+(deftest-suite (:model :query) test-user-query
+  (testing "Query users"
+    (let ((users (execute-query 
+                   (query <user>
+                          :as :user
+                          :where (:= (:user :name) :name))
+                   '(:name "Alice"))))
+      (ok (> (length users) 0)
+          "Found users with name Alice"))))
 
-Tests can be configured for different databases using environment variables:
-
-```common-lisp
-(setf clails/environment:*database-type* 
-      (make-instance 'clails/environment::<database-type-mysql>))
-
-(setf clails/environment:*database-config* 
-      `(:test (:database-name ,(env-or-default "CLAILS_MYSQL_DATABASE" "clails_test")
-               :username ,(env-or-default "CLAILS_MYSQL_USERNAME" "root")
-               :password ,(env-or-default "CLAILS_MYSQL_PASSWORD" "password")
-               :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
-               :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
+(deftest-suite (:model :validation) test-user-validation
+  (testing "User validation"
+    (let ((user (make-record '<user> :name "" :email "")))
+      (ng (save user)
+          "Empty name and email should fail")
+      (ok (has-error-p user)
+          "User has validation errors")
+      (ok (ref-error user :name)
+          "Name error is set")
+      (ok (ref-error user :email)
+          "Email error is set"))))
 ```
 
 ---
 
-## 5. Testing Controllers
-
-Controller tests verify request handling, parameter processing, and response generation.
+## 8. Testing Controllers
 
 ### Example Controller Test
 
 ```common-lisp
 (in-package #:cl-user)
-(defpackage #:clails-test/controller/base-controller
+(defpackage #:your-app-test/controllers/user-controller
   (:use #:cl
         #:rove
-        #:clails/controller/base-controller))
+        #:clails/test))
+(in-package #:your-app-test/controllers/user-controller)
 
-(in-package #:clails-test/controller/base-controller)
-
-(defclass <test-controller> (<base-controller>)
-  ())
-
-(deftest path-matching-test
-  (testing "matches root path"
-    (let ((result (match-path "/")))
-      (ok result
-          "matches root path")))
-  
-  (testing "matches parameterized path"
-    (let ((result (match-path "/users/123")))
-      (ok result
-          "matches path with parameter")
-      (ok (string= (getf result :id) "123")
-          "extracts parameter correctly"))))
+(deftest-suite :controller test-user-controller-list
+  (testing "List users"
+    ;; Test controller logic
+    (ok t "Controller test placeholder")))
 ```
 
 ---
 
-## 6. Testing Views
+## 9. Test Organization Best Practices
 
-View tests verify template parsing, compilation, and rendering.
+### Organize Tests by Tags
 
-### Example View Test
+Use tags to categorize your tests:
+
+- `:model` - Model/database tests
+- `:controller` - Controller tests
+- `:view` - View rendering tests
+- `:integration` - Integration tests
+- `:unit` - Unit tests
+- `:slow` - Slow-running tests
+- `:validation` - Validation tests
+
+### Example Tag Usage
+
+```common-lisp
+;; Unit test - fast, isolated
+(deftest-suite (:model :unit) test-user-name-formatting
+  (testing "Format user name"
+    (ok (string= (format-name "alice") "Alice"))))
+
+;; Integration test - slower, uses database
+(deftest-suite (:model :integration) test-user-with-posts
+  (testing "User with posts"
+    (let ((user (find-user-by-id 1)))
+      (ok (> (length (ref user :posts)) 0)))))
+
+;; Slow test - marked for exclusion in quick runs
+(deftest-suite (:model :slow) test-bulk-user-creation
+  (testing "Create 1000 users"
+    (ok (create-many-users 1000))))
+```
+
+### Recommended Test File Structure
 
 ```common-lisp
 (in-package #:cl-user)
-(defpackage #:clails-test/view/renderer
+(defpackage #:your-app-test/models/user
   (:use #:cl
         #:rove
-        #:clails/view/renderer))
+        #:clails/test
+        #:your-app/models/user))
+(in-package #:your-app-test/models/user)
 
-(in-package #:clails-test/view/renderer)
+;; Setup - runs before tests
+(setup
+  ;; Initialize test data, database, etc.
+  )
 
-(deftest render-template-test
-  (testing "renders simple template"
-    (let ((result (render-string "<p>Hello, <%= name %>!</p>"
-                                  :name "World")))
-      (ok (string= result "<p>Hello, World!</p>")
-          "renders template with variables"))))
+;; Teardown - runs after tests
+(teardown
+  ;; Clean up test data
+  )
+
+;; Tests grouped by functionality
+(deftest-suite :model test-user-creation
+  ...)
+
+(deftest-suite :model test-user-update
+  ...)
+
+(deftest-suite :model test-user-deletion
+  ...)
+
+(deftest-suite (:model :validation) test-user-validation
+  ...)
 ```
 
 ---
 
-## 7. Testing Helpers
+## 10. Test Loader Configuration
 
-Helper tests verify utility functions and helper methods.
-
-### Example Helper Test
+The `test/test-loader.lisp` file ensures all test modules are loaded:
 
 ```common-lisp
 (in-package #:cl-user)
-(defpackage #:clails-test/helper/date-helper
-  (:use #:cl
-        #:rove
-        #:clails/helper/date-helper))
-
-(in-package #:clails-test/helper/date-helper)
-
-(deftest datetime-format-test
-  (let ((ut (encode-universal-time 45 34 13 02 01 1998)))
-    (ok (string= (view/datetime ut)
-                 "1998/01/02 13:34:45")
-        "formats datetime with default format")
-    
-    (ok (string= (view/datetime ut :fmt "%Y")
-                 "1998")
-        "formats datetime with custom format")))
+(defpackage #:your-app-test/test-loader
+  (:use #:cl)
+  (:import-from #:your-app-test/sample)
+  (:import-from #:your-app-test/models/user)
+  (:import-from #:your-app-test/controllers/user-controller))
+(in-package #:your-app-test/test-loader)
 ```
+
+**Important**: Add imports for each new test file you create to ensure they are loaded when running tests.
 
 ---
 
-## 8. End-to-End (E2E) Testing
+## 11. Command Reference
 
-E2E tests verify complete application workflows by creating and testing a full application.
+### clails test
 
-### Running E2E Tests
-
-```bash
-make e2e.build   # Build E2E test image
-make e2e.test    # Run E2E tests
-make e2e.clean   # Clean up E2E environment
-```
-
-### E2E Test Structure
-
-E2E tests are defined in `test/e2e/` and include:
-
-- `todo-app-e2e.sh` - Shell script that creates and tests a complete application
-- `templates/` - Template files for the test application
-
-The E2E test:
-1. Creates a new clails application
-2. Generates scaffolding
-3. Creates migrations and seeds data
-4. Runs the application
-5. Verifies functionality
-
----
-
-## 9. Database-Specific Testing
-
-### Testing with SQLite3
+Run tests with optional filtering.
 
 ```bash
-make test.sqlite3
+clails test [PACKAGES...] [OPTIONS]
 ```
 
-This opens an SQLite3 console connected to the test database.
+#### Arguments
 
-### Testing with MySQL
+- `PACKAGES...` - Package names to test (exact match)
+
+#### Options
+
+- `--tag TAG` - Include tests with TAG (can be specified multiple times)
+- `--exclude TAG` - Exclude tests with TAG (can be specified multiple times)
+- `--list-tags` - List all available tags
+- `--list-packages` - List all available packages
+- `--list-tests-tag TAG` - List tests with specific tag
+- `--list-tests-pkg PKG` - List tests in specific package
+- `-h, --help` - Show help message
+
+#### Examples
 
 ```bash
-make test.mysql
+# Run all tests
+clails test
+
+# Run tests in specific packages
+clails test your-app-test/models/user
+clails test your-app-test/models/user your-app-test/models/post
+
+# Run tests with specific tag
+clails test --tag model
+
+# Run tests with multiple tags
+clails test --tag model --tag validation
+
+# Exclude slow tests
+clails test --exclude slow
+
+# Combine filters
+clails test --tag model --exclude slow
+clails test your-app-test/models --tag validation
+
+# List available tags
+clails test --list-tags
+
+# List available packages
+clails test --list-packages
+
+# List tests with specific tag
+clails test --list-tests-tag model
+
+# List tests in specific package
+clails test --list-tests-pkg your-app-test/models/user
 ```
-
-This opens a MySQL console connected to the test database.
-
-### Testing with PostgreSQL
-
-```bash
-make test.postgresql
-```
-
-This opens a PostgreSQL console connected to the test database.
-
----
-
-## 10. Interactive Test Console
-
-For debugging and interactive testing:
-
-```bash
-make test.console
-```
-
-This opens a bash shell inside the test container where you can:
-- Run individual tests
-- Inspect the test environment
-- Debug test failures
-- Experiment with code
-
-Inside the console, you can run specific tests:
-
-```bash
-qlot exec rove test/model/save.lisp
-```
-
----
-
-## 11. Test System Definition
-
-Tests are defined in `clails-test.asd`:
-
-```common-lisp
-(defsystem clails-test
-  :class :package-inferred-system
-  :pathname "test"
-  :depends-on (#:babel
-               #:clails
-               #:rove
-               #:clails-test/util
-               #:clails-test/model/impl/sqlite3
-               #:clails-test/model/impl/mysql
-               #:clails-test/model/impl/postgresql
-               #:clails-test/model/connection
-               #:clails-test/model/query
-               #:clails-test/controller/base-controller
-               #:clails-test/helper/date-helper
-               #:clails-test/view/parser
-               #:clails-test/view/compiler
-               #:clails-test/view/renderer
-               #:clails-test/logger/registry
-               #:clails-test/datetime/all
-               ;; ... and many other test modules
-               )
-  :perform (test-op (o c)
-             (uiop:symbol-call :rove :run c)))
-```
-
-To add new tests, include them in the `:depends-on` list.
 
 ---
 
 ## 12. Best Practices
 
-### Isolation
-
-- Each test should be independent
-- Use `setup` and `teardown` to ensure clean state
-- Don't rely on execution order
-
-### Descriptive Test Names
+### Write Descriptive Test Names
 
 ```common-lisp
 ;; Good
-(deftest user-validation-requires-email
+(deftest-suite :model test-user-validates-email-format
   ...)
 
 ;; Less clear
-(deftest test1
+(deftest-suite :model test1
   ...)
 ```
 
-### Testing Edge Cases
-
-Test not just the happy path, but also:
-- Empty inputs
-- Nil values
-- Boundary conditions
-- Error conditions
-
-### Use Meaningful Assertions
+### Use Meaningful Assertion Messages
 
 ```common-lisp
 ;; Good
-(ok (= (length users) 3)
-    "returns exactly 3 users")
+(ok (string= (ref user :name) "Alice")
+    "User name should be 'Alice'")
 
 ;; Less helpful
-(ok (= (length users) 3))
+(ok (string= (ref user :name) "Alice"))
 ```
 
-### Database Tests
+### Tag Tests Appropriately
 
-- Use transactions to rollback changes
-- Use temporary directories for SQLite databases
-- Clean up test data in `teardown`
+```common-lisp
+;; Tag by component
+(deftest-suite :model ...)
+(deftest-suite :controller ...)
 
-### Mock External Dependencies
+;; Tag by test type
+(deftest-suite :unit ...)
+(deftest-suite :integration ...)
 
-When testing components that depend on external services, consider mocking them to:
-- Improve test speed
-- Ensure test reliability
-- Avoid side effects
+;; Multiple tags for flexibility
+(deftest-suite (:model :validation :slow) ...)
+```
 
----
+### Keep Tests Independent
 
-## 13. Continuous Integration
+Each test should be able to run independently:
 
-Tests are designed to run in CI environments using Docker, ensuring:
-- Consistent test environments across machines
-- Isolated database instances
-- Reproducible test results
+```common-lisp
+;; Good - each test creates its own data
+(deftest-suite :model test-user-creation
+  (let ((user (make-record '<user> :name "Test")))
+    (ok (save user))))
 
-The test configuration uses docker-compose to orchestrate multiple database containers, making it suitable for CI pipelines.
+(deftest-suite :model test-user-deletion
+  (let ((user (make-record '<user> :name "Test")))
+    (save user)
+    (ok (destroy user))))
+```
+
+### Use Setup and Teardown
+
+For tests that share initialization:
+
+```common-lisp
+(setup
+  (clails/model/connection:startup-connection-pool)
+  (seed-test-data))
+
+(teardown
+  (clean-test-data)
+  (clails/model/connection:shutdown-connection-pool))
+```
+
+### Test Both Success and Failure Cases
+
+```common-lisp
+(deftest-suite :model test-user-validation
+  (testing "Valid user"
+    (let ((user (make-record '<user> 
+                  :name "Alice" 
+                  :email "alice@example.com")))
+      (ok (save user) "Valid user saves")))
+  
+  (testing "Invalid user - empty name"
+    (let ((user (make-record '<user> 
+                  :name "" 
+                  :email "alice@example.com")))
+      (ng (save user) "Empty name fails validation")))
+  
+  (testing "Invalid user - invalid email"
+    (let ((user (make-record '<user> 
+                  :name "Alice" 
+                  :email "not-an-email")))
+      (ng (save user) "Invalid email fails validation"))))
+```
 
 ---
 
 ## Summary
 
-The clails testing framework provides:
+clails provides a comprehensive testing framework for your applications:
 
-- **Rove** for expressive, readable tests
-- **Docker-based** environments for consistency
-- **Multi-database** support for comprehensive testing
-- **Make commands** for easy test execution
-- **E2E testing** for complete application verification
-- **Interactive console** for debugging
+- **deftest-suite** - Define tests with tags for easy filtering
+- **clails test** - Run tests with flexible filtering options
+- **Tags and packages** - Organize tests for efficient execution
+- **Auto-generation** - Test files generated with models and controllers
+- **Rove integration** - Use familiar Rove assertions and syntax
 
-By following these guidelines and patterns, you can write effective tests that ensure the quality and reliability of your clails applications.
+By following this guide and best practices, you can write effective tests that ensure the quality and reliability of your clails applications.
