@@ -35,7 +35,7 @@ When developing clails locally and testing your changes, you can configure clail
 
 Update the qlfile to specify the local path to your clails repository:
 
-```
+```text
 github fukamachi/cl-dbi
 github tamurashingo/cl-dbi-connection-pool
 github tamurashingo/getcmd
