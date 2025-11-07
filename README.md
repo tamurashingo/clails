@@ -102,27 +102,10 @@ Comprehensive guides for developing with clails:
 # example
 
 It contains instructions on how to create an application using commands:\
-https://github.com/tamurashingo/clails/wiki/create-todo-application
+~~https://github.com/tamurashingo/clails/wiki/create-todo-application~~
 
 Implementation examples for various databases, Docker, and REST:\
-https://github.com/tamurashingo/clails-sample-apps
-
-# feature
-**model**
-- [x] select from single table
-- [x] update
-- [x] insert
-- [x] delete
-- [x] select from many tables
-
-**view**
-- [x] template-based HTML rendering
-- [x] JSON rendering
-
-**controller**
-- [x] accept query parameter
-- [x] accept path parameter
-- [x] rest controller
+~~https://github.com/tamurashingo/clails-sample-apps~~
 
 
 ---
