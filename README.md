@@ -12,40 +12,29 @@ web framework inspired by Ruby on Rails
 
 clails is alpha version. so you will need to manually configure various settings.
 
-
-**clone clails**
-
 ```bash
 git clone https://github.com/tamurashingo/clails.git
-```
-
-**install dependencies**
-
-```bash
 cd clails
 qlot install
+qlot exec ros install ./roswell/clails.ros
+export PATH=$PWD/.qlot/bin:$PATH
 ```
 
-**add environment variables**
+# configuration
 
-path
+clails uses qlot to manage dependencies, including libraries not registered in Quicklisp and to reference the latest code.
 
-```bash
-export PATH=$PATH:$PWD/roswell
-```
+At runtime, clails creates a `qlfile` in the directory specified by `CLAILS_CONF_DIR` if one does not exist.
+If `CLAILS_CONF_DIR` is not specified, it uses `$HOME/.clails`.
 
-asdf's source path
-
-```bash
-export CL_SOURCE_REGISTRY=$PWD
-```
+This qlfile contains the necessary dependencies for clails to function properly.
 
 # usage
 
 ## create project
 
 ```bash
-clails.ros new project-name
+clails new project-name
 ```
 
 ## create new database
@@ -53,17 +42,17 @@ clails.ros new project-name
 execute `create database` command
 
 ```bash
-clails.ros db:create
+clails db:create
 ```
 ## migrate database
 
 ```bash
-clails.ros db:migrate:up
+clails db:migrate:up
 ```
 ## startup server
 
 ```bash
-clails.ros server
+clails server
 ```
 
 visit `http://localhost:5000/`
