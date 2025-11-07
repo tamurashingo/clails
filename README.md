@@ -12,40 +12,56 @@ web framework inspired by Ruby on Rails
 
 clails is alpha version. so you will need to manually configure various settings.
 
-
-**clone clails**
-
 ```bash
 git clone https://github.com/tamurashingo/clails.git
-```
-
-**install dependencies**
-
-```bash
 cd clails
 qlot install
+qlot exec ros install ./roswell/clails.ros
+export PATH=$PWD/.qlot/bin:$PATH
 ```
 
-**add environment variables**
+# configuration
 
-path
+clails uses qlot to manage dependencies, including libraries not registered in Quicklisp and to reference the latest code.
+
+At runtime, clails creates a `qlfile` in the directory specified by `CLAILS_CONF_DIR` if one does not exist.
+If `CLAILS_CONF_DIR` is not specified, it uses `$HOME/.clails`.
+
+This qlfile contains the necessary dependencies for clails to function properly.
+
+## development with local clails
+
+When developing clails locally and testing your changes, you can configure clails to use your local version by modifying `$CLAILS_CONF_DIR/qlfile`.
+
+Update the qlfile to specify the local path to your clails repository:
+
+```text
+github fukamachi/cl-dbi
+github tamurashingo/cl-dbi-connection-pool
+github tamurashingo/getcmd
+local clails /path/to/clails
+```
+
+After modifying the qlfile, you must delete the `.qlot` directory and `qlfile.lock` to apply the changes:
 
 ```bash
-export PATH=$PATH:$PWD/roswell
+rm -rf $CLAILS_CONF_DIR/.qlot $CLAILS_CONF_DIR/qlfile.lock
 ```
 
-asdf's source path
+Additionally, set the `CL_SOURCE_REGISTRY` environment variable to ensure the local clails is loaded:
 
 ```bash
-export CL_SOURCE_REGISTRY=$PWD
+export CL_SOURCE_REGISTRY=/path/to/clails
 ```
+
+This allows you to test local modifications to clails without reinstalling.
 
 # usage
 
 ## create project
 
 ```bash
-clails.ros new project-name
+clails new project-name
 ```
 
 ## create new database
@@ -53,17 +69,17 @@ clails.ros new project-name
 execute `create database` command
 
 ```bash
-clails.ros db:create
+clails db:create
 ```
 ## migrate database
 
 ```bash
-clails.ros db:migrate:up
+clails db:migrate:up
 ```
 ## startup server
 
 ```bash
-clails.ros server
+clails server
 ```
 
 visit `http://localhost:5000/`
@@ -86,27 +102,10 @@ Comprehensive guides for developing with clails:
 # example
 
 It contains instructions on how to create an application using commands:\
-https://github.com/tamurashingo/clails/wiki/create-todo-application
+~~https://github.com/tamurashingo/clails/wiki/create-todo-application~~
 
 Implementation examples for various databases, Docker, and REST:\
-https://github.com/tamurashingo/clails-sample-apps
-
-# feature
-**model**
-- [x] select from single table
-- [x] update
-- [x] insert
-- [x] delete
-- [x] select from many tables
-
-**view**
-- [x] template-based HTML rendering
-- [x] JSON rendering
-
-**controller**
-- [x] accept query parameter
-- [x] accept path parameter
-- [x] rest controller
+~~https://github.com/tamurashingo/clails-sample-apps~~
 
 
 ---
