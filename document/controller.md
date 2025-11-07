@@ -92,6 +92,38 @@ Override methods corresponding to each HTTP method.
     (set-redirect controller "/users")))
 ```
 
+### Sending PUT and DELETE Requests from HTML Forms
+
+HTML `<form>` tags only support `GET` and `POST` methods natively.
+To send PUT or DELETE requests from HTML forms, use the `_method` parameter.
+
+**PUT Request Example:**
+
+```html
+<form action="/users/123" method="POST">
+    <input type="hidden" name="_method" value="PUT">
+    <input type="text" name="name" value="John Doe">
+    <button type="submit">Update</button>
+</form>
+```
+
+**DELETE Request Example:**
+
+```html
+<form action="/users/123" method="POST">
+    <input type="hidden" name="_method" value="DELETE">
+    <button type="submit">Delete</button>
+</form>
+```
+
+clails checks the `_method` parameter in POST requests and routes as follows:
+
+- When `_method` is `"PUT"` → calls the `do-put` method
+- When `_method` is `"DELETE"` → calls the `do-delete` method
+- When `_method` is not specified → calls the `do-post` method
+
+This enables REST API-like operations from HTML forms.
+
 ---
 
 ## 3. Routing Configuration

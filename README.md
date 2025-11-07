@@ -92,6 +92,7 @@ you'll see
 
 Comprehensive guides for developing with clails:
 
+- **[QuickStart](document/quickstart.md)** ([日本語](document/quickstart_ja.md)) - Build your first TODO application with clails
 - **[Model Guide](document/model.md)** ([日本語](document/model_ja.md)) - Database models, queries, migrations, and ORM features
 - **[View Guide](document/view.md)** ([日本語](document/view_ja.md)) - Template engine, data binding, and HTML rendering
 - **[Controller Guide](document/controller.md)** ([日本語](document/controller_ja.md)) - Request handling, routing, and REST controllers
