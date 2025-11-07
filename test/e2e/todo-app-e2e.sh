@@ -145,6 +145,13 @@ clails stop
 
 echo ""
 echo "=== Preparing test database ==="
+
+echo "-- test-loader"
+cats test/test-loader.lisp
+echo "-- done"
+echo ""
+
+
 echo "Creating test database..."
 CLAILS_ENV=test clails db:create
 
