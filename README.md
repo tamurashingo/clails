@@ -42,6 +42,12 @@ github tamurashingo/getcmd
 local clails /path/to/clails
 ```
 
+After modifying the qlfile, you must delete the `.qlot` directory and `qlfile.lock` to apply the changes:
+
+```bash
+rm -rf $CLAILS_CONF_DIR/.qlot $CLAILS_CONF_DIR/qlfile.lock
+```
+
 Additionally, set the `CL_SOURCE_REGISTRY` environment variable to ensure the local clails is loaded:
 
 ```bash
