@@ -8,7 +8,10 @@
                 #:generate/model
                 #:generate/migration
                 #:db/create
-                #:db/migrate)
+                #:db/migrate
+                #:db/migrate-up
+                #:db/migrate-down
+                #:db/rollback)
   (:import-from #:clails/model)
   (:import-from #:clails/view)
   (:import-from #:clails/middleware)
@@ -18,6 +21,9 @@
            #:generate/model
            #:generate/migration
            #:db/create
-           #:db/migrate))
+           #:db/migrate
+           #:db/migrate-up
+           #:db/migrate-down
+           #:db/rollback))
 (in-package #:clails/main)
 

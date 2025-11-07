@@ -22,7 +22,6 @@
                "cl-ppcre"
                "cl-template"
                "clack"
-               "dbd-mysql" ;; ad hoc
                "getcmd"
                "jonathan"
                "lack"
@@ -30,6 +29,9 @@
                "local-time"
                "str"
                "quri"
-               "clails/main"))
+               "rove"
+               "clails/main"
+               "clails/test")
+  :in-order-to ((test-op (test-op "clails-test"))))
 
 

@@ -207,6 +207,153 @@ Controller から渡されたデータにアクセスするには `view` 関数�
 </table>
 ```
 
+### 構造化タグ (`<cl:xxx>`)
+
+スクリプトレットに加えて、clails はより読みやすい制御フローのための構造化 XML スタイルのタグを提供します。
+
+#### `<cl:loop>` タグ
+
+`<cl:loop>` タグは、スクリプトレットベースのループのよりクリーンな代替手段を提供します：
+
+```html
+<h2>User List</h2>
+<ul>
+  <cl:loop for="user" in="(view :users)">
+    <li>
+      <strong><%= (getf user :name) %></strong>
+      (<%= (getf user :email) %>)
+    </li>
+  </cl:loop>
+</ul>
+```
+
+属性:
+- `for` - ループ変数名
+- `in` - 反復処理するリストを返す式
+
+#### `<cl:if>` タグと `<cl:else>`
+
+`<cl:if>` タグは、オプションの else 句を持つ条件分岐レンダリングを提供します：
+
+```html
+<cl:if test="(view :is-admin)">
+  <div class="admin-panel">
+    <h2>Admin Panel</h2>
+    <p>You have admin privileges.</p>
+  </div>
+  <cl:else>
+    <div class="user-panel">
+      <h2>User Panel</h2>
+      <p>Limited access.</p>
+    </div>
+  </cl:else>
+</cl:if>
+```
+
+属性:
+- `test` - 評価する条件式
+
+#### `<cl:when>` タグ
+
+`<cl:when>` タグは、テストが true の場合のみコンテンツをレンダリングします：
+
+```html
+<cl:when test="(view :show-message)">
+  <div class="alert">
+    <%= (view :message) %>
+  </div>
+</cl:when>
+```
+
+属性:
+- `test` - 評価する条件式
+
+#### `<cl:unless>` タグ
+
+`<cl:unless>` タグは、テストが false の場合のみコンテンツをレンダリングします：
+
+```html
+<cl:unless test="(view :hide-footer)">
+  <footer>
+    <p>&copy; 2024 Your App</p>
+  </footer>
+</cl:unless>
+```
+
+属性:
+- `test` - 評価する条件式
+
+#### `<cl:cond>` タグ
+
+`<cl:cond>` タグは、複数の条件分岐をサポートします：
+
+```html
+<cl:cond>
+  <cl:when test="(> (view :score) 90)">
+    <div class="grade-a">優秀！</div>
+  </cl:when>
+  <cl:when test="(> (view :score) 70)">
+    <div class="grade-b">良好！</div>
+  </cl:when>
+  <cl:when test="(> (view :score) 50)">
+    <div class="grade-c">普通</div>
+  </cl:when>
+  <cl:otherwise>
+    <div class="grade-f">要改善</div>
+  </cl:otherwise>
+</cl:cond>
+```
+
+`<cl:otherwise>` 句はオプションで、デフォルトケースとして機能します。
+
+#### 構造化タグの複雑な例
+
+```html
+<h1>ショッピングカート</h1>
+
+<cl:if test="(view :items)">
+  <table class="cart">
+    <thead>
+      <tr>
+        <th>商品</th>
+        <th>価格</th>
+        <th>状態</th>
+      </tr>
+    </thead>
+    <tbody>
+      <cl:loop for="item" in="(view :items)">
+        <tr>
+          <td><%= (getf item :name) %></td>
+          <td>¥<%= (getf item :price) %></td>
+          <td>
+            <cl:cond>
+              <cl:when test="(getf item :in-stock)">
+                <span class="status-ok">在庫あり</span>
+              </cl:when>
+              <cl:when test="(getf item :backordered)">
+                <span class="status-warning">取り寄せ中</span>
+              </cl:when>
+              <cl:otherwise>
+                <span class="status-error">在庫切れ</span>
+              </cl:otherwise>
+            </cl:cond>
+          </td>
+        </tr>
+      </cl:loop>
+    </tbody>
+  </table>
+  
+  <cl:when test="(> (view :total) 10000)">
+    <div class="discount-notice">
+      10,000円以上のご注文で送料無料！
+    </div>
+  </cl:when>
+<cl:else>
+  <p>カートは空です。</p>
+</cl:else>
+</cl:if>
+```
+
 ---
 
 ## 4. Model データの表示

@@ -1,4 +1,5 @@
 ;; <%= (@ current-datetime ) %> : add <%= (@ name ) %> controller
-(push '(:path "/<%= (@ name) %>"
-        :controller "<%= (@ project-name ) %>/controllers/<%= (@ name ) %>-controller:<<%= (@ name) %>-controller>")
-      clails/environment:*routing-tables*)
+(setf clails/environment:*routing-tables*
+      (append clails/environment:*routing-tables*
+              '((:path "/<%= (@ name) %>"
+                 :controller "<%= (@ project-name ) %>/controllers/<%= (@ name ) %>-controller:<<%= (@ name) %>-controller>"))))

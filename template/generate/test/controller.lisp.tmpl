@@ -1,0 +1,11 @@
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>-test/controllers/<%= (@ name ) %>-controller
+  (:use #:cl
+        #:rove
+        #:clails/test))
+(in-package #:<%= (@ project-name ) %>-test/controllers/<%= (@ name ) %>-controller)
+
+(deftest-suite :controller test-<%= (@ name ) %>-controller
+  (testing "Test <%= (@ name ) %> controller"
+    (ok (= 1 0) "This test should be replaced with actual test")))

@@ -8,7 +8,11 @@
                 #:kebab->snake)
   (:import-from #:clails/model/connection
                 #:with-db-connection-direct
-                #:with-db-connection)
+                #:with-db-connection
+                #:startup-connection-pool
+                #:shutdown-connection-pool)
+  (:import-from #:clails/model/base-model
+                #:initialize-table-information)
   (:import-from #:clails/logger
                 #:log.sql)
   (:export #:defmigration
@@ -26,7 +30,11 @@
            #:drop-index-impl
            #:db-create
            #:db-migrate
-           #:check-type-valid))
+           #:migrate-up-version
+           #:migrate-down-version
+           #:db-rollback
+           #:check-type-valid
+           #:db-seed))
 (in-package #:clails/model/migration)
 
 ;;; migration list
@@ -68,7 +76,7 @@
 ;;;
 (defmacro defmigration (migration-name body)
   "Define a database migration with up and down functions.
-   
+
    @param migration-name [string] Unique name for this migration
    @param body [plist] Property list with :up and :down function specifications
    "
@@ -113,9 +121,9 @@
 
 (defun create-table (conn &rest args &key &allow-other-keys)
   "Create a new database table according to the database implementation.
-   
+
    Tracks the table definition and executes the database-specific implementation.
-   
+
    @param conn [dbi:<dbi-connection>] Database connection
    @param table [string] Table name
    @param columns [list] List of column specifications
@@ -127,9 +135,9 @@
 
 (defun add-column (conn &rest args &key &allow-other-keys)
   "Add column to existing table according to the database implementation.
-   
+
    Updates the tracked table definition and executes the database-specific implementation.
-   
+
    @param conn [dbi:<dbi-connection>] Database connection
    @param table [string] Table name
    @param columns [list] List of column specifications to add
@@ -145,7 +153,7 @@
 
 (defun add-index (conn &rest args &key &allow-other-keys)
   "Add index to table according to the database implementation.
-   
+
    @param conn [dbi:<dbi-connection>] Database connection
    @param table [string] Table name
    @param index [string] Index name
@@ -155,9 +163,9 @@
 
 (defun drop-table (conn &rest args &key &allow-other-keys)
   "Drop table according to the database implementation.
-   
+
    Removes the table from tracked definitions and executes the database-specific implementation.
-   
+
    @param conn [dbi:<dbi-connection>] Database connection
    @param table [string] Table name to drop
    "
@@ -171,9 +179,9 @@
 
 (defun drop-column (conn &rest args &key &allow-other-keys)
   "Drop column from table according to the database implementation.
-   
+
    Updates the tracked table definition and executes the database-specific implementation.
-   
+
    @param conn [dbi:<dbi-connection>] Database connection
    @param table [string] Table name
    @param column [string] Column name to drop
@@ -195,7 +203,7 @@
 
 (defun drop-index (conn &rest args &key &allow-other-keys)
   "Drop index from table according to the database implementation.
-   
+
    @param conn [dbi:<dbi-connection>] Database connection
    @param table [string] Table name
    @param index [string] Index name to drop
@@ -204,26 +212,30 @@
 
 (defun db-create ()
   "Create database and migration table.
-   
+
    Implementation of db/create command.
    "
   (ensure-database)
   (ensure-migration-table))
 
-(defun db-migrate ()
+(defun db-migrate (&key version)
   "Load migration files and apply pending migrations.
-   
+
    Implementation of db/migrate command. Also exports schema file after migration.
+
+   @param version [string] Migration name to migrate up to (optional). If nil, runs all pending migrations.
    "
   (ensure-migration-table)
   (setf *migrations* nil)
   (load-migration-files)
-  (migrate-all)
+  (if version
+      (migrate-to-version version)
+      (migrate-all))
   (export-schema-file))
 
 (defun db-status ()
   "Display migration status.
-   
+
    Shows which migrations have been applied and which are pending.
    "
   (setf *migrations* nil)
@@ -234,7 +246,7 @@
 
 (defun check-type-valid (type)
   "Check if column type is valid.
-   
+
    @param type [keyword] Column type to validate
    @condition error Signaled when type is not in *type-list*
    "
@@ -259,7 +271,7 @@
     (dolist (file files)
       (format t "loading migration file: ~A" file)
       (load file)
-      (format t " ... done"))))
+      (format t " ... done~%"))))
 
 (defun migrated-status ()
   (with-db-connection-direct (connection)
@@ -284,6 +296,124 @@
     (funcall up-fn connection)
     (insert-migration connection migration-name)))
 
+(defun migrate-to-version (version)
+  "Apply migrations up to specified version.
+
+   @param version [string] Migration name to migrate up to
+   "
+  (with-db-connection-direct (connection)
+    (ensure-migration-table-impl *database-type* connection)
+    (loop for migration in *migrations*
+          for migration-name = (getf migration :migration-name)
+          do (let ((*database-type* (if (not-migrated-p connection migration-name t)
+                                        *database-type*
+                                        *dummy-connection*)))
+               (apply-migration connection migration)
+               (when (string= migration-name version)
+                 (return))))))
+
+(defun migrate-up-version (version)
+  "Apply specific migration version only.
+
+   @param version [string] Migration name to apply
+   @condition error Migration not found
+   "
+  (ensure-migration-table)
+  (setf *migrations* nil)
+  (load-migration-files)
+  (with-db-connection-direct (connection)
+    (ensure-migration-table-impl *database-type* connection)
+    (let ((migration (find-if #'(lambda (m)
+                                  (string= (getf m :migration-name) version))
+                              *migrations*)))
+      (if migration
+          (if (not-migrated-p connection version t)
+              (progn
+                (apply-migration connection migration)
+                (format t "Applied migration: ~A~%" version))
+              (format t "Migration already applied: ~A~%" version))
+          (error "Migration not found: ~A" version))))
+  (export-schema-file))
+
+(defun migrate-down-version (version)
+  "Rollback specific migration version only.
+
+   @param version [string] Migration name to rollback
+   @condition error Migration not found or down function not defined
+   "
+  (ensure-migration-table)
+  (setf *migrations* nil)
+  (load-migration-files)
+  (with-db-connection-direct (connection)
+    (ensure-migration-table-impl *database-type* connection)
+    (let ((migration (find-if #'(lambda (m)
+                                  (string= (getf m :migration-name) version))
+                              *migrations*)))
+      (if migration
+          (if (not-migrated-p connection version t)
+              (format t "Migration not yet applied: ~A~%" version)
+              (progn
+                (rollback-migration connection version)
+                (format t "Rolled back migration: ~A~%" version)))
+          (error "Migration not found: ~A" version))))
+  (export-schema-file))
+
+(defun db-rollback (&key (step 1))
+  "Rollback the last N database migrations.
+
+   @param step [integer] Number of migrations to rollback (default: 1)
+   "
+  (ensure-migration-table)
+  (setf *migrations* nil)
+  (load-migration-files)
+  (with-db-connection-direct (connection)
+    (loop for i from 1 to step
+          for migration-name = (get-last-migrated-name connection)
+          while migration-name
+          do (rollback-migration connection migration-name)))
+  (export-schema-file))
+
+(defun get-last-migrated-name (connection)
+  "Get the last applied migration name.
+
+   @param connection [dbi:<dbi-connection>] Database connection
+   @return [string] Last migration name
+   @return [nil] If no migrations have been applied
+   "
+  (let* ((query (dbi:prepare connection
+                             "select migration_name from migration order by created_at desc, migration_name desc limit 1"))
+         (result (dbi:execute query))
+         (row (dbi:fetch result)))
+    (when row
+      (getf row :|migration_name|))))
+
+(defun rollback-migration (connection migration-name)
+  "Rollback a specific migration.
+
+   @param connection [dbi:<dbi-connection>] Database connection
+   @param migration-name [string] Migration name to rollback
+   @condition error Migration not found or down function not defined
+   "
+  (let ((migration (find-if #'(lambda (m)
+                                (string= (getf m :migration-name) migration-name))
+                            *migrations*)))
+    (if migration
+        (let ((down-fn (getf migration :down)))
+          (when down-fn
+            (log.sql (format nil "Rolling back migration: ~A" migration-name))
+            (funcall down-fn connection)
+            (delete-migration connection migration-name)
+            (format t "Rolled back migration: ~A~%" migration-name)))
+        (error "Migration not found: ~A" migration-name))))
+
+(defun delete-migration (connection migration-name)
+  "Delete migration record from migration table.
+
+   @param connection [dbi:<dbi-connection>] Database connection
+   @param migration-name [string] Migration name to delete
+   "
+  (dbi:do-sql connection "delete from migration where migration_name = ?" (list migration-name)))
+
 (defun not-migrated-p (connection migration-name &optional verbose)
   (when verbose
     (log.sql (format nil "checking migration: ~A" migration-name)))
@@ -299,3 +429,21 @@
 (defun export-schema-file ()
   (clails/project/generate:gen/schema *tables*))
 
+(defun db-seed ()
+  "Seed the database with initial data from db/seeds.lisp.
+
+   Implementation of db/seed command.
+   Loads all model files before executing seeds to ensure models are available.
+   "
+  (let ((seeds-file (format nil "~A/db/seeds.lisp" *migration-base-dir*))
+        (models-dir (format nil "~A/app/models/" *migration-base-dir*)))
+    ;; Load all model files
+    (when (probe-file models-dir)
+      (dolist (model-file (uiop:directory-files models-dir "*.lisp"))
+        (load model-file)))
+    ;; Load seeds file
+    (when (probe-file seeds-file)
+      (format t "Seeding database from: ~A~%" seeds-file)
+      ;; Load and execute seeds file
+      (with-db-connection (_connection)
+        (load seeds-file)))))

@@ -207,6 +207,153 @@ You can also use `when` or `unless`:
 </table>
 ```
 
+### Structured Tags (`<cl:xxx>`)
+
+In addition to scriptlets, clails provides structured XML-style tags for cleaner control flow syntax.
+
+#### `<cl:loop>` Tag
+
+The `<cl:loop>` tag provides a cleaner alternative to scriptlet-based loops:
+
+```html
+<h2>User List</h2>
+<ul>
+  <cl:loop for="user" in="(view :users)">
+    <li>
+      <strong><%= (getf user :name) %></strong>
+      (<%= (getf user :email) %>)
+    </li>
+  </cl:loop>
+</ul>
+```
+
+Attributes:
+- `for` - Loop variable name
+- `in` - Expression that returns a list to iterate over
+
+#### `<cl:if>` Tag with `<cl:else>`
+
+The `<cl:if>` tag provides conditional rendering with optional else clause:
+
+```html
+<cl:if test="(view :is-admin)">
+  <div class="admin-panel">
+    <h2>Admin Panel</h2>
+    <p>You have admin privileges.</p>
+  </div>
+  <cl:else>
+    <div class="user-panel">
+      <h2>User Panel</h2>
+      <p>Limited access.</p>
+    </div>
+  </cl:else>
+</cl:if>
+```
+
+Attributes:
+- `test` - Conditional expression to evaluate
+
+#### `<cl:when>` Tag
+
+The `<cl:when>` tag renders content only when the test is true:
+
+```html
+<cl:when test="(view :show-message)">
+  <div class="alert">
+    <%= (view :message) %>
+  </div>
+</cl:when>
+```
+
+Attributes:
+- `test` - Conditional expression to evaluate
+
+#### `<cl:unless>` Tag
+
+The `<cl:unless>` tag renders content only when the test is false:
+
+```html
+<cl:unless test="(view :hide-footer)">
+  <footer>
+    <p>&copy; 2024 Your App</p>
+  </footer>
+</cl:unless>
+```
+
+Attributes:
+- `test` - Conditional expression to evaluate
+
+#### `<cl:cond>` Tag
+
+The `<cl:cond>` tag supports multiple conditional branches:
+
+```html
+<cl:cond>
+  <cl:when test="(> (view :score) 90)">
+    <div class="grade-a">Excellent!</div>
+  </cl:when>
+  <cl:when test="(> (view :score) 70)">
+    <div class="grade-b">Good!</div>
+  </cl:when>
+  <cl:when test="(> (view :score) 50)">
+    <div class="grade-c">Fair</div>
+  </cl:when>
+  <cl:otherwise>
+    <div class="grade-f">Need Improvement</div>
+  </cl:otherwise>
+</cl:cond>
+```
+
+The `<cl:otherwise>` clause is optional and acts as the default case.
+
+#### Complex Example with Structured Tags
+
+```html
+<h1>Shopping Cart</h1>
+
+<cl:if test="(view :items)">
+  <table class="cart">
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Price</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <cl:loop for="item" in="(view :items)">
+        <tr>
+          <td><%= (getf item :name) %></td>
+          <td>$<%= (getf item :price) %></td>
+          <td>
+            <cl:cond>
+              <cl:when test="(getf item :in-stock)">
+                <span class="status-ok">In Stock</span>
+              </cl:when>
+              <cl:when test="(getf item :backordered)">
+                <span class="status-warning">Backordered</span>
+              </cl:when>
+              <cl:otherwise>
+                <span class="status-error">Out of Stock</span>
+              </cl:otherwise>
+            </cl:cond>
+          </td>
+        </tr>
+      </cl:loop>
+    </tbody>
+  </table>
+  
+  <cl:when test="(> (view :total) 100)">
+    <div class="discount-notice">
+      Free shipping on orders over $100!
+    </div>
+  </cl:when>
+<cl:else>
+  <p>Your cart is empty.</p>
+</cl:else>
+</cl:if>
+```
+
 ---
 
 ## 4. Displaying Model Data

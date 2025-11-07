@@ -15,7 +15,11 @@
   (:import-from #:clails/model/migration
                 #:db-create
                 #:db-migrate
-                #:db-status)
+                #:migrate-up-version
+                #:migrate-down-version
+                #:db-rollback
+                #:db-status
+                #:db-seed)
   (:import-from #:clails/controller/base-controller
                 #:initialize-routing-tables)
   (:import-from #:clails/middleware
@@ -23,6 +27,20 @@
                 #:*lack-middleware-clails-controller*)
   (:import-from #:clails/util
                 #:function-from-string)
+  (:import-from #:clails/test
+                #:run-suite-tests
+                #:run-suite-tests-by-tags
+                #:run-suite-tests-by-packages
+                #:list-all-tags
+                #:list-test-packages
+                #:list-tests-by-tag
+                #:list-tests-by-package
+                #:ensure-test-modules-loaded)
+  (:import-from #:clails/model/connection
+                #:startup-connection-pool
+                #:shutdown-connection-pool)
+  (:import-from #:clails/model/base-model
+                #:initialize-table-information)
   (:export #:create-project
            #:generate/model
            #:generate/migration
@@ -31,10 +49,15 @@
            #:generate/scaffold
            #:db/create
            #:db/migrate
+           #:db/migrate-up
+           #:db/migrate-down
+           #:db/rollback
+           #:db/seed
            #:db/status
            #:console
            #:server
-           #:stop))
+           #:stop
+           #:test))
 (in-package #:clails/cmd)
 
 (defparameter *app* nil
@@ -115,13 +138,14 @@
    "
   (db-create))
 
-(defun db/migrate (&key (env :development))
+(defun db/migrate (&key (env :development) version)
   "Run pending database migrations for the specified environment.
 
    @param env [keyword] Environment name (:development, :test, :production, default: :development)
+   @param version [string] Migration name to migrate up to (optional). If nil, runs all pending migrations.
    @return [t] Migration execution result
    "
-  (db-migrate))
+  (db-migrate :version version))
 
 (defun db/status ()
   "Display the status of database migrations.
@@ -130,14 +154,49 @@
    "
   (db-status))
 
-(defun db/rollback ()
-  "Rollback the last database migration.
+(defun db/migrate-up (version &key (env :development))
+  "Run a specific database migration for the specified environment.
 
-   Not yet implemented.
-
-   @return [nil] Always returns nil
+   @param version [string] Migration name to apply (required)
+   @param env [keyword] Environment name (:development, :test, :production, default: :development)
+   @return [t] Migration execution result
+   @condition error Version parameter is required
    "
-  nil)
+  (when (null version)
+    (error "VERSION parameter is required for db:migrate:up"))
+  (migrate-up-version version))
+
+(defun db/migrate-down (version &key (env :development))
+  "Rollback a specific database migration for the specified environment.
+
+   @param version [string] Migration name to rollback (required)
+   @param env [keyword] Environment name (:development, :test, :production, default: :development)
+   @return [t] Rollback execution result
+   @condition error Version parameter is required
+   "
+  (when (null version)
+    (error "VERSION parameter is required for db:migrate:down"))
+  (migrate-down-version version))
+
+(defun db/rollback (&key (env :development) (step 1))
+  "Rollback database migrations for the specified environment.
+
+   @param env [keyword] Environment name (:development, :test, :production, default: :development)
+   @param step [integer] Number of migrations to rollback (default: 1)
+   @return [t] Rollback execution result
+   "
+  (db-rollback :step step))
+
+(defun db/seed ()
+  "Seed the database with initial data.
+
+   @return [t] Seeding execution result
+   "
+  (startup-connection-pool)
+  (initialize-table-information)
+  (unwind-protect
+      (db-seed)
+    (shutdown-connection-pool)))
 
 
 (defun console ()
@@ -218,4 +277,50 @@
                       (string
                        (function-from-string fn))
                       (function fn)))))
+
+(defun test (&key packages tags exclude-tags list-tags list-packages
+                  list-tests-tag list-tests-pkg asd-systems
+                  (style :spec))
+  "Run tests with optional filtering.
+
+   @param packages [list] Package names to test (exact match)
+   @param tags [list] Tags to include
+   @param exclude-tags [list] Tags to exclude
+   @param list-tags [boolean] List all available tags
+   @param list-packages [boolean] List all available packages
+   @param list-tests-tag [keyword] List tests with specific tag
+   @param list-tests-pkg [string] List tests in specific package
+   @param asd-systems [list] Specific ASD system names to load instead of auto-detection
+   @param style [keyword] Reporter style (default: :spec)
+   @return [boolean] Test results
+   "
+  ;; Ensure test modules are loaded before any test operations
+  (ensure-test-modules-loaded :asd-systems asd-systems)
+
+  (cond
+    ;; List mode operations
+    (list-tags
+     (list-all-tags)
+     t)
+    (list-packages
+     (list-test-packages)
+     t)
+    (list-tests-tag
+     (list-tests-by-tag list-tests-tag)
+     t)
+    (list-tests-pkg
+     (list-tests-by-package list-tests-pkg)
+     t)
+    ;; Run tests
+    (t
+     ;; Initialize database connection pool
+     (startup-connection-pool)
+     (initialize-table-information)
+     (unwind-protect
+         (run-suite-tests :tags tags
+                          :excluded-tags exclude-tags
+                          :packages packages
+                          :style style)
+       ;; Cleanup: shutdown connection pool
+       (shutdown-connection-pool)))))
 

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Todo List</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #4CAF50; color: white; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        .done { text-decoration: line-through; color: #999; }
+        form { margin-top: 20px; }
+        input[type="text"] { padding: 5px; width: 300px; }
+        button { padding: 5px 15px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+    </style>
+</head>
+<body>
+    <h1>Todo List</h1>
+    
+    <h2>Add New Todo</h2>
+    <form action="/todo" method="POST">
+        <input type="text" name="title" placeholder="Enter todo title" required>
+        <button type="submit">Add</button>
+    </form>
+    
+    <h2>Todo Items</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Status</th>
+                <th>Done At</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            <cl:loop for="todo" in="(view :todos)">
+            <tr>
+                <td><%= (clails/model:ref todo :id) %></td>
+                <td class="<%= (if (clails/model:ref todo :done) "done" "") %>">
+                    <%= (clails/model:ref todo :title) %>
+                </td>
+                <td><%= (if (clails/model:ref todo :done) "Done" "Pending") %></td>
+                <td><%= (or (clails/model:ref todo :done-at) "-") %></td>
+                <td>
+                    <cl:unless test="(clails/model:ref todo :done)">
+                    <form action="/todo/<%= (clails/model:ref todo :id) %>" method="POST" style="display:inline;">
+                        <input type="hidden" name="_method" value="PUT">
+                        <button type="submit">Mark as Done</button>
+                    </form>
+                    </cl:unless>
+                </td>
+            </tr>
+            </cl:loop>
+        </tbody>
+    </table>
+    
+    <p style="margin-top: 20px; color: #666;">
+        Total: <%= (length (view :todos)) %> items
+    </p>
+</body>
+</html>
