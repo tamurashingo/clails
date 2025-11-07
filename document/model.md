@@ -375,10 +375,10 @@ Use the `query` function to build queries.
 (:not-between (:user :score) :min :max)  ; With parameters
 
 ;; IS NULL
-(:is-null (:user :deleted-at))
+(:null (:user :deleted-at))
 
 ;; IS NOT NULL
-(:is-not-null (:user :email))
+(:not-null (:user :email))
 
 ;; AND
 (:and (:= (:user :is-active) T)
