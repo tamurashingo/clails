@@ -29,6 +29,27 @@ If `CLAILS_CONF_DIR` is not specified, it uses `$HOME/.clails`.
 
 This qlfile contains the necessary dependencies for clails to function properly.
 
+## development with local clails
+
+When developing clails locally and testing your changes, you can configure clails to use your local version by modifying `$CLAILS_CONF_DIR/qlfile`.
+
+Update the qlfile to specify the local path to your clails repository:
+
+```
+github fukamachi/cl-dbi
+github tamurashingo/cl-dbi-connection-pool
+github tamurashingo/getcmd
+local clails /path/to/clails
+```
+
+Additionally, set the `CL_SOURCE_REGISTRY` environment variable to ensure the local clails is loaded:
+
+```bash
+export CL_SOURCE_REGISTRY=/path/to/clails
+```
+
+This allows you to test local modifications to clails without reinstalling.
+
 # usage
 
 ## create project
