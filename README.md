@@ -72,6 +72,17 @@ you'll see
 
 ![clails initial page](document/img/startup.png)
 
+# documentation
+
+Comprehensive guides for developing with clails:
+
+- **[Model Guide](document/model.md)** ([日本語](document/model_ja.md)) - Database models, queries, migrations, and ORM features
+- **[View Guide](document/view.md)** ([日本語](document/view_ja.md)) - Template engine, data binding, and HTML rendering
+- **[Controller Guide](document/controller.md)** ([日本語](document/controller_ja.md)) - Request handling, routing, and REST controllers
+- **[Command Guide](document/command.md)** ([日本語](document/command_ja.md)) - CLI commands for scaffolding and project management
+- **[Environment Guide](document/environment.md)** ([日本語](document/environment_ja.md)) - Configuration, environment variables, and setup
+- **[Testing Guide](document/testing.md)** ([日本語](document/testing_ja.md)) - Testing framework and best practices
+
 # example
 
 It contains instructions on how to create an application using commands:\
