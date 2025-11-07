@@ -36,6 +36,11 @@
                 #:list-tests-by-tag
                 #:list-tests-by-package
                 #:ensure-test-modules-loaded)
+  (:import-from #:clails/model/connection
+                #:startup-connection-pool
+                #:shutdown-connection-pool)
+  (:import-from #:clails/model/base-model
+                #:initialize-table-information)
   (:export #:create-project
            #:generate/model
            #:generate/migration
@@ -187,7 +192,11 @@
 
    @return [t] Seeding execution result
    "
-  (db-seed))
+  (startup-connection-pool)
+  (initialize-table-information)
+  (unwind-protect
+      (db-seed)
+    (shutdown-connection-pool)))
 
 
 (defun console ()
@@ -304,8 +313,14 @@
      t)
     ;; Run tests
     (t
-     (run-suite-tests :tags tags
-                      :excluded-tags exclude-tags
-                      :packages packages
-                      :style style))))
+     ;; Initialize database connection pool
+     (startup-connection-pool)
+     (initialize-table-information)
+     (unwind-protect
+         (run-suite-tests :tags tags
+                          :excluded-tags exclude-tags
+                          :packages packages
+                          :style style)
+       ;; Cleanup: shutdown connection pool
+       (shutdown-connection-pool)))))
 

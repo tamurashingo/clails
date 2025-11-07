@@ -434,7 +434,6 @@
 
    Implementation of db/seed command.
    Loads all model files before executing seeds to ensure models are available.
-   Initializes and shuts down connection pool to ensure proper cleanup.
    "
   (let ((seeds-file (format nil "~A/db/seeds.lisp" *migration-base-dir*))
         (models-dir (format nil "~A/app/models/" *migration-base-dir*)))
@@ -442,15 +441,9 @@
     (when (probe-file models-dir)
       (dolist (model-file (uiop:directory-files models-dir "*.lisp"))
         (load model-file)))
-    ;; Initialize connection pool and load seeds file
+    ;; Load seeds file
     (when (probe-file seeds-file)
       (format t "Seeding database from: ~A~%" seeds-file)
-      (startup-connection-pool)
-      (unwind-protect
-          (progn
-            ;; Initialize table information (load column metadata)
-            (initialize-table-information)
-            ;; Load and execute seeds file
-            (with-db-connection (_connection)
-              (load seeds-file)))
-        (shutdown-connection-pool)))))
+      ;; Load and execute seeds file
+      (with-db-connection (_connection)
+        (load seeds-file)))))
