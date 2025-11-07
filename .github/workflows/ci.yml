@@ -83,6 +83,6 @@ jobs:
       uses: docker/setup-buildx-action@v2
 
     - name: Run E2E tests
-      run: docker compose -f docker-compose.e2e.yml run --rm -v ${{ github.workspace }}:/app --entrypoint /bin/bash e2e-test /app/script/e2e.sh
+      run: docker compose -f docker-compose.e2e.yml run --rm -v ${{ github.workspace }}:/app --entrypoint /bin/bash e2e-test /app/test/e2e/todo-app-e2e.sh
 
 
