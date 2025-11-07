@@ -41,6 +41,7 @@ test.build: $(TEST_BUILDER)
 
 $(TEST_BUILDER): $(TEST_DEPS)
 	docker compose -f docker-compose.test-runner.yml build --no-cache
+	touch $(TEST_BUILDER)
 
 .PHONY: test.prev
 test.prev:
@@ -87,10 +88,11 @@ e2e.build: $(E2E_BUILDER)
 
 $(E2E_BUILDER): $(E2E_DEPS)
 	docker compose -f docker-compose.e2e.yml build --no-cache
+	touch $(E2E_BUILDER)
 
 e2e.test: $(E2E_BUILDER)
 	@echo "Running E2E tests..."
-	docker compose -f docker-compose.e2e.yml run --rm --entrypoint /bin/bash e2e-test /app/script/e2e.sh
+	docker compose -f docker-compose.e2e.yml run --rm --entrypoint /bin/bash e2e-test /app/test/e2e/todo-app-e2e.sh
 
 e2e.clean:
 	rm -f $(E2E_BUILDER)
