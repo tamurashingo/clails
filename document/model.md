@@ -101,6 +101,43 @@ Example: `20240101-120000-create-users-table.lisp`
 
 ;; Check migration status
 (clails/model/migration:db-status)
+
+;; Rollback the last migration
+(clails/model/migration:db-rollback)
+
+;; Rollback the last N migrations
+(clails/model/migration:db-rollback :step 3)
+
+;; Seed the database with initial data
+(clails/model/migration:db-seed)
+```
+
+#### db-rollback
+
+Rollback the last N migrations. This is useful when you need to undo recent database changes.
+
+```common-lisp
+;; Rollback the last migration
+(clails/model/migration:db-rollback)
+
+;; Rollback the last 3 migrations
+(clails/model/migration:db-rollback :step 3)
+```
+
+#### db-seed
+
+Seed the database with initial data from `db/seeds.lisp`. This is typically used to populate the database with test data or initial application data.
+
+```common-lisp
+;; Create db/seeds.lisp with your seed data
+;; Example db/seeds.lisp:
+;; (let ((user (make-record '<user>
+;;                         :name "Admin User"
+;;                         :email "admin@example.com")))
+;;   (save user))
+
+;; Run the seed command
+(clails/model/migration:db-seed)
 ```
 
 ---
@@ -317,15 +354,31 @@ Use the `query` function to build queries.
 (:like (:user :name) "%Yamada%")
 (:like (:user :name) :keyword)  ; With parameter
 
+;; NOT LIKE
+(:not-like (:user :name) "%test%")
+(:not-like (:user :email) :pattern)  ; With parameter
+
 ;; IN
 (:in (:user :id) (1 2 3))
 (:in (:user :status) :statuses)  ; With parameter
 
+;; NOT IN
+(:not-in (:user :status) ("inactive" "deleted"))
+(:not-in (:user :id) :excluded-ids)  ; With parameter
+
+;; BETWEEN
+(:between (:user :age) 20 30)
+(:between (:user :created-at) :start-date :end-date)  ; With parameters
+
+;; NOT BETWEEN
+(:not-between (:user :age) 0 17)
+(:not-between (:user :score) :min :max)  ; With parameters
+
 ;; IS NULL
-(:is-null (:user :deleted-at))
+(:null (:user :deleted-at))
 
 ;; IS NOT NULL
-(:is-not-null (:user :email))
+(:not-null (:user :email))
 
 ;; AND
 (:and (:= (:user :is-active) T)
@@ -379,28 +432,49 @@ Use the `query` function to build queries.
                  (ref emp :comp.name)))
 ```
 
-### Loading Related Data
+### Loading Related Data via JOINs
 
-Use `:includes` to load related data.
+When using JOINs with defined relations, related data is automatically populated in the model instances.
 
 ```common-lisp
-;; Load company with its departments
-(defvar *company* (first (execute-query
-                          (query <company>
-                                 :as :company
-                                 :where (:= (:company :id) 1)
-                                 :includes (:departments))
-                          '())))
+;; Load blogs with their comments (has-many relation)
+(defvar *blogs* (execute-query
+                  (query <blog>
+                         :as :blog
+                         :joins ((:left-join :comments)))
+                  '()))
+
+;; Access related data through the relation alias
+(loop for blog in *blogs*
+      do (let ((comments (ref blog :comments)))
+           (format t "Blog: ~A has ~A comments~%"
+                   (ref blog :title)
+                   (length comments))))
+
+;; Load employee with department and company (belongs-to and through relations)
+(defvar *employees* (execute-query
+                      (query <employee>
+                             :as :emp
+                             :joins ((:inner-join :department)
+                                    (:inner-join :company :through :department)))
+                      '()))
 
 ;; Access related data
-(ref *company* :departments)  ; => List of <department> instances
+(loop for emp in *employees*
+      do (format t "Employee: ~A, Department: ~A, Company: ~A~%"
+                   (ref emp :name)
+                   (ref (ref emp :department) :name)
+                   (ref (ref emp :company) :name)))
+```
 
-;; Load departments with their employees
-(defvar *departments* (execute-query
-                        (query <department>
-                               :as :dept
-                               :includes (:employees))
-                        '()))
+Note: Use `ref-in` for more concise nested access:
+
+```common-lisp
+(loop for emp in *employees*
+      do (format t "Employee: ~A, Department: ~A, Company: ~A~%"
+                   (ref emp :name)
+                   (ref-in emp :department :name)
+                   (ref-in emp :company :name)))
 ```
 
 ---
@@ -703,6 +777,52 @@ Delete operations can also be executed within transactions.
 ```common-lisp
 (clear-error *user*)
 (has-error-p *user*) ; => NIL
+```
+
+### Clearing Dirty Flags
+
+Manually clear dirty flags without saving. This is useful when you want to discard changes.
+
+```common-lisp
+(setf (ref *user* :name) "New Name")
+(has-dirty-p *user*) ; => T
+
+(clear-dirty-flag *user*)
+(has-dirty-p *user*) ; => NIL
+```
+
+### Debugging Utilities
+
+#### show-model-data
+
+Display all column values in a model instance for debugging purposes.
+
+```common-lisp
+(show-model-data *user*)
+;; Outputs:
+;; ID: 1
+;; NAME: "Taro Yamada"
+;; EMAIL: "taro@example.com"
+;; AGE: 30
+;; ...
+```
+
+#### show-model-columns
+
+Display all column definitions for a model.
+
+```common-lisp
+(show-model-columns *user*)
+;; Outputs column information including names, types, and conversion functions
+```
+
+#### debug-table-information
+
+Display the complete table information registry for debugging model definitions.
+
+```common-lisp
+(debug-table-information)
+;; Outputs all registered model table information
 ```
 
 ### Converting to JSON

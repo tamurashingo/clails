@@ -101,6 +101,43 @@ YYYYmmdd-HHMMSS-description.lisp
 
 ;; Migration ステータス確認
 (clails/model/migration:db-status)
+
+;; 最後の Migration をロールバック
+(clails/model/migration:db-rollback)
+
+;; 最後の N 個の Migration をロールバック
+(clails/model/migration:db-rollback :step 3)
+
+;; データベースに初期データを投入
+(clails/model/migration:db-seed)
+```
+
+#### db-rollback
+
+最後の N 個の Migration をロールバックします。最近のデータベース変更を元に戻す必要がある場合に便利です。
+
+```common-lisp
+;; 最後の Migration をロールバック
+(clails/model/migration:db-rollback)
+
+;; 最後の 3 つの Migration をロールバック
+(clails/model/migration:db-rollback :step 3)
+```
+
+#### db-seed
+
+`db/seeds.lisp` から初期データをデータベースに投入します。通常、テストデータや初期アプリケーションデータをデータベースに投入するために使用されます。
+
+```common-lisp
+;; db/seeds.lisp を作成してシードデータを記述
+;; 例: db/seeds.lisp の内容
+;; (let ((user (make-record '<user>
+;;                         :name "管理者"
+;;                         :email "admin@example.com")))
+;;   (save user))
+
+;; シードコマンドを実行
+(clails/model/migration:db-seed)
 ```
 
 ---
@@ -248,9 +285,12 @@ YYYYmmdd-HHMMSS-description.lisp
 - `:not-null` - NULL でない
 - `:in` - IN 句
 - `:not-in` - NOT IN 句
+- `:between` - BETWEEN 句
+- `:not-between` - NOT BETWEEN 句
 - `:and` - AND 条件
 - `:or` - OR 条件
 - `:like` - LIKE 句
+- `:not-like` - NOT LIKE 句
 
 ### WHERE 句のサンプル
 
@@ -277,6 +317,35 @@ YYYYmmdd-HHMMSS-description.lisp
          :where (:in (:user :id) :ids))
   '(:ids (1 2 3)))
 
+;; NOT IN 句
+(query <user>
+       :as :user
+       :where (:not-in (:user :status) ("inactive" "deleted")))
+
+;; NOT IN 句（パラメータ使用）
+(execute-query
+  (query <user>
+         :as :user
+         :where (:not-in (:user :id) :excluded-ids))
+  '(:excluded-ids (10 20 30)))
+
+;; BETWEEN 句
+(query <user>
+       :as :user
+       :where (:between (:user :age) 20 30))
+
+;; BETWEEN 句（パラメータ使用）
+(execute-query
+  (query <user>
+         :as :user
+         :where (:between (:user :created-at) :start-date :end-date))
+  '(:start-date "2024-01-01" :end-date "2024-12-31"))
+
+;; NOT BETWEEN 句
+(query <user>
+       :as :user
+       :where (:not-between (:user :age) 0 17))
+
 ;; AND 条件
 (query <user>
        :as :user
@@ -293,6 +362,11 @@ YYYYmmdd-HHMMSS-description.lisp
 (query <user>
        :as :user
        :where (:like (:user :email) "%@example.com"))
+
+;; NOT LIKE 句
+(query <user>
+       :as :user
+       :where (:not-like (:user :email) "%@test.com"))
 ```
 
 ### ORDER BY 句
@@ -802,6 +876,52 @@ clails では、データベーストランザクションを簡単に扱うた�
 ```common-lisp
 (clear-error *user*)
 (has-error-p *user*) ; => NIL
+```
+
+### dirty flag のクリア
+
+dirty flag を手動でクリアします。変更を破棄したい場合に便利です。
+
+```common-lisp
+(setf (ref *user* :name) "New Name")
+(has-dirty-p *user*) ; => T
+
+(clear-dirty-flag *user*)
+(has-dirty-p *user*) ; => NIL
+```
+
+### デバッグユーティリティ
+
+#### show-model-data
+
+デバッグ目的で Model インスタンスのすべてのカラム値を表示します。
+
+```common-lisp
+(show-model-data *user*)
+;; 出力例:
+;; ID: 1
+;; NAME: "Taro Yamada"
+;; EMAIL: "taro@example.com"
+;; AGE: 30
+;; ...
+```
+
+#### show-model-columns
+
+Model のすべてのカラム定義を表示します。
+
+```common-lisp
+(show-model-columns *user*)
+;; カラム名、型、変換関数などの情報が出力されます
+```
+
+#### debug-table-information
+
+Model 定義のデバッグ用に、テーブル情報レジストリ全体を表示します。
+
+```common-lisp
+(debug-table-information)
+;; 登録されているすべての Model のテーブル情報が出力されます
 ```
 
 ### JSON への変換
