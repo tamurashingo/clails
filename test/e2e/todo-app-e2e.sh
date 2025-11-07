@@ -26,10 +26,10 @@ echo "=== Generate scaffold for todo ==="
 clails generate:scaffold todo
 
 echo "=== Creating migration file ==="
-# migration ファイルを作成
+# Create migration file
 MIGRATION_FILE=$(ls db/migrate/*_todo.lisp | head -1)
 cp /app/test/e2e/templates/migration-todo.lisp ${MIGRATION_FILE}
-# パッケージ名をプロジェクト名に置換
+# Replace package name with project name
 sed -i 's/todoapp-db/todoapp-db/g' ${MIGRATION_FILE}
 
 echo "=== Creating seed data ==="
