@@ -432,28 +432,49 @@ Use the `query` function to build queries.
                  (ref emp :comp.name)))
 ```
 
-### Loading Related Data
+### Loading Related Data via JOINs
 
-Use `:includes` to load related data.
+When using JOINs with defined relations, related data is automatically populated in the model instances.
 
 ```common-lisp
-;; Load company with its departments
-(defvar *company* (first (execute-query
-                          (query <company>
-                                 :as :company
-                                 :where (:= (:company :id) 1)
-                                 :includes (:departments))
-                          '())))
+;; Load blogs with their comments (has-many relation)
+(defvar *blogs* (execute-query
+                  (query <blog>
+                         :as :blog
+                         :joins ((:left-join :comments)))
+                  '()))
+
+;; Access related data through the relation alias
+(loop for blog in *blogs*
+      do (let ((comments (ref blog :comments)))
+           (format t "Blog: ~A has ~A comments~%"
+                   (ref blog :title)
+                   (length comments))))
+
+;; Load employee with department and company (belongs-to and through relations)
+(defvar *employees* (execute-query
+                      (query <employee>
+                             :as :emp
+                             :joins ((:inner-join :department)
+                                    (:inner-join :company :through :department)))
+                      '()))
 
 ;; Access related data
-(ref *company* :departments)  ; => List of <department> instances
+(loop for emp in *employees*
+      do (format t "Employee: ~A, Department: ~A, Company: ~A~%"
+                   (ref emp :name)
+                   (ref (ref emp :department) :name)
+                   (ref (ref emp :company) :name)))
+```
 
-;; Load departments with their employees
-(defvar *departments* (execute-query
-                        (query <department>
-                               :as :dept
-                               :includes (:employees))
-                        '()))
+Note: Use `ref-in` for more concise nested access:
+
+```common-lisp
+(loop for emp in *employees*
+      do (format t "Employee: ~A, Department: ~A, Company: ~A~%"
+                   (ref emp :name)
+                   (ref-in emp :department :name)
+                   (ref-in emp :company :name)))
 ```
 
 ---
