@@ -92,6 +92,38 @@ JSON などの構造化データを返す REST API 用の Controller です。
     (set-redirect controller "/users")))
 ```
 
+### HTML フォームから PUT・DELETE リクエストを送信する
+
+HTML の `<form>` タグは `GET` と `POST` メソッドしかサポートしていません。
+PUT や DELETE リクエストを HTML フォームから送信するには、`_method` パラメータを使用します。
+
+**PUT リクエストの例：**
+
+```html
+<form action="/users/123" method="POST">
+    <input type="hidden" name="_method" value="PUT">
+    <input type="text" name="name" value="John Doe">
+    <button type="submit">更新</button>
+</form>
+```
+
+**DELETE リクエストの例：**
+
+```html
+<form action="/users/123" method="POST">
+    <input type="hidden" name="_method" value="DELETE">
+    <button type="submit">削除</button>
+</form>
+```
+
+clails は POST リクエスト内の `_method` パラメータをチェックし、以下のようにルーティングします：
+
+- `_method` が `"PUT"` の場合 → `do-put` メソッドを呼び出し
+- `_method` が `"DELETE"` の場合 → `do-delete` メソッドを呼び出し
+- `_method` が指定されていない場合 → `do-post` メソッドを呼び出し
+
+これにより、HTML フォームから REST API のような操作が可能になります。
+
 ---
 
 ## 3. ルーティングの設定

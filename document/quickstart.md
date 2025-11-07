@@ -255,6 +255,20 @@ This view implements:
 - Button to mark TODO as completed
 - Strikethrough styling for completed TODO items
 
+**How to Implement PUT in HTML Forms:**
+
+HTML `<form>` tags only support `GET` and `POST` methods natively.
+To send PUT or DELETE requests, use the following approach:
+
+```html
+<form action="/todo/123" method="POST">
+    <input type="hidden" name="_method" value="PUT">
+    <button type="submit">Mark as Done</button>
+</form>
+```
+
+clails checks for the `_method` parameter in POST requests. When the value is `"PUT"`, it routes to the `do-put` method, and when it's `"DELETE"`, it routes to the `do-delete` method. This allows HTML forms to send PUT and DELETE requests.
+
 ---
 
 ## 8. Modify the Controller

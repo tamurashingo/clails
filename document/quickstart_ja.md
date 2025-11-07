@@ -259,6 +259,20 @@ clails db:migrate
 
 が実装されています。
 
+**HTML フォームで PUT を実現する方法:**
+
+HTML の `<form>` タグは `GET` と `POST` メソッドしかサポートしていません。
+そのため、PUT や DELETE リクエストを送信するには、以下のように実装します：
+
+```html
+<form action="/todo/123" method="POST">
+    <input type="hidden" name="_method" value="PUT">
+    <button type="submit">Mark as Done</button>
+</form>
+```
+
+clails は POST リクエスト内の `_method` パラメータをチェックし、値が `"PUT"` の場合は `do-put` メソッドに、`"DELETE"` の場合は `do-delete` メソッドにルーティングします。これにより、HTML フォームから PUT や DELETE リクエストを実現できます。
+
 ---
 
 ## 8. Controller を修正する
