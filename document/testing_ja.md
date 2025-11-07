@@ -378,12 +378,23 @@ qlot exec rove test/model/save.lisp
 (defsystem clails-test
   :class :package-inferred-system
   :pathname "test"
-  :depends-on (#:rove
+  :depends-on (#:babel
                #:clails
+               #:rove
                #:clails-test/util
+               #:clails-test/model/impl/sqlite3
+               #:clails-test/model/impl/mysql
+               #:clails-test/model/impl/postgresql
+               #:clails-test/model/connection
                #:clails-test/model/query
                #:clails-test/controller/base-controller
-               ;; ... 他のテストモジュール
+               #:clails-test/helper/date-helper
+               #:clails-test/view/parser
+               #:clails-test/view/compiler
+               #:clails-test/view/renderer
+               #:clails-test/logger/registry
+               #:clails-test/datetime/all
+               ;; ... その他多くのテストモジュール
                )
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
