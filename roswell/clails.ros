@@ -144,12 +144,16 @@ exec ros -Q -- $0 "$@"
   (format t "Options:~%")
   (format t "  -p, --port PORT           Port number (default: 5000)~%")
   (format t "  -b, --bind ADDRESS        Bind address (default: 127.0.0.1)~%")
+  (format t "  -s, --swank               Start swank server (default port: 4005)~%")
+  (format t "  --swank-port PORT         Specify swank server port~%")
   (format t "  -h, --help                Show this help message~%")
   (format t "~%")
   (format t "Examples:~%")
   (format t "  clails server~%")
   (format t "  clails server --port 8080~%")
-  (format t "  clails server --bind 0.0.0.0 --port 3000~%"))
+  (format t "  clails server --bind 0.0.0.0 --port 3000~%")
+  (format t "  clails server --swank                # Start swank on port 4005~%")
+  (format t "  clails server --swank --swank-port 4006  # Start swank on port 4006~%"))
 
 (defun help/stop ()
   (format t "Usage: clails stop [OPTIONS]~%~%")
@@ -492,6 +496,10 @@ exec ros -Q -- $0 "$@"
                                      :short-option "b"
                                      :long-option "bind"
                                      :consume t)
+                               (swank :short-option "s"
+                                      :long-option "swank")
+                               (swank-port :long-option "swank-port"
+                                           :consume t)
                                (help :short-option "h"
                                      :long-option "help"))
   (:help-function #'help/server)
@@ -499,7 +507,12 @@ exec ros -Q -- $0 "$@"
     (help/server)
     (uiop:quit 0))
   (load-project)
-  (clails/cmd:server :port port :bind bind))
+  (clails/cmd:server :port port
+                     :bind bind
+                     :swank-port (cond
+                                   (swank-port swank-port)
+                                   (swank "4005")
+                                   (t nil))))
 
 (define-command "stop" (&key (help :short-option "h"
                                    :long-option "help"))
