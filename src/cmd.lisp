@@ -66,6 +66,26 @@
 (defparameter *handler* nil
   "Server handler instance returned by clackup.")
 
+(defparameter *swank-server* nil
+  "Swank server instance for development.")
+
+(defun start-swank-server (port)
+  "Start swank server on the specified port.
+
+   @param port [string] Port number for swank server
+   @return [t] Swank server start result
+   "
+  (unless *swank-server*
+    (handler-case
+        (let ((swank-port (parse-integer port)))
+          (setf *swank-server*
+                (funcall (intern "CREATE-SERVER" :swank)
+                         :port swank-port
+                         :dont-close t))
+          (format t "Swank server started on port ~A~%" swank-port))
+      (error (e)
+        (format *error-output* "Failed to start swank server: ~A~%" e)))))
+
 
 (defun create-project (project-name &key project-path (database :sqlite3))
   "Create a new clails project with the specified name and database.
@@ -208,7 +228,7 @@
    "
   (error "Not yet implemented"))
 
-(defun server (&key (port "5000") (bind "127.0.0.1"))
+(defun server (&key (port "5000") (bind "127.0.0.1") swank-port)
   "Start the web server with the specified port and bind address.
 
    Initializes routing tables, builds middleware stack, starts the server,
@@ -216,8 +236,12 @@
 
    @param port [string] Port number to listen on (default: \"5000\")
    @param bind [string] IP address to bind to (default: \"127.0.0.1\")
+   @param swank-port [string] Port number for swank server (nil to disable)
    @return [nil] Does not return until server is stopped
    "
+  (when swank-port
+    (start-swank-server swank-port))
+
   (initialize-routing-tables)
   (let* ((args (append *clails-middleware-stack* (list *app*)))
          (builder `(lack:builder ,@args)))
@@ -246,7 +270,15 @@
   (when *handler*
     (call-shutdown-hooks)
     (clack:stop *handler*)
-    (setf *handler* nil)))
+    (setf *handler* nil))
+  (when *swank-server*
+    (handler-case
+        (progn
+          (funcall (intern "STOP-SERVER" :swank) *swank-server*)
+          (format t "Swank server stopped~%"))
+      (error (e)
+        (format *error-output* "Failed to stop swank server: ~A~%" e)))
+    (setf *swank-server* nil)))
 
 (defun call-startup-hooks ()
   "Execute all registered startup hooks.
