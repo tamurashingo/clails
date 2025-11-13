@@ -69,7 +69,7 @@
 (defparameter *swank-server* nil
   "Swank server instance for development.")
 
-(defun start-swank-server (port)
+(defun start-swank-server (address port)
   "Start swank server on the specified port.
 
    @param port [string] Port number for swank server
@@ -78,11 +78,13 @@
   (unless *swank-server*
     (handler-case
         (let ((swank-port (parse-integer port)))
+          (setf swank::*loopback-interface* address)
           (setf *swank-server*
                 (funcall (intern "CREATE-SERVER" :swank)
+                         :style :spawn
                          :port swank-port
                          :dont-close t))
-          (format t "Swank server started on port ~A~%" swank-port))
+          (format t "Swank server started on ~A:~A~%" address swank-port))
       (error (e)
         (format *error-output* "Failed to start swank server: ~A~%" e)))))
 
@@ -228,7 +230,7 @@
    "
   (error "Not yet implemented"))
 
-(defun server (&key (port "5000") (bind "127.0.0.1") swank-port)
+(defun server (&key (port "5000") (bind "127.0.0.1") swank-port (swank-address "127.0.0.1"))
   "Start the web server with the specified port and bind address.
 
    Initializes routing tables, builds middleware stack, starts the server,
@@ -237,10 +239,11 @@
    @param port [string] Port number to listen on (default: \"5000\")
    @param bind [string] IP address to bind to (default: \"127.0.0.1\")
    @param swank-port [string] Port number for swank server (nil to disable)
+   @param swank-address [string] IP address to bind to (default: \"127.0.0.1\")
    @return [nil] Does not return until server is stopped
    "
   (when swank-port
-    (start-swank-server swank-port))
+    (start-swank-server swank-address swank-port))
 
   (initialize-routing-tables)
   (let* ((args (append *clails-middleware-stack* (list *app*)))
