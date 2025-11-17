@@ -84,10 +84,6 @@
 
 
 (deftest view-package-resolution-test
-  (testing "get-project-name extracts project name from *project-dir*"
-    (let ((clails/environment:*project-dir* #P"/home/user/projects/testapp/"))
-      (ok (string= (clails/controller/base-controller::get-project-name) "testapp"))))
-
   (testing "split-view-path extracts directory parts"
     (ok (equal (clails/controller/base-controller::split-view-path "index.html") nil))
     (ok (equal (clails/controller/base-controller::split-view-path "todo/show.html") '("todo")))
@@ -100,7 +96,7 @@
             :testapp/views/todo/package)))
 
   (testing "resolve-view-package resolves package name from view path"
-    (let ((clails/environment:*project-dir* #P"/home/user/projects/testapp/"))
+    (let ((clails/environment:*project-name* "testapp"))
       (ok (eq (clails/controller/base-controller::resolve-view-package "index.html")
               :testapp/views/package))
       (ok (eq (clails/controller/base-controller::resolve-view-package "todo/show.html")
@@ -112,6 +108,7 @@
 (deftest set-view-with-package-test
   (testing "set-view sets view-package slot"
     (let* ((clails/environment:*project-dir* #P"/home/user/projects/testapp/")
+           (clails/environment:*project-name* "testapp")
            (controller (make-instance '<web-controller>)))
       (set-view controller "todo/show.html")
       (ok (eq (view-package controller) :testapp/views/todo/package))

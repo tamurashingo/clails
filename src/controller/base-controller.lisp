@@ -7,7 +7,8 @@
                 #:404/not-found)
   (:import-from #:clails/environment
                 #:*routing-tables*
-                #:*project-dir*)
+                #:*project-dir*
+                #:*project-name*)
   (:import-from #:clails/logger
                 #:log.web-access
                 #:log-package.trace
@@ -187,29 +188,25 @@
 
 
 (defun resolve-view-package (viewname)
-  "Resolve package name from view file path.
+  "Resolve package name from view file path using central *project-name*.
 
    Converts view path to package name following the convention:
    - \"index.html\" -> :{project}/views/package
    - \"todo/show.html\" -> :{project}/views/todo/package
    - \"admin/user/list.html\" -> :{project}/views/admin/user/package
 
+   This implementation uses clails/environment:*project-name* instead of inferring
+   the project name from *project-dir* to avoid failures when the directory path changes.
+
    @param viewname [string] View file path relative to app/views/
    @return [keyword] Package name as keyword
    "
-  (let* ((project-name (get-project-name))
+  (let* ((project-name *project-name*)
          (path-parts (split-view-path viewname)))
     (make-keyword
       (if path-parts
           (format nil "~A/views/~{~A~^/~}/package" project-name path-parts)
           (format nil "~A/views/package" project-name)))))
-
-(defun get-project-name ()
-  "Get current project name from *project-dir*.
-
-   @return [string] Project name
-   "
-  (car (last (pathname-directory *project-dir*))))
 
 (defun split-view-path (viewname)
   "Split view path and extract directory parts (excluding filename).
