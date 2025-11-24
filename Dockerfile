@@ -20,4 +20,4 @@ WORKDIR /qlot
 COPY ./qlfile /qlot
 RUN echo 'local clails /app' >> /qlot/qlfile
 
-ENTRYPOINT /bin/bash
+ENTRYPOINT ros run -e "(ql:quickload :swank)" -e "(setf swank::*loopback-interface* \"0.0.0.0\")" -e "(swank:create-server :port 4005 :dont-close t :style :spawn)"

@@ -167,8 +167,13 @@ exec ros -Q -- $0 "$@"
 
 ;; Utility functions
 (defun load-project ()
-  (push (uiop/os:getcwd) ql:*local-project-directories*)
-  (load "clails.boot"))
+  (let* ((clails-home (uiop:getenv "CLAILS_HOME"))
+         (project-dir (if clails-home
+                          (uiop:ensure-directory-pathname clails-home)
+                          (uiop/os:getcwd)))
+         (boot-file (merge-pathnames "clails.boot" project-dir)))
+    (push project-dir ql:*local-project-directories*)
+    (load boot-file)))
 
 ;; Command definition macro
 (defmacro define-command (name params &body body)

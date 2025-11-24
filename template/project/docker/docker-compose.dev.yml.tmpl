@@ -1,0 +1,84 @@
+services:
+  <%= (@ project-name ) %>-app:
+    image: <%= (@ project-name ) %>_dev
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    container_name: <%= (@ project-name ) %>_dev_app
+    volumes:
+      - ../:/app
+    ports:
+      - ${PORT}:${PORT}
+      - ${SWANK_PORT}:${SWANK_PORT}
+    tty: true
+    command: ["/qlot/run-dev.sh"]
+    environment:
+      CLAILS_HOME: "/app"
+      BIND_ADDRESS: "${BIND_ADDRESS}"
+      PORT: "${PORT}"
+      SWANK_ADDRESS: "${SWANK_ADDRESS}"
+      SWANK_PORT: "${SWANK_PORT}"
+<% (when (eq (@ database) :mysql) %>
+      CLAILS_DB_HOST: "${CLAILS_DB_HOST}"
+      CLAILS_DB_PORT: "${CLAILS_DB_PORT}"
+      CLAILS_DB_USERNAME: "${CLAILS_DB_USERNAME}"
+      CLAILS_DB_PASSWORD: "${CLAILS_DB_PASSWORD}"
+<% ) %>
+<% (when (eq (@ database) :postgresql) %>
+      CLAILS_DB_HOST: "${CLAILS_DB_HOST}"
+      CLAILS_DB_PORT: "${CLAILS_DB_PORT}"
+      CLAILS_DB_USERNAME: "${CLAILS_DB_USERNAME}"
+      CLAILS_DB_PASSWORD: "${CLAILS_DB_PASSWORD}"
+<% ) %>
+    networks:
+      - <%= (@ project-name ) %>-net
+<% (when (eq (@ database) :mysql) %>
+    depends_on:
+      - mysql-dev
+
+  mysql-dev:
+    image: mysql:8.0
+    container_name: <%= (@ project-name ) %>_dev_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_USER: <%= (@ project-name ) %>
+      MYSQL_PASSWORD: password
+      MYSQL_DATABASE: <%= (@ project-name ) %>_development
+    ports:
+      - 3306:3306
+    volumes:
+      - <%= (@ project-name ) %>-mysql-data:/var/lib/mysql
+    networks:
+      - <%= (@ project-name ) %>-net
+<% ) %>
+<% (when (eq (@ database) :postgresql) %>
+    depends_on:
+      - postgresql-dev
+
+  postgresql-dev:
+    image: postgres:16.3
+    container_name: <%= (@ project-name ) %>_dev_postgresql
+    environment:
+      POSTGRES_USER: <%= (@ project-name ) %>
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: <%= (@ project-name ) %>_development
+    ports:
+      - 5432:5432
+    volumes:
+      - <%= (@ project-name ) %>-postgresql-data:/var/lib/postgresql/data
+    networks:
+      - <%= (@ project-name ) %>-net
+<% ) %>
+
+networks:
+  <%= (@ project-name ) %>-net:
+    driver: bridge
+
+<% (when (eq (@ database) :mysql) %>
+volumes:
+  <%= (@ project-name ) %>-mysql-data:
+<% ) %>
+<% (when (eq (@ database) :postgresql) %>
+volumes:
+  <%= (@ project-name ) %>-postgresql-data:
+<% ) %>

@@ -1,0 +1,29 @@
+; -*- mode: lisp -*-
+(in-package #:cl-user)
+(defpackage #:<%= (@ project-name ) %>/config/environment
+  (:use #:cl)
+  (:import-from #:clails/environment
+                #:*project-environment*
+                #:*routing-tables*)
+  (:import-from #:clails/middleware
+                #:add-middleware-before
+                #:add-middleware-after))
+
+(in-package #:<%= (@ project-name ) %>/config/environment)
+
+;; project name
+(setf clails/environment:*project-name* "<%= (@ project-name ) %>")
+
+;; project environment
+(setf clails/environment:*project-environment* :develop)
+
+(setf *routing-tables*
+  '((:path "/"
+     :controller "<%= (@ project-name )%>/controllers/application-controller:<application-controller>")))
+
+
+;; startup hooks
+(push "<%= (@ project-name) %>/config/logger/initialize-logger" clails/environment:*startup-hooks*)
+
+;; shutdown hooks
+(push "<%= (@ project-name) %>/config/logger/finalize-logger" clails/environment:*shutdown-hooks*)
