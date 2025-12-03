@@ -40,8 +40,13 @@ dev.down:
 test.build: $(TEST_BUILDER)
 
 $(TEST_BUILDER): $(TEST_DEPS)
+	docker compose -f docker-compose.test-runner.yml build
+	touch $(TEST_BUILDER)
+
+test.rebuild:
 	docker compose -f docker-compose.test-runner.yml build --no-cache
 	touch $(TEST_BUILDER)
+
 
 .PHONY: test.prev
 test.prev:
@@ -54,9 +59,7 @@ test.prev:
 .PHONY: test
 test: $(TEST_BUILDER) test.prev
 	@echo "Running tests..."
-	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test install
-	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint cp clails-test /app/clails-test.asd /qlot
-	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test exec rove clails-test.asd
+	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test exec rove /app/clails-test.asd
 
 .PHONY: test.down
 test.down:

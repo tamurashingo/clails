@@ -30,6 +30,13 @@
   (:import-from #:clails/logger
                 #:log-level-enabled-p
                 #:log.sql)
+  (:import-from #:cl-batis
+                #:<batis-sql>
+                #:gen-sql-and-params)
+  (:import-from #:dbi-cp
+                #:fetch-all
+                #:execute
+                #:prepare)
   (:export #:<query>
            #:query
            #:execute-query
@@ -1215,4 +1222,63 @@
       (finalize-has-many-relations final-results))))
 
 
+;;;; ----------------------------------------
+;;;; Native Query Support (using cl-batis)
+
+(defun execute-select-query (connection sql-string param-values)
+  "Execute SELECT query and return results.
+
+   @param connection [<connection>] Database connection
+   @param sql-string [string] SQL query string
+   @param param-values [list] Parameter values
+   @return [list of plist] Query results (list of plists)
+   "
+  (when (log-level-enabled-p :sql :debug)
+    (log.sql (format nil "sql: ~A" sql-string))
+    (log.sql (format nil "params: ~S" param-values)))
+
+  (dbi-cp:fetch-all
+   (dbi-cp:execute
+    (dbi-cp:prepare connection sql-string)
+    param-values)))
+
+(defun execute-update-query (connection sql-string param-values)
+  "Execute UPDATE/INSERT/DELETE query and return affected row count.
+
+   @param connection [<connection>] Database connection
+   @param sql-string [string] SQL query string
+   @param param-values [list] Parameter values
+   @return [integer] Number of affected rows
+   "
+  (when (log-level-enabled-p :sql :debug)
+    (log.sql (format nil "sql: ~A" sql-string))
+    (log.sql (format nil "params: ~S" param-values)))
+
+  (dbi-cp:execute
+   (dbi-cp:prepare connection sql-string)
+   param-values)
+  (dbi-cp:row-count connection))
+
+(defmethod execute-query ((sql <batis-sql>) named-values &key connection)
+  "Execute SQL defined by cl-batis and return results.
+
+   Uses gen-sql-and-params to convert the SQL definition to
+   prepared statement SQL and parameter list, then executes it.
+   SELECT queries return result rows, UPDATE queries return affected row count.
+
+   @param sql [<batis-sql>] SQL definition created by select/defsql or update/defsql
+   @param named-values [plist] Parameter values as property list
+   @param connection [<connection>] Database connection (optional)
+   @return [list of plist] Query results for SELECT queries
+   @return [integer] Number of affected rows for UPDATE queries
+   @condition database-error SQL execution error
+   "
+  (let ((conn (or connection (get-connection))))
+    (multiple-value-bind (sql-string param-values)
+        (gen-sql-and-params sql named-values)
+
+      (let ((sql-type (slot-value sql 'batis.macro::sql-type)))
+        (ecase sql-type
+          (:select (execute-select-query conn sql-string param-values))
+          (:update (execute-update-query conn sql-string param-values)))))))
 

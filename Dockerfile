@@ -1,4 +1,4 @@
-FROM fukamachi/sbcl
+FROM fukamachi/sbcl:2.5.10
 
 RUN apt-get update && apt-get install -y \
   default-libmysqlclient-dev \
@@ -12,12 +12,15 @@ RUN ros run -e "(ql-dist:install-dist \"http://dist.shirakumo.org/shirakumo.txt\
 RUN ros install qlot rove
 
 ENV PATH=${PATH}:/root/.roswell/bin
+ENV CL_SOURCE_REGISTRY=/app
 
 RUN mkdir /app
 
-RUN mkdir -p /qlot/volumes
+RUN mkdir /qlot
+RUN mkdir /volumes
 WORKDIR /qlot
 COPY ./qlfile /qlot
 RUN echo 'local clails /app' >> /qlot/qlfile
+RUN cd /qlot && qlot install
 
 ENTRYPOINT /bin/bash

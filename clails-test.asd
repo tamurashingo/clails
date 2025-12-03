@@ -39,7 +39,11 @@
                #:clails-test/view/compiler
                #:clails-test/view/renderer
                #:clails-test/datetime/all
-               #:clails-test/datetime/conversions)
+               #:clails-test/datetime/conversions
+               #:clails-test/model/native-query
+               #:clails-test/model/native-query/sqlite3
+               #:clails-test/model/native-query/mysql
+               #:clails-test/model/native-query/postgresql)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 
