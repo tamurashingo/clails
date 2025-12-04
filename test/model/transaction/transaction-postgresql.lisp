@@ -56,7 +56,6 @@
 
 
 (setup
-  (shutdown-connection-pool)
   (clear-loggers)
   (register-logger
    :sql
@@ -84,6 +83,9 @@
   (db-migrate)
   (startup-connection-pool)
   (initialize-table-information))
+
+(teardown
+  (shutdown-connection-pool))
 
 
 

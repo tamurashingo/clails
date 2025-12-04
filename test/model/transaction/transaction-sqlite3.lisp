@@ -82,6 +82,10 @@
   (initialize-table-information))
 
 
+(teardown
+  (shutdown-connection-pool))
+
+
 
 (deftest nested-transaction-savepoint-test-sqlite3
   (testing "Nested transactions - both commit should persist all data (SQLite3)"
