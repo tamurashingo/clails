@@ -1,4 +1,4 @@
-FROM fukamachi/sbcl
+FROM fukamachi/sbcl:2.5.10
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -26,6 +26,7 @@ RUN mkdir /qlot
 WORKDIR /qlot
 RUN echo 'github fukamachi/cl-dbi' > /qlot/qlfile
 RUN echo 'github tamurashingo/cl-dbi-connection-pool' >> /qlot/qlfile
+RUN echo 'github tamurashingo/cl-batis' >> /qlot/qlfile
 RUN echo 'github tamurashingo/getcmd' >> /qlot/qlfile
 #COPY ./qlfile /qlot
 
