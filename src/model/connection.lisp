@@ -3,7 +3,8 @@
   (:use #:cl)
   (:import-from #:clails/environment
                 #:*database-type*
-                #:*connection-pool*)
+                #:*connection-pool*
+                #:*sqlite3-lock-module-loaded*)
   (:export #:startup-connection-pool
            #:shutdown-connection-pool
            #:create-connection-pool-impl
@@ -27,7 +28,7 @@
 (defparameter *thread-connection-pool*
   nil
   "Hash table managing connections bound to threads.
-   
+
    Key: thread OS ID
    Value: <connection> instance")
 
@@ -82,10 +83,18 @@
    
    Creates the thread-connection hash table and connection pool
    if they don't already exist.
+   For SQLite3, loads the lock module to enable pessimistic locking support.
    "
   (when (null *connection-pool*)
     (setf *thread-connection-pool* (make-hash-table :test #'eq))
-    (setf *connection-pool* (create-connection-pool-impl *database-type*))))
+    (setf *connection-pool* (create-connection-pool-impl *database-type*))
+
+    ;; Load SQLite3 lock module if using SQLite3
+    (when (and (typep *database-type* 'clails/environment:<database-type-sqlite3>)
+               (not clails/environment:*sqlite3-lock-module-loaded*))
+      (load (merge-pathnames "src/model/impl/sqlite3-lock.lisp"
+                             (asdf:system-source-directory :clails)))
+      (setf clails/environment:*sqlite3-lock-module-loaded* t))))
 
 (defun shutdown-connection-pool ()
   "Shutdown the database connection pool.

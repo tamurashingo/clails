@@ -29,6 +29,9 @@
                #:clails-test/model/transaction/transaction-sqlite3
                #:clails-test/model/transaction/transaction-mysql
                #:clails-test/model/transaction/transaction-postgresql
+               #:clails-test/model/pessimistic-lock/lock-sqlite3
+               #:clails-test/model/pessimistic-lock/lock-mysql
+               #:clails-test/model/pessimistic-lock/lock-postgresql
                #:clails-test/logger/registry
                #:clails-test/logger/purpose-specific
                #:clails-test/logger/file-appender
