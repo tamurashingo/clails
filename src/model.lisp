@@ -19,6 +19,8 @@
                 #:destroy)
   (:import-from #:clails/model/transaction
                 #:with-transaction)
+  (:import-from #:clails/model/lock
+                #:with-locked-transaction)
   (:import-from #:clails/model/impl/sqlite3)
   (:import-from #:clails/model/impl/mysql)
   (:import-from #:clails/model/impl/postgresql)
@@ -38,8 +40,8 @@
            #:save
            #:make-record
            #:destroy
-
-           #:with-transaction))
+           #:with-transaction
+           #:with-locked-transaction))
 
 
 

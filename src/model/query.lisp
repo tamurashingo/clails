@@ -73,6 +73,9 @@
    (offset :initarg :offset
            :initform nil
            :documentation "OFFSET value")
+    (lock-clause :initarg :lock-clause
+                 :initform nil
+                 :documentation "Lock clause for pessimistic locking")
    (inst :type 'clails/model/base-model::<base-model>
          :documentation "Model instance")
    (alias->model :initform (make-hash-table)
@@ -420,7 +423,8 @@
            (order-by (generate-order-by (slot-value query 'order-by)))
            (offset (generate-offset (slot-value query 'offset)))
            (limit (generate-limit (slot-value query 'limit)))
-           (sql-template (format nil "SELECT ~{~A~^, ~} FROM ~A as ~A~@[ ~A~]~@[ WHERE ~A~]~@[ ORDER BY ~{~A~^, ~}~]~@[ LIMIT ~A~]~@[ OFFSET ~A~]"
+           (lock-clause (slot-value query 'lock-clause))
+           (sql-template (format nil "SELECT ~{~A~^, ~} FROM ~A as ~A~@[ ~A~]~@[ WHERE ~A~]~@[ ORDER BY ~{~A~^, ~}~]~@[ LIMIT ~A~]~@[ OFFSET ~A~]~@[ ~A~]"
                                  columns
                                  base-table-name
                                  (kebab->snake base-alias)
@@ -428,7 +432,8 @@
                                  (first where-parts)
                                  order-by
                                  (getf limit :limit)
-                                 (getf offset :offset)))
+                                 (getf offset :offset)
+                                 lock-clause))
            (named-params (append (second where-parts)
                                           (ensure-list (getf limit :keyword))
                                           (ensure-list (getf offset :keyword)))))
