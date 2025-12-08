@@ -46,7 +46,10 @@
                #:clails-test/model/native-query
                #:clails-test/model/native-query/sqlite3
                #:clails-test/model/native-query/mysql
-               #:clails-test/model/native-query/postgresql)
+               #:clails-test/model/native-query/postgresql
+               #:clails-test/task/registry
+               #:clails-test/task/runner
+               #:clails-test/task/core)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 
