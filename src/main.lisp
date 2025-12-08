@@ -17,6 +17,7 @@
   (:import-from #:clails/middleware)
   (:import-from #:clails/logger)
   (:import-from #:clails/datetime)
+  (:import-from #:clails/task)
   (:export #:create-project
            #:generate/model
            #:generate/migration
@@ -26,4 +27,5 @@
            #:db/migrate-down
            #:db/rollback))
 (in-package #:clails/main)
+
 
