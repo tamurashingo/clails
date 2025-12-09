@@ -41,8 +41,19 @@
            #:task-info-function
            #:run-task
            #:deftask
-           #:defnamespace))
+           #:defnamespace
+           #:initialize-task-system))
 
 (in-package #:clails/task)
 
-;; Re-export all symbols from sub-packages
+(defun initialize-task-system ()
+  "Initialize task system (load custom tasks).
+
+   This function should be called before executing tasks.
+   It loads custom tasks from lib/tasks/.
+
+   @return [t] Returns t after successful initialization
+   "
+  (load-custom-tasks)
+  t)
+

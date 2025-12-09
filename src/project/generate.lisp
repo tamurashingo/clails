@@ -9,7 +9,8 @@
            #:gen/view
            #:gen/controller
            #:gen/scaffold
-           #:gen/schema))
+           #:gen/schema
+           #:gen/task))
 (in-package #:clails/project/generate)
 
 
@@ -287,3 +288,45 @@
       (format out "~A" (funcall (cl-template:compile-template template-content)
                                 `(:project-name ,*project-name*
                                   :tables ,tables))))))
+
+;; ----------------------------------------
+;; task
+(defun gen/task (task-name &key namespace)
+  "Generate task file.
+
+   @param task-name [string] Task name (e.g., 'cleanup', 'import')
+   @param namespace [string or nil] Optional namespace (e.g., 'maintenance', 'data')
+   "
+  (let* ((task-dir (if namespace
+                      (format nil "lib/tasks/~A" (string-downcase namespace))
+                      "lib/tasks"))
+         (package-name (if namespace
+                          (format nil "~A/tasks/~A/~A"
+                                  *project-name*
+                                  (string-downcase namespace)
+                                  (string-downcase task-name))
+                          (format nil "~A/tasks/~A"
+                                  *project-name*
+                                  (string-downcase task-name))))
+         (filename (format nil "~A.lisp" (string-downcase task-name)))
+         (outfile (format nil "~A/~A/~A" *project-dir* task-dir filename))
+         (template-file (asdf:system-relative-pathname :clails "template/generate/lib/tasks/task.lisp.tmpl"))
+         (template-content (uiop:read-file-string template-file
+                                                  :external-format :utf-8)))
+
+    ;; Ensure directory exists
+    (ensure-directories-exist (format nil "~A/~A/" *project-dir* task-dir))
+
+    (format t "output: ~A~%" outfile)
+    (when (probe-file outfile)
+      (error "already exists: ~A" outfile))
+
+    (with-open-file (out outfile
+                         :direction :output
+                         :if-exists :supersede)
+      (format out "~A" (funcall (cl-template:compile-template template-content)
+                                `(:project-name ,*project-name*
+                                  :package-name ,package-name
+                                  :task-name ,task-name
+                                  :namespace ,(when namespace (string-upcase namespace))))))))
+

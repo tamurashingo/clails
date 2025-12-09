@@ -1,0 +1,39 @@
+; -*- mode: lisp -*-
+;;;; Task: <%= (@ task-name) %>
+<% (if (@ namespace) %>
+;;;; Namespace: <%= (@ namespace) %>
+<% ) %>
+
+(defpackage #:<%= (@ package-name) %>
+  (:use #:cl)
+  (:import-from #:clails/task/core
+                #:deftask
+                #:defnamespace)
+  (:import-from #:clails/logger/core
+                #:log.task))
+
+(in-package #:<%= (@ package-name) %>)
+
+<% (if (@ namespace) %>
+(defnamespace :<%= (@ namespace) %>
+  (deftask :<%= (@ task-name) %>
+    :description "TODO: Add task description"
+    :function (lambda ()
+                (log.task "Task started" :task-name "<%= (@ namespace) %>:<%= (@ task-name) %>")
+
+                ;; TODO: Implement task logic here
+                (format t "Executing <%= (@ namespace) %>:<%= (@ task-name) %> task~%")
+
+                (log.task "Task completed" :task-name "<%= (@ namespace) %>:<%= (@ task-name) %>"))))
+<% ) %>
+<% (if (null (@ namespace)) %>
+(deftask :<%= (@ task-name) %>
+  :description "TODO: Add task description"
+  :function (lambda ()
+              (log.task "Task started" :task-name "<%= (@ task-name) %>")
+
+              ;; TODO: Implement task logic here
+              (format t "Executing <%= (@ task-name) %> task~%")
+
+              (log.task "Task completed" :task-name "<%= (@ task-name) %>")))
+<% ) %>
