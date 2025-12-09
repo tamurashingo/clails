@@ -9,6 +9,8 @@
                 #:task-info-namespace
                 #:task-info-depends-on
                 #:task-info-function)
+  (:import-from #:clails/logger/core
+                #:log.task)
   (:export #:run-task
            #:*executed-tasks*))
 
@@ -17,36 +19,96 @@
 (defvar *executed-tasks* '()
   "List of tasks already executed in current run")
 
+(defun format-task-name (task-info)
+  "Format task name for logging.
+
+   @param task-info [<task-info>] Task information object
+   @return [string] Formatted task name (e.g., \"db:migrate\" or \"cleanup\")
+   "
+  (if (task-info-namespace task-info)
+      (format nil "~A:~A"
+              (task-info-namespace task-info)
+              (task-info-name task-info))
+      (format nil "~A" (task-info-name task-info))))
+
 (defun resolve-dependencies (task-info)
-  "Resolve and execute task dependencies.
+  "Resolve and execute task dependencies with logging.
 
    @param task-info [<task-info>] Task information object
    @return [null] Returns nil
    "
   (dolist (dep (task-info-depends-on task-info))
-    (let ((dep-task (if (consp dep)
-                        (find-task (second dep) (first dep))
-                        (find-task dep))))
+    (let* ((dep-task (if (consp dep)
+                         (find-task (second dep) (first dep))
+                         (find-task dep)))
+           (dep-task-name (when dep-task (format-task-name dep-task))))
       (unless dep-task
+        (log.task "Dependency not found"
+                  :task-name (format-task-name task-info)
+                  :dependency dep
+                  :status :error)
         (error "Dependency task not found: ~A" dep))
+
+      ;; Log dependency resolution
+      (log.task "Resolving dependency"
+                :task-name (format-task-name task-info)
+                :dependency dep-task-name)
+
       (run-task-internal dep-task))))
 
 (defun run-task-internal (task-info &rest args)
-  "Internal task execution with idempotency guarantee.
+  "Internal task execution with idempotency guarantee and logging.
 
    @param task-info [<task-info>] Task information object
    @param args [list] Arguments to pass to task function
    @return [t] Returns t after successful execution
    "
-  (let ((task-key (format nil "~A:~A"
-                         (or (task-info-namespace task-info) "")
-                         (task-info-name task-info))))
+  (let* ((task-name (format-task-name task-info))
+         (task-key task-name)
+         (start-time (get-internal-real-time)))
+
     (unless (member task-key *executed-tasks* :test #'string=)
+      ;; Resolve dependencies first
       (resolve-dependencies task-info)
-      
-      (format t "~&Running task: ~A~%" task-key)
-      (apply (task-info-function task-info) args)
-      
+
+      ;; Log task start
+      (log.task "Task started"
+                :task-name task-name
+                :namespace (task-info-namespace task-info)
+                :args args)
+      (format t "~&Running task: ~A~%" task-name)
+
+      ;; Execute task with error handling
+      (handler-case
+          (progn
+            (apply (task-info-function task-info) args)
+
+            ;; Log task completion
+            (let* ((end-time (get-internal-real-time))
+                   (duration (/ (- end-time start-time)
+                               internal-time-units-per-second)))
+              (log.task "Task completed"
+                        :task-name task-name
+                        :namespace (task-info-namespace task-info)
+                        :duration duration
+                        :status :success)
+              (format t "Task completed: ~A (~,3Fs)~%" task-name duration)))
+
+        (error (e)
+          ;; Log task failure
+          (let* ((end-time (get-internal-real-time))
+                 (duration (/ (- end-time start-time)
+                             internal-time-units-per-second)))
+            (log.task "Task failed"
+                      :task-name task-name
+                      :namespace (task-info-namespace task-info)
+                      :duration duration
+                      :status :error
+                      :error (format nil "~A" e))
+            (format *error-output* "Task failed: ~A - ~A~%" task-name e)
+            (error e))))
+
+      ;; Mark task as executed
       (push task-key *executed-tasks*))))
 
 (defun run-task (name-or-list &rest args-or-namespace)
@@ -84,9 +146,14 @@
               (setf args rest-args))
             ;; Otherwise all args are task arguments
             (setf args args-or-namespace))))
-    
+
     (let ((*executed-tasks* '()))
       (let ((task-info (find-task name namespace)))
         (unless task-info
+          (log.task "Task not found"
+                    :task-name (if namespace
+                                   (format nil "~A:~A" namespace name)
+                                   (format nil "~A" name))
+                    :status :error)
           (error "Task not found: ~A~@[:~A~]" namespace name))
         (apply #'run-task-internal task-info args)))))

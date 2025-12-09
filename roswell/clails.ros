@@ -47,12 +47,14 @@ exec ros -Q -- $0 "$@"
   (format t "  generate:view <name>              Generate view files~%")
   (format t "  generate:controller <name>        Generate controller file~%")
   (format t "  generate:scaffold <name>          Generate scaffold~%")
+  (format t "  generate:task <name>              Generate task file~%")
   (format t "  db:create                         Create database~%")
   (format t "  db:migrate                        Run migrations~%")
   (format t "  db:migrate:up <version>           Migrate up to version~%")
   (format t "  db:migrate:down <version>         Migrate down to version~%")
   (format t "  db:rollback                       Rollback migrations~%")
   (format t "  db:status                         Show migration status~%")
+  (format t "  task [TASK] [OPTIONS]             Execute custom tasks~%")
   (format t "  test [packages...]                Run tests~%")
   (format t "  server                            Start web server~%")
   (format t "  stop                              Stop web server~%")
@@ -74,18 +76,24 @@ exec ros -Q -- $0 "$@"
 
 (defun help/generate ()
   (format t "Usage: clails generate:TYPE NAME [OPTIONS]~%~%")
-  (format t "Generate files for model, migration, view, controller, or scaffold.~%~%")
+  (format t "Generate files for model, migration, view, controller, scaffold, or task.~%~%")
   (format t "Commands:~%")
   (format t "  generate:model <name>             Generate model file~%")
   (format t "  generate:migration <name>         Generate migration file~%")
   (format t "  generate:view <name>              Generate view file~%")
   (format t "  generate:controller <name>        Generate controller file~%")
   (format t "  generate:scaffold <name>          Generate model, view, and controller~%")
+  (format t "  generate:task <name>              Generate task file~%")
   (format t "~%")
   (format t "Options:~%")
   (format t "  --no-overwrite            Do not overwrite existing files (not available for migration)~%")
   (format t "  -n, --no-migration        Skip migration file generation (model only)~%")
-  (format t "  -h, --help                Show this help message~%"))
+  (format t "  -ns, --namespace NS       Specify namespace for task (task only)~%")
+  (format t "  -h, --help                Show this help message~%~%")
+  (format t "Examples:~%")
+  (format t "  clails generate:task cleanup~%")
+  (format t "  clails generate:task import --namespace data~%")
+  (format t "  clails generate:task cleanup -ns maintenance~%"))
 
 (defun help/db ()
   (format t "Usage: clails db:COMMAND [OPTIONS]~%~%")
@@ -164,6 +172,19 @@ exec ros -Q -- $0 "$@"
   (format t "~%")
   (format t "Examples:~%")
   (format t "  clails stop~%"))
+
+(defun help/task ()
+  (format t "Usage: clails task [TASK] [OPTIONS]~%~%")
+  (format t "Execute custom tasks or built-in task system.~%~%")
+  (format t "Options:~%")
+  (format t "  -l, --list [NAMESPACE]    List all available tasks (optionally filter by namespace)~%")
+  (format t "  --info <task>             Show detailed information about a task~%")
+  (format t "  -h, --help                Show this help message~%~%")
+  (format t "Examples:~%")
+  (format t "  clails task --list                        # List all tasks~%")
+  (format t "  clails task --list db                     # List tasks in 'db' namespace~%")
+  (format t "  clails task --info maintenance:cleanup    # Show info about db:migrate task~%")
+  (format t "  clails task maintenance:cleanup           # Run custom task~%"))
 
 ;; Utility functions
 (defun load-project ()
@@ -438,6 +459,22 @@ exec ros -Q -- $0 "$@"
     (load-project)
     (clails/cmd:generate/scaffold name :no-overwrite no-overwrite)))
 
+(define-command "generate:task" (args &key (namespace :short-option "ns"
+                                                      :long-option "namespace"
+                                                      :consume t)
+                                           (help :short-option "h"
+                                                 :long-option "help"))
+  (:help-function #'help/generate)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
+  (let ((name (first args)))
+    (when (null name)
+      (format *error-output* "ERROR: NAME parameter is required for generate:task~%")
+      (uiop:quit 1))
+    (load-project)
+    (clails/cmd:generate/task name :namespace namespace)))
+
 (define-command "test" (args &key (tags :long-option "tag"
                                         :consume t
                                         :multiple t)
@@ -456,9 +493,9 @@ exec ros -Q -- $0 "$@"
   (when help
     (help/test)
     (uiop:quit 0))
-  
+
   (load-project)
-  
+
   ;; Set environment to test after loading project
   (clails/environment:set-environment "test")
 
@@ -532,6 +569,52 @@ exec ros -Q -- $0 "$@"
     (uiop:quit 0))
   (load-project)
   (clails/cmd:stop))
+
+(define-command "task" (args &key (list :short-option "l"
+                                        :long-option "list")
+                                  (info :long-option "info"
+                                        :consume t)
+                                  (help :short-option "h"
+                                        :long-option "help"))
+  (:help-function #'help/task)
+  (when help
+    (help/task)
+    (uiop:quit 0))
+
+  (load-project)
+  (clails/task:initialize-task-system)
+
+  (cond
+    ;; List tasks
+    (list
+     (if args
+         (clails/cmd:task/list (first args))
+         (clails/cmd:task/list)))
+
+    ;; Task info
+    (info
+     (clails/cmd:task/info info))
+
+    ;; Execute task
+    (args
+     (let* ((task-spec (first args))
+            (bracket-pos (position #\[ task-spec))
+            (task-name (if bracket-pos
+                           (subseq task-spec 0 bracket-pos)
+                           task-spec))
+            (args-string (when bracket-pos
+                          (subseq task-spec bracket-pos)))
+            (task-args (when args-string
+                        (let ((close-pos (position #\] args-string)))
+                          (when close-pos
+                            (let ((args-part (subseq args-string 1 close-pos)))
+                              (uiop:split-string args-part :separator ",")))))))
+       (apply #'clails/cmd:task/run task-name task-args)))
+
+    ;; No arguments - show help
+    (t
+     (help/task)
+     (uiop:quit 0))))
 
 
 (defun main (&rest argv)
