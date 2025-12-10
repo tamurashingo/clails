@@ -20,6 +20,8 @@ It provides features necessary for development such as project creation, code ge
 
 To use clails, you must first install Roswell.
 
+#### Commands
+
 ```bash
 # macOS (Homebrew)
 brew install roswell
@@ -28,15 +30,59 @@ brew install roswell
 # See https://github.com/roswell/roswell/wiki/Installation
 ```
 
-### Installing clails
+### Obtaining Required Modules for clails
+
+Since clails uses qlot to download required modules, you need to obtain the clails qlfile.
+
+#### Create Working Directory
+
+Create a working directory for installation and navigate to it.
 
 ```bash
-# Install clails command
-ros install tamurashingo/clails
+mkdir -p ~/clails-install
+cd ~/clails-install
+```
 
-# Verify installation
+#### Obtain qlfile
+
+```bash
+wget https://raw.githubusercontent.com/tamurashingo/clails/refs/heads/main/qlfile
+```
+
+#### Obtain Modules
+
+```bash
+qlot install
+```
+
+### Installing clails
+
+Install the clails command and configure PATH.
+
+#### Configure PATH
+
+Add the clails command placed in the working directory to your PATH.
+
+```bash
+export PATH=$PWD/.qlot/bin:$PATH
+```
+
+#### Install clails Command
+
+```bash
+qlot exec ros install tamurashingo/clails
+```
+
+#### Verify Installation
+
+```bash
 clails help
 ```
+
+#### Notes
+
+- The PATH setting will be lost when you close the shell. To make it permanent, add it to `~/.bashrc` or `~/.zshrc`.
+- Do not delete the installation working directory (e.g., `~/clails-install`) as the clails command is located there.
 
 ---
 
@@ -47,7 +93,6 @@ clails help
 | Command | Description |
 |---------|-------------|
 | `clails new` | Create a new project |
-| `clails environment` | Display current environment |
 | `clails server` | Start web server |
 | `clails stop` | Stop web server |
 
@@ -60,6 +105,7 @@ clails help
 | `clails generate:view` | Generate View file |
 | `clails generate:controller` | Generate Controller file |
 | `clails generate:scaffold` | Generate Model, View, and Controller together |
+| `clails generate:task` | Generate Task file |
 
 ### Database
 
@@ -67,7 +113,23 @@ clails help
 |---------|-------------|
 | `clails db:create` | Create database |
 | `clails db:migrate` | Run migrations |
+| `clails db:migrate:up` | Run specific migration up |
+| `clails db:migrate:down` | Rollback specific migration |
+| `clails db:rollback` | Rollback migrations |
+| `clails db:seed` | Seed the database |
 | `clails db:status` | Display migration status |
+
+### Task Management
+
+| Command | Description |
+|---------|-------------|
+| `clails task` | Execute custom tasks |
+
+### Testing
+
+| Command | Description |
+|---------|-------------|
+| `clails test` | Run tests |
 
 ---
 
@@ -125,24 +187,6 @@ myapp/
 └── README.md
 ```
 
-### `clails environment` - Display Current Environment
-
-Displays the current project environment (development, test, production).
-
-#### Syntax
-
-```bash
-clails environment
-```
-
-#### Examples
-
-```bash
-cd myapp
-clails environment
-# => environment: DEVELOPMENT
-```
-
 ### `clails server` - Start Web Server
 
 Starts the development web server.
@@ -159,6 +203,9 @@ clails server [OPTIONS]
 |--------|-------|---------|-------------|
 | `--port PORT` | `-p PORT` | `5000` | Server port number |
 | `--bind ADDRESS` | `-b ADDRESS` | `127.0.0.1` | IP address to bind |
+| `--swank` | `-s` | None | Start swank server (127.0.0.1:4005) |
+| `--swank-address ADDRESS` | None | `127.0.0.1` | Swank server bind address |
+| `--swank-port PORT` | None | `4005` | Swank server port number |
 
 #### Examples
 
@@ -174,6 +221,12 @@ clails server -b 0.0.0.0
 
 # Specify both port and address
 clails server -p 8080 -b 0.0.0.0
+
+# Start swank server simultaneously (for REPL connection)
+clails server --swank
+
+# Specify swank server address and port
+clails server --swank --swank-address 0.0.0.0 --swank-port 4006
 ```
 
 #### Server Startup Behavior
@@ -420,6 +473,62 @@ app/controllers/users_controller.lisp
   (set-redirect controller "/users"))
 ```
 
+### `clails generate:task` - Generate Task File
+
+Generates a task file.
+
+#### Syntax
+
+```bash
+clails generate:task TASK_NAME [OPTIONS]
+```
+
+#### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--namespace NS` | `-ns NS` | Specify namespace for task |
+| `--no-overwrite` | None | Do not overwrite existing files (default: enabled) |
+
+#### Examples
+
+```bash
+# Generate task
+clails generate:task cleanup
+
+# Generate task with namespace
+clails generate:task import --namespace data
+
+# Use short form for namespace
+clails generate:task cleanup -ns maintenance
+```
+
+#### Generated File
+
+```
+app/tasks/NAMESPACE/TASK_NAME.lisp
+```
+
+Example: `app/tasks/maintenance/cleanup.lisp`
+
+#### Generated Task Example
+
+```common-lisp
+(in-package #:cl-user)
+(defpackage #:myapp/tasks/maintenance/cleanup
+  (:use #:cl)
+  (:import-from #:clails/task
+                #:deftask))
+
+(in-package #:myapp/tasks/maintenance/cleanup)
+
+(deftask "maintenance:cleanup"
+  :description "Task description here"
+  :function #'(lambda (&rest args)
+                ;; Task implementation here
+                ))
+```
+
 ### `clails generate:scaffold` - Generate Scaffold
 
 Generates Model, View, Controller, and Migration files together.
@@ -489,26 +598,113 @@ Executes pending migrations.
 #### Syntax
 
 ```bash
-clails db:migrate
+clails db:migrate [OPTIONS]
 ```
 
-#### Alias
+#### Options
 
-```bash
-clails db:migrate:up
-```
+| Option | Description |
+|--------|-------------|
+| `--version VERSION` | Run migrations up to specific version |
 
 #### Examples
 
 ```bash
+# Run all pending migrations
 clails db:migrate
-# => Running migration: 20241022-143000-create-users-table
-# => Migration completed successfully
+
+# Run migrations up to specific version
+clails db:migrate --version 20241022143000
 ```
 
 #### Behavior
 
 1. Scan Migration files in `db/migrate/` directory
+2. Sort pending migrations in execution order
+3. Execute `:up` function for each migration
+4. Save execution record in migration table
+
+### `clails db:migrate:up` - Run Specific Migration Up
+
+Executes a specific version migration.
+
+#### Syntax
+
+```bash
+clails db:migrate:up VERSION
+```
+
+#### Examples
+
+```bash
+clails db:migrate:up 20241022143000
+```
+
+### `clails db:migrate:down` - Rollback Specific Migration
+
+Rolls back a specific version migration.
+
+#### Syntax
+
+```bash
+clails db:migrate:down VERSION
+```
+
+#### Examples
+
+```bash
+clails db:migrate:down 20241022143000
+```
+
+### `clails db:rollback` - Rollback Migrations
+
+Rolls back the latest migration.
+
+#### Syntax
+
+```bash
+clails db:rollback [OPTIONS]
+```
+
+#### Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--step N` | `1` | Number of migrations to rollback |
+
+#### Examples
+
+```bash
+# Rollback 1 latest migration
+clails db:rollback
+
+# Rollback 3 latest migrations
+clails db:rollback --step 3
+```
+
+### `clails db:seed` - Seed the Database
+
+Seeds the database with data.
+
+#### Syntax
+
+```bash
+clails db:seed
+```
+
+#### Examples
+
+```bash
+clails db:seed
+# => Seeding database...
+# => Seed completed successfully
+```
+
+#### Behavior
+
+Executes the seed process defined in `db/seed.lisp`.
+
+### `clails db:status` - Display Migration Status
 2. Sort pending migrations by execution order
 3. Execute `:up` function of each Migration
 4. Save execution records to Migration table
@@ -540,7 +736,94 @@ clails db:status
 
 ---
 
-## 4. Common Usage Patterns
+## 4. Task Management Commands
+
+### `clails task` - Execute Custom Tasks
+
+Executes custom tasks.
+
+#### Syntax
+
+```bash
+clails task [TASK] [OPTIONS]
+```
+
+#### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--list [NAMESPACE]` | `-l [NAMESPACE]` | List available tasks (optionally filter by namespace) |
+| `--info <task>` | None | Show detailed information about a task |
+
+#### Examples
+
+```bash
+# List all tasks
+clails task --list
+
+# List tasks in specific namespace
+clails task --list db
+
+# Show task details
+clails task --info maintenance:cleanup
+
+# Execute custom task
+clails task maintenance:cleanup
+```
+
+---
+
+## 5. Testing Commands
+
+### `clails test` - Run Tests
+
+Runs tests.
+
+#### Syntax
+
+```bash
+clails test [PACKAGES...] [OPTIONS]
+```
+
+#### Options
+
+| Option | Description |
+|--------|-------------|
+| `--tag TAG` | Include tests with TAG (can be specified multiple times) |
+| `--exclude TAG` | Exclude tests with TAG (can be specified multiple times) |
+| `--list-tags` | List all available tags |
+| `--list-packages` | List all available packages |
+| `--list-tests-tag TAG` | List tests with specific tag |
+| `--list-tests-pkg PKG` | List tests in specific package |
+
+#### Examples
+
+```bash
+# Run all tests
+clails test
+
+# Run tests in specific packages
+clails test pkg1 pkg2
+
+# Run tests with specific tag
+clails test --tag model
+
+# Run tests with multiple tags
+clails test --tag model --tag sqlite3
+
+# Exclude tests with specific tag
+clails test --exclude slow
+
+# List all available tags
+clails test --list-tags
+
+# Test specific package
+clails test todoapp/models/user
+```
+
+---
+
+## 6. Common Usage Patterns
 
 ### Starting a New Project
 
@@ -608,9 +891,38 @@ clails db:migrate
 clails server
 ```
 
+### Batch Processing with Tasks
+
+```bash
+# 1. Generate task
+clails generate:task cleanup --namespace maintenance
+
+# 2. Implement task
+# Edit app/tasks/maintenance/cleanup.lisp
+
+# 3. Execute task
+clails task maintenance:cleanup
+
+# 4. Check available tasks
+clails task --list
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+clails test
+
+# Test specific package
+clails test myapp/models/user
+
+# Filter tests by tags
+clails test --tag model --exclude slow
+```
+
 ---
 
-## 5. Command Options
+## 7. Command Options
 
 ### Common Options
 
@@ -633,7 +945,7 @@ clails generate:model user --no-overwrite
 
 ---
 
-## 6. Troubleshooting
+## 8. Troubleshooting
 
 ### Command Not Found
 
@@ -691,7 +1003,7 @@ clails server -p 8080
 
 ---
 
-## 7. Advanced Usage
+## 9. Advanced Usage
 
 ### Adding Custom Commands
 
@@ -723,6 +1035,21 @@ You can execute arbitrary processes when starting or stopping the server.
                 (format t "Server stopping...~%"))))
 ```
 
+### Development with Swank Server
+
+By starting the swank server, you can connect to your application via REPL from Emacs/SLIME or Vim/SLIMV.
+
+```bash
+# Start web server with swank server
+clails server --swank
+
+# Connect from Emacs
+M-x slime-connect RET 127.0.0.1 RET 4005 RET
+
+# Start on different address/port
+clails server --swank --swank-address 0.0.0.0 --swank-port 4006
+```
+
 ---
 
 ## Summary
@@ -730,9 +1057,12 @@ You can execute arbitrary processes when starting or stopping the server.
 The clails command has the following features:
 
 1. **Unified Interface**: Execute all operations via `clails` command
-2. **Auto-generation**: Automatically generate code for Models, Views, Controllers, etc.
-3. **Database Management**: Schema version control through Migrations
+2. **Auto-generation**: Automatically generate code for Models, Views, Controllers, Tasks, etc.
+3. **Database Management**: Schema version control and rollback functionality through Migrations
 4. **Development Server**: Built-in web server for immediate testing
-5. **Extensibility**: Extendable with custom commands and hooks
+5. **Swank Server**: Supports live coding via REPL
+6. **Task System**: Execute batch processing with custom tasks
+7. **Test Framework**: Test execution with tag and package filtering
+8. **Extensibility**: Extendable with custom commands and hooks
 
 For detailed API reference, see the command implementation in `src/cmd.lisp`.
