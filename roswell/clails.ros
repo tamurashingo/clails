@@ -24,6 +24,8 @@ exec ros -Q -- $0 "$@"
   (unless (probe-file (merge-pathnames "qlfile" CLAILS_CONF_DIR))
     (qlot:add "tamurashingo/cl-dbi-connection-pool")
     (qlot:add "tamurashingo/getcmd")
+    (qlot:add "fukamachi/cl-dbi")
+    (qlot:add "tamurashingo/cl-batis")
 
     (qlot:add "tamurashingo/clails"))
 
