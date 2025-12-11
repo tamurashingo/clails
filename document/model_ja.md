@@ -623,7 +623,498 @@ JOIN したデータにアクセスするには `ref` 関数を使います。
 
 ---
 
-## 8. トランザクション管理
+## 8. 悲観的ロック
+
+悲観的ロックを使用することで、データベースレベルでレコードやデータベースをロックし、他のトランザクションによる同時更新を防ぐことができます。
+
+clails では `with-locked-transaction` マクロを使用して悲観的ロックを実現します。
+
+### 基本的な使い方
+
+```common-lisp
+;; レコードをロックして更新
+(clails/model/lock:with-locked-transaction (user
+                                           (query <user>
+                                                  :as :user
+                                                  :where (:= (:user :id) :user-id))
+                                           (list :user-id 1))
+  ;; このトランザクション内で user を安全に更新できる
+  (setf (ref user :balance) (+ (ref user :balance) 100))
+  (save user))
+```
+
+### クエリの指定方法
+
+`with-locked-transaction` には2つの形式でクエリを指定できます。
+
+#### 1. clails の query DSL を使用
+
+```common-lisp
+(with-locked-transaction (users
+                         (query <user>
+                                :as :user
+                                :where (:= (:user :status) :status))
+                         (list :status "active"))
+  ;; users を処理
+  (loop for user in users
+        do (process-user user)))
+```
+
+#### 2. cl-batis の SQL 定義を使用
+
+```common-lisp
+(use-package :batis.macro)
+
+;; cl-batis で SQL を定義
+(defparameter *get-active-users*
+  (select "SELECT * FROM users WHERE status = #{:status}"))
+
+;; with-locked-transaction で使用
+(with-locked-transaction (users
+                         *get-active-users*
+                         (list :status "active"))
+  (loop for user in users
+        do (process-user user)))
+```
+
+### ロックモード
+
+データベースごとにサポートされるロックモードが異なります。
+
+#### PostgreSQL のロックモード
+
+- `:for-update` - 行を更新または削除のためにロック（デフォルト）
+- `:for-share` - 行を読み取りのためにロック
+- `:for-no-key-update` - キー以外の更新のためにロック
+- `:for-key-share` - キーの読み取りのためにロック
+
+```common-lisp
+;; FOR UPDATE でロック
+(with-locked-transaction (user
+                         (query <user> :as :user :where (:= (:user :id) :id))
+                         (list :id 1)
+                         :mode :for-update)
+  (setf (ref user :status) "processing")
+  (save user))
+
+;; FOR SHARE でロック
+(with-locked-transaction (user
+                         (query <user> :as :user :where (:= (:user :id) :id))
+                         (list :id 1)
+                         :mode :for-share)
+  ;; 読み取り専用の処理
+  (ref user :name))
+```
+
+#### MySQL のロックモード
+
+- `:for-update` - 行を更新または削除のためにロック（デフォルト）
+- `:for-share` - 行を読み取りのためにロック
+
+```common-lisp
+(with-locked-transaction (user
+                         (query <user> :as :user :where (:= (:user :id) :id))
+                         (list :id 1)
+                         :mode :for-update)
+  (setf (ref user :balance) (+ (ref user :balance) 100))
+  (save user))
+```
+
+#### SQLite3 のロックモード
+
+SQLite3 は行レベルロックをサポートしていないため、データベースレベルでロックします。
+
+- `:immediate` - 読み取りを許可し、書き込みをロック（デフォルト、推奨）
+- `:exclusive` - すべてのアクセスをロック（注意して使用）
+- `:deferred` - 最初のクエリまでロックを遅延
+
+```common-lisp
+;; IMMEDIATE モード（推奨）
+(with-locked-transaction (user
+                         (query <user> :as :user :where (:= (:user :id) :id))
+                         (list :id 1)
+                         :mode :immediate)
+  (setf (ref user :balance) (+ (ref user :balance) 100))
+  (save user))
+```
+
+**注意**: SQLite3 で `:exclusive` モードを使用すると、ロックを使用していない他の接続も含めてすべての接続がエラーになります。ほとんどの場合、`:immediate` モードの使用を推奨します。
+
+### NOWAIT オプション
+
+ロックが取得できない場合、待機せずにすぐにエラーを返します（PostgreSQL と MySQL でサポート）。
+
+```common-lisp
+(handler-case
+    (with-locked-transaction (user
+                             (query <user> :as :user :where (:= (:user :id) :id))
+                             (list :id 1)
+                             :nowait T)
+      (setf (ref user :balance) (+ (ref user :balance) 100))
+      (save user))
+  (error (e)
+    (format t "Could not acquire lock: ~A~%" e)))
+```
+
+### SKIP LOCKED オプション
+
+ロックされている行をスキップして、ロックされていない行のみを取得します（PostgreSQL と MySQL でサポート）。
+
+```common-lisp
+;; ロックされていないユーザーを取得して処理
+(with-locked-transaction (users
+                         (query <user>
+                                :as :user
+                                :where (:= (:user :status) :status))
+                         (list :status "pending")
+                         :skip-locked T)
+  (loop for user in users
+        do (progn
+             (setf (ref user :status) "processing")
+             (save user))))
+```
+
+### 使用上の注意
+
+1. **トランザクション**: `with-locked-transaction` は自動的にトランザクションを開始し、正常終了時にコミット、エラー時にロールバックします
+2. **デッドロック**: 複数のレコードをロックする場合は、常に同じ順序でロックしてデッドロックを避けてください
+3. **ロックの保持時間**: トランザクション内の処理は可能な限り短時間で完了させてください
+4. **SQLite3 の制約**: SQLite3 は行レベルロックをサポートしていないため、データベース全体がロックされます
+5. **リトライロジック**: SQLite3 ではロックエラー時に自動的にリトライします（指数バックオフ付き）
+
+---
+
+## 9. Native Query（ネイティブクエリ）
+
+clails では、cl-batis を使用してネイティブな SQL クエリを実行することができます。
+複雑な集計処理や、クエリビルダーでは表現しにくいクエリを直接 SQL で記述できます。
+
+### cl-batis について
+
+cl-batis は MyBatis にインスパイアされた SQL マッパーライブラリです。
+SQL を Common Lisp のコード内に直接記述し、動的にパラメータをバインドできます。
+
+詳細は [cl-batis のドキュメント](https://github.com/tamurashingo/cl-batis) を参照してください。
+
+### SELECT クエリの定義と実行
+
+#### 基本的な SELECT
+
+cl-batis では2つの形式でクエリを定義できます。
+
+**アノテーション形式（@select）:**
+
+```common-lisp
+(use-package :cl-batis)
+(cl-syntax:use-syntax :annot)
+
+;; SELECT クエリを定義
+@select
+("SELECT * FROM users WHERE id = :id")
+(defsql get-user-by-id (id))
+
+;; クエリを実行
+(defvar *user* (first (execute-query get-user-by-id
+                                     (list :id 1))))
+```
+
+**関数形式（select）:**
+
+```common-lisp
+(use-package :cl-batis)
+
+;; SELECT クエリを定義
+(select
+ ("SELECT * FROM users WHERE id = :id")
+ (defsql get-user-by-id (id)))
+
+;; クエリを実行
+(defvar *user* (first (execute-query get-user-by-id
+                                     (list :id 1))))
+```
+
+#### 複数の条件を持つクエリ
+
+**アノテーション形式:**
+
+```common-lisp
+@select
+("SELECT * FROM users"
+ (sql-where
+   (sql-cond (not (null name))
+             " AND name LIKE :name ")
+   (sql-cond (not (null email))
+             " AND email = :email "))
+ "ORDER BY created_at DESC")
+(defsql search-users (name email))
+```
+
+**関数形式:**
+
+```common-lisp
+(select
+ ("SELECT * FROM users"
+  (sql-where
+    (sql-cond (not (null name))
+              " AND name LIKE :name ")
+    (sql-cond (not (null email))
+              " AND email = :email "))
+  "ORDER BY created_at DESC")
+ (defsql search-users (name email)))
+```
+
+**使用例:**
+
+```common-lisp
+;; 名前で検索
+(execute-query search-users
+               (list :name "%yamada%" :email nil))
+
+;; 名前とメールで検索
+(execute-query search-users
+               (list :name "%yamada%" :email "yamada@example.com"))
+
+;; 条件なし
+(execute-query search-users
+               (list :name nil :email nil))
+```
+
+#### JOIN を含むクエリ
+
+```common-lisp
+;; アノテーション形式
+@select
+("SELECT u.*, d.name as department_name
+  FROM users u
+  INNER JOIN departments d ON u.department_id = d.id
+  WHERE u.is_active = :is_active")
+(defsql get-users-with-departments (is_active))
+
+;; 関数形式
+(select
+ ("SELECT u.*, d.name as department_name
+   FROM users u
+   INNER JOIN departments d ON u.department_id = d.id
+   WHERE u.is_active = :is_active")
+ (defsql get-users-with-departments (is_active)))
+
+(execute-query get-users-with-departments
+               (list :is_active T))
+```
+
+#### 集計クエリ
+
+```common-lisp
+@select
+("SELECT department_id, COUNT(*) as user_count
+  FROM users
+  WHERE created_at >= :start_date
+    AND created_at < :end_date
+  GROUP BY department_id
+  HAVING COUNT(*) > :min_count")
+(defsql count-users-by-department (start_date end_date min_count))
+
+(execute-query count-users-by-department
+               (list :start_date "2024-01-01"
+                     :end_date "2024-12-31"
+                     :min_count 5))
+```
+
+### UPDATE クエリの定義と実行
+
+UPDATE クエリには `@update` または `update` を使用します。
+
+#### 基本的な UPDATE
+
+**アノテーション形式:**
+
+```common-lisp
+@update
+("UPDATE users
+  SET status = :status,
+      updated_at = :updated_at
+  WHERE id = :id")
+(defsql update-user-status (status updated_at id))
+```
+
+**関数形式:**
+
+```common-lisp
+(update
+ ("UPDATE users
+   SET status = :status,
+       updated_at = :updated_at
+   WHERE id = :id")
+ (defsql update-user-status (status updated_at id)))
+```
+
+**使用例:**
+
+```common-lisp
+;; クエリを実行（更新された行数が返される）
+(defvar *affected-rows*
+  (execute-query update-user-status
+                 (list :status "active"
+                       :updated_at (get-universal-time)
+                       :id 1)))
+```
+
+#### 条件付き UPDATE
+
+`sql-set` を使用して、条件に応じて SET 句を動的に構築します。
+
+```common-lisp
+@update
+("UPDATE users"
+ (sql-set
+   (sql-cond (not (null name))
+             " name = :name, ")
+   (sql-cond (not (null email))
+             " email = :email, ")
+   " updated_at = :updated_at ")
+ (sql-where
+   " id = :id "))
+(defsql update-user-fields (name email updated_at id))
+
+;; 名前のみ更新
+(execute-query update-user-fields
+               (list :id 1
+                     :name "New Name"
+                     :email nil
+                     :updated_at (get-universal-time)))
+
+;; 名前とメールを更新
+(execute-query update-user-fields
+               (list :id 1
+                     :name "New Name"
+                     :email "newemail@example.com"
+                     :updated_at (get-universal-time)))
+```
+
+#### バッチ UPDATE
+
+```common-lisp
+@update
+("UPDATE users
+  SET is_active = FALSE,
+      updated_at = :updated_at
+  WHERE last_login_at < :threshold_date
+    AND is_active = TRUE")
+(defsql deactivate-old-users (updated_at threshold_date))
+
+(execute-query deactivate-old-users
+               (list :threshold_date "2023-01-01"
+                     :updated_at (get-universal-time)))
+```
+
+### INSERT/DELETE クエリ
+
+INSERT や DELETE クエリも同様に `@update` または `update` で定義できます（SQL の種類に関わらず、SELECT 以外は `@update`/`update` を使用します）。
+
+```common-lisp
+;; INSERT（アノテーション形式）
+@update
+("INSERT INTO logs (user_id, action, created_at)
+  VALUES (:user_id, :action, :created_at)")
+(defsql insert-log (user_id action created_at))
+
+;; INSERT（関数形式）
+(update
+ ("INSERT INTO logs (user_id, action, created_at)
+   VALUES (:user_id, :action, :created_at)")
+ (defsql insert-log (user_id action created_at)))
+
+(execute-query insert-log
+               (list :user_id 1
+                     :action "login"
+                     :created_at (get-universal-time)))
+
+;; DELETE
+@update
+("DELETE FROM logs
+  WHERE created_at < :threshold_date")
+(defsql delete-old-logs (threshold_date))
+
+(execute-query delete-old-logs
+               (list :threshold_date "2023-01-01"))
+```
+
+### cl-batis の動的 SQL
+
+cl-batis は `sql-cond`、`sql-where`、`sql-set` を使用した動的な SQL 生成機能を提供しています。
+
+#### sql-where と sql-cond の使用
+
+条件に応じて WHERE 句の一部を含めるかどうかを制御します。
+
+```common-lisp
+@select
+("SELECT * FROM users"
+ (sql-where
+   (sql-cond (not (null name))
+             " AND name = :name ")
+   (sql-cond (not (null min_age))
+             " AND age >= :min_age ")))
+(defsql find-users (name min_age))
+
+;; name のみ指定
+(execute-query find-users (list :name "Alice" :min_age nil))
+;; => SELECT * FROM users WHERE AND name = ?
+
+;; 両方指定
+(execute-query find-users (list :name "Alice" :min_age 20))
+;; => SELECT * FROM users WHERE AND name = ? AND age >= ?
+
+;; 条件なし
+(execute-query find-users (list :name nil :min_age nil))
+;; => SELECT * FROM users
+```
+
+#### sql-set の使用
+
+UPDATE 文で条件に応じて SET 句を構築します。
+
+```common-lisp
+@update
+("UPDATE users"
+ (sql-set
+   (sql-cond (not (null name))
+             " name = :name, ")
+   (sql-cond (not (null email))
+             " email = :email, ")
+   " updated_at = :updated_at ")
+ (sql-where
+   " id = :id "))
+(defsql update-user (name email updated_at id))
+```
+### トランザクション内での使用
+
+Native Query も通常のクエリと同様にトランザクション内で使用できます。
+
+```common-lisp
+(with-transaction
+  ;; 複数のクエリをアトミックに実行
+  (execute-query update-user-status
+                 (list :status "active" :id 1))
+  (execute-query insert-log
+                 (list :user_id 1
+                       :action "status_changed"
+                       :created_at (get-universal-time))))
+```
+
+### 使用上の注意
+
+1. **SQL インジェクション対策**: パラメータは必ず `:param_name` の形式で記述し、直接文字列連結しないでください
+2. **戻り値の型**:
+   - SELECT クエリ: plist のリストを返します
+   - UPDATE/INSERT/DELETE クエリ: 影響を受けた行数を返します
+3. **パラメータ名**: キーワードシンボルを使用してください（`:id`、`:name` など）
+4. **データベース依存**: ネイティブクエリを使用する場合、データベース固有の SQL 構文に注意してください
+5. **@select/@update マクロ**: `@select` と `@update` はアノテーション形式のマクロで、`(cl-syntax:use-syntax :annot)` が必要です
+
+---
+
+## 10. トランザクション管理
 
 clails では、データベーストランザクションを簡単に扱うための `with-transaction` マクロを提供しています。
 
@@ -797,7 +1288,7 @@ clails では、データベーストランザクションを簡単に扱うた�
 
 ---
 
-## 9. データの削除
+## 11. データの削除
 
 ### 単一レコードの削除
 
@@ -856,7 +1347,7 @@ clails では、データベーストランザクションを簡単に扱うた�
 
 ---
 
-## 10. その他の便利な機能
+## 12. その他の便利な機能
 
 ### dirty flag の確認
 
@@ -935,7 +1426,7 @@ Model インスタンスは自動的に JSON に変換できます。
 
 ---
 
-## 11. よくある使用パターン
+## 13. よくある使用パターン
 
 ### ページネーション
 
@@ -1021,7 +1512,8 @@ clails の Model は以下の特徴を持ちます。
 2. **効率的な更新**: dirty flag により、変更されたカラムのみを更新
 3. **柔軟なクエリ**: DSL によるクエリ構築で、JOIN や複雑な条件も記述可能
 4. **関連の管理**: `:belongs-to` と `:has-many` による親子関係の定義
-5. **安全性**: バリデーション、楽観的ロック、トランザクションのサポート
+5. **安全性**: バリデーション、楽観的ロック・悲観的ロック、トランザクションのサポート
 6. **トランザクション管理**: `with-transaction` による簡単なトランザクション制御とネストしたトランザクション（セーブポイント）のサポート
+7. **ネイティブクエリ**: cl-batis を使用した柔軟な SQL クエリの実行
 
 詳細な API リファレンスについては、各関数の docstring を参照してください。
