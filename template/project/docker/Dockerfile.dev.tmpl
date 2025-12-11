@@ -1,5 +1,5 @@
 # <%= (@ project-name ) %> development Dockerfile
-FROM fukamachi/sbcl
+FROM fukamachi/sbcl:2.5.10
 
 ENV BIND_ADDRESS="127.0.0.1"
 ENV PORT="5000"
@@ -23,6 +23,7 @@ ENV PATH=${PATH}:/root/.roswell/bin:/qlot/.qlot/bin
 RUN mkdir /qlot
 RUN echo 'github fukamachi/cl-dbi' > /qlot/qlfile
 RUN echo 'github tamurashingo/cl-dbi-connection-pool' >> /qlot/qlfile
+RUN echo 'github tamurashingo/cl-batis' >> /qlot/qlfile
 RUN echo 'github tamurashingo/getcmd' >> /qlot/qlfile
 # use clails develop version
 RUN cd /qlot && qlot install &&  qlot exec ros install tamurashingo/clails/develop
