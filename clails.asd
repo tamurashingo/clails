@@ -22,7 +22,6 @@
                "cl-ppcre"
                "cl-template"
                "clack"
-               "getcmd"
                "jonathan"
                "lack"
                "lack/middleware/static"
