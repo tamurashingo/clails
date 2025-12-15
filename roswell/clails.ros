@@ -15,21 +15,14 @@ exec ros -Q -- $0 "$@"
 
 (defparameter CLAILS_CONF_DIR (uiop:getenv "CLAILS_CONF_DIR"))
 (unless CLAILS_CONF_DIR
-  (setf CLAILS_CONF_DIR (format NIL "~A/.clails/" (user-homedir-pathname))))
+  (format *error-output* "Error: CLAILS_CONF_DIR environment variable is not set.~%~%")
+  (format *error-output* "Please set CLAILS_CONF_DIR to the directory where qlfile exists and 'qlot install' has been executed.~%~%")
+  (format *error-output* "Example:~%")
+  (format *error-output* "  export CLAILS_CONF_DIR=/path/to/clails~%")
+  (uiop:quit 1))
 
 (progn
   (setf qlot/logger:*logger-message-stream* (make-broadcast-stream))
-  (ensure-directories-exist CLAILS_CONF_DIR)
-  (setf qlot:*project-root* CLAILS_CONF_DIR)
-  (unless (probe-file (merge-pathnames "qlfile" CLAILS_CONF_DIR))
-    (qlot:add "tamurashingo/cl-dbi-connection-pool")
-    (qlot:add "tamurashingo/getcmd")
-    (qlot:add "fukamachi/cl-dbi")
-    (qlot:add "tamurashingo/cl-batis")
-
-    (qlot:add "tamurashingo/clails"))
-
-  (qlot:install)
   (push (format NIL "~A/.qlot/" CLAILS_CONF_DIR) ql:*local-project-directories*)
   (ql:quickload :clails :silent t))
 
