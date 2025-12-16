@@ -24,7 +24,6 @@ exec ros -Q -- $0 "$@"
 (progn
   (setf qlot/logger:*logger-message-stream* (make-broadcast-stream))
   (push (format NIL "~A/.qlot/" CLAILS_CONF_DIR) ql:*local-project-directories*)
-  (ql:quickload :getcmd :silent t)
   (ql:quickload :clails :silent t))
 
 
