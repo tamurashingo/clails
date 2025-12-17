@@ -15,6 +15,16 @@ A web application built with [clails](https://github.com/tamurashingo/clails) fr
 make build
 ```
 
+To specify a clails branch or tag, use the `CLAILS_BRANCH` environment variable (defaults to `develop` if not specified):
+
+```bash
+# branch
+CLAILS_BRANCH=release/0.0.2 make build
+
+# tag
+CLAILS_BRANCH=v0.0.1 make build
+```
+
 ### 2. Start Development Environment
 
 ```bash

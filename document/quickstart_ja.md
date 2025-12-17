@@ -5,11 +5,17 @@
 
 ## 前提条件
 
+### ローカル環境で開発する場合
+
 - Roswell がインストールされていること
-- qlot がインストールされていること
 - clails がインストールされていること
 
 インストール方法については [README.md](../README.md) を参照してください。
+
+### Docker 環境で開発する場合（推奨）
+
+- Docker がインストールされていること
+- Docker Compose がインストールされていること
 
 ---
 
@@ -24,9 +30,69 @@ cd todoapp
 
 これにより、clails アプリケーションの基本構造が作成されます。
 
+プロジェクト作成時に以下のファイルが生成されます：
+- `Makefile` - Docker 環境での開発を簡単にするためのコマンド集
+- `docker/Dockerfile.dev` - 開発用の Docker イメージ定義
+- `docker/docker-compose.dev.yml` - Docker Compose 設定
+- `docker/dev.env` - 開発環境の環境変数設定
+
 ---
 
-## 2. データベースを作成する
+## 2. 開発環境のセットアップ
+
+### Docker 環境を使用する場合（推奨）
+
+#### 2.1. Docker イメージをビルドする
+
+```bash
+make build
+```
+
+clails のブランチやタグを指定する場合は `CLAILS_BRANCH` を指定します (未指定の場合は develop が指定されます) 。
+
+```bash
+# branch
+CLAILS_BRANCH=release/0.0.2 make build
+
+# tag
+CLAILS_BRANCH=v0.0.1 make build
+```
+
+イメージのビルドが完了したら、開発環境の準備は完了です。
+
+
+#### 2.2. Docker コンテナを起動する
+
+```bash
+make up
+```
+
+コンテナがバックグラウンドで起動します。
+
+#### 2.3. データベースを作成する
+
+Docker 環境では、`make` コマンドを使ってデータベース操作を実行します。
+
+```bash
+make db.create
+```
+
+デフォルトでは SQLite3 データベースが作成されます。
+MySQL や PostgreSQL を使用する場合は、プロジェクト作成時に `--database` オプションを指定してください。
+
+**利用可能な Make コマンド:**
+- `make build` - Docker イメージをビルド
+- `make rebuild` - キャッシュを使わずに Docker イメージを再ビルド
+- `make up` - コンテナを起動
+- `make down` - コンテナを停止
+- `make console` - コンテナ内でシェルを起動
+- `make logs` - アプリケーションのログを表示
+- `make db.create` - データベースを作成
+- `make db.migrate` - マイグレーションを実行
+- `make db.rollback` - マイグレーションをロールバック
+- `make db.seed` - シードデータを投入
+
+### ローカル環境を使用する場合
 
 `clails db:create` コマンドでデータベースを作成します。
 
@@ -42,6 +108,19 @@ MySQL や PostgreSQL を使用する場合は、プロジェクト作成時に `
 ## 3. Scaffold を生成する
 
 `clails generate:scaffold` コマンドで、Model、View、Controller を一括生成します。
+
+### Docker 環境を使用する場合
+
+コンテナ内でシェルを起動して実行します：
+
+```bash
+make console
+# コンテナ内で
+clails generate:scaffold todo
+exit
+```
+
+### ローカル環境を使用する場合
 
 ```bash
 clails generate:scaffold todo
@@ -68,16 +147,15 @@ clails generate:scaffold todo
 (in-package #:todoapp-db)
 
 (defmigration "todo"
-  (:up #'(lambda (conn)
-           (create-table conn :table "todo"
-                              :columns '(("title" :type :string
-                                                  :not-null T)
-                                         ("done" :type :boolean
-                                                 :not-null T
-                                                 :default 0)
-                                         ("done_at" :type :datetime))))
-   :down #'(lambda (conn)
-             (drop-table conn :table "todo"))))
+  (:up #'(lambda (connection)
+           (create-table connection :table "todo"
+                                    :columns '(("title" :type :string
+                                                        :not-null T)
+                                               ("done" :type :boolean
+                                                       :default NIL)
+                                               ("done-at" :type :datetime))))
+   :down #'(lambda (connection)
+             (drop-table connection :table "todo"))))
 ```
 
 このテーブル定義では：
@@ -92,6 +170,14 @@ clails generate:scaffold todo
 ## 5. Migration を実行する
 
 Migration ファイルを修正したら、`clails db:migrate` コマンドでテーブルを作成します。
+
+### Docker 環境を使用する場合
+
+```bash
+make db.migrate
+```
+
+### ローカル環境を使用する場合
 
 ```bash
 clails db:migrate
@@ -108,22 +194,19 @@ clails db:migrate
 ```lisp
 (in-package #:cl-user)
 (defpackage #:todoapp/models/todo
-  (:use #:cl)
-  (:import-from #:clails/model
-                #:defmodel
-                #:<base-model>
-                #:query
-                #:execute-query
-                #:make-record
-                #:save
-                #:ref)
-  (:import-from #:local-time
+  (:use #:cl
+        #:clails/model)
+  (:import-from #:clails/datetime
+                #:from-universal-time
+                #:format-datetime)
+  (:import-from #:clails/datetime
                 #:now)
   (:export #:<todo>
            #:find-all
            #:create-todo
            #:find-by-id
-           #:mark-as-done))
+           #:mark-as-done
+           #:format-done-at))
 
 (in-package #:todoapp/models/todo)
 
@@ -168,6 +251,19 @@ clails db:migrate
   (setf (ref todo :done-at) (now))
   (save todo)
   todo)
+
+
+(defmethod format-done-at ((todo <todo>))
+  "Format the done-at timestamp of a todo item.
+
+   @param todo [<todo>] Todo record
+   @return [string] Formatted timestamp in MySQL format (yyyy-mm-dd hh:mm:ss)
+   @return [nil] NIL if done-at is not set
+   "
+  (let ((done-at (ref todo :done-at)))
+    (when done-at
+      (format-datetime (from-universal-time done-at)
+                       :format :mysql))))
 ```
 
 このコードでは以下の機能を実装しています：
@@ -175,10 +271,25 @@ clails db:migrate
 - `create-todo` - 新しい TODO を作成
 - `find-by-id` - ID で TODO を検索
 - `mark-as-done` - TODO を完了としてマーク
-
+- `format-done-at` - TODO の DONE-AT があれば MySQL 形式の文字列(yyyy-mm-dd hh:mm:ss)で返す
 ---
 
 ## 7. View を修正する
+
+`app/views/todo/package.lisp` を開き、 View で使用するメソッドを宣言します。
+
+```lisp
+(in-package #:cl-user)
+(defpackage #:todoapp/views/todo/package
+  (:use #:cl)
+  (:import-from #:clails/view/view-helper
+                #:*view-context*
+                #:view)
+  (:import-from #:todoapp/models/todo
+                #:format-done-at))
+
+(in-package #:todoapp/views/todo/package)
+```
 
 `app/views/todo/list.html` を開き、TODO の一覧表示と操作ができるように修正します。
 
@@ -230,11 +341,12 @@ clails db:migrate
                     <%= (clails/model:ref todo :title) %>
                 </td>
                 <td><%= (if (clails/model:ref todo :done) "Done" "Pending") %></td>
-                <td><%= (or (clails/model:ref todo :done-at) "-") %></td>
+                <td><%= (or (format-done-at todo) "-") %></td>
                 <td>
                     <cl:unless test="(clails/model:ref todo :done)">
-                    <form action="/todo/<%= (clails/model:ref todo :id) %>" method="POST" style="display:inline;">
+                    <form action="/todo" method="POST" style="display:inline;">
                         <input type="hidden" name="_method" value="PUT">
+                        <input type="hidden" name="id" value="<%= (clails/model:ref todo :id) %>">
                         <button type="submit">Mark as Done</button>
                     </form>
                     </cl:unless>
@@ -332,6 +444,28 @@ clails は POST リクエスト内の `_method` パラメータをチェック�
 
 すべての実装が完了したら、サーバーを起動します。
 
+### Docker 環境を使用する場合
+
+Docker 環境では、`make up` でコンテナを起動すると自動的にサーバーが起動します。
+
+```bash
+make up
+```
+
+サーバーのログを確認するには：
+
+```bash
+make logs
+```
+
+コンテナを停止するには：
+
+```bash
+make down
+```
+
+### ローカル環境を使用する場合
+
 ```bash
 clails server
 ```
@@ -381,6 +515,14 @@ clails server
 
 シードデータを読み込むには：
 
+### Docker 環境を使用する場合
+
+```bash
+make db.seed
+```
+
+### ローカル環境を使用する場合
+
 ```bash
 clails db:seed
 ```
@@ -391,7 +533,20 @@ clails db:seed
 
 このクイックスタートでは、clails を使った TODO アプリケーションの作成方法を学びました。
 
-主な手順：
+### Docker 環境を使用した場合の主な手順：
+1. プロジェクトの作成（`clails new`）
+2. Docker イメージのビルド（`make build`）
+3. Docker コンテナの起動（`make up`）
+4. データベースの作成（`make db.create`）
+5. Scaffold の生成（コンテナ内で `clails generate:scaffold`）
+6. Migration ファイルの編集
+7. Migration の実行（`make db.migrate`）
+8. Model の実装
+9. View の実装
+10. Controller の実装
+11. サーバーの起動（`make up` で自動起動）
+
+### ローカル環境を使用した場合の主な手順：
 1. プロジェクトの作成（`clails new`）
 2. データベースの作成（`clails db:create`）
 3. Scaffold の生成（`clails generate:scaffold`）
@@ -403,6 +558,14 @@ clails db:seed
 9. サーバーの起動（`clails server`）
 
 これらのステップを応用することで、より複雑な Web アプリケーションを作成できます。
+
+## Docker 環境を使用する利点
+
+- 開発環境の構築が簡単（Docker さえあれば OK）
+- チーム全体で同じ環境を共有できる
+- データベース（MySQL や PostgreSQL）も自動的にセットアップされる
+- ホスト環境を汚さない
+- `Makefile` により、よく使うコマンドを簡単に実行できる
 
 ## 次のステップ
 
