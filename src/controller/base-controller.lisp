@@ -32,12 +32,10 @@
            #:do-post
            #:do-put
            #:do-delete
+           #:param
            #:initialize-routing-tables
            #:create-scanner-from-uri-path
-           #:path-controller
-           #:<default-controller>
-           #:lisp-type
-           #:lisp-version))
+           #:path-controller))
 
 
 (in-package #:clails/controller/base-controller)
