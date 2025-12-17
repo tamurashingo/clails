@@ -7,4 +7,3 @@ services:
     container_name: clails_test_e2e
     volumes:
       - ./:/app
-    working_dir: /qlot

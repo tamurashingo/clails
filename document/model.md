@@ -236,36 +236,7 @@ Create a new record instance.
 
 ---
 
-## 5. Saving Data (save)
-
-Save a new record or update an existing record.
-
-```common-lisp
-;; Save (INSERT or UPDATE)
-(save *user*)
-
-;; After saving, ID is automatically set
-(ref *user* :id) ; => 1
-```
-
-### Update Behavior
-
-- Only modified columns (dirty flags) are updated
-- `updated-at` is automatically updated if the column exists
-
-```common-lisp
-;; Modify a column
-(setf (ref *user* :name) "Jiro Yamada")
-
-;; Only the :name column is updated
-(save *user*)
-```
-
----
-
-## 6. Retrieving Data
-
-### Building Queries
+## 5. Query Building
 
 Use the `query` function to build queries.
 
@@ -391,7 +362,131 @@ Use the `query` function to build queries.
 
 ---
 
-## 7. Joining Tables
+## 6. JOIN Queries
+
+### INSERT and UPDATE
+
+The `save` function automatically determines whether to INSERT or UPDATE.
+
+```common-lisp
+;; Save (INSERT or UPDATE)
+(save *user*)
+
+;; After saving, ID is automatically set
+(ref *user* :id) ; => 1
+```
+
+### Update Behavior
+
+- Only modified columns (dirty flags) are updated
+- `updated-at` is automatically updated if the column exists
+
+```common-lisp
+;; Modify a column
+(setf (ref *user* :name) "Jiro Yamada")
+
+;; Only the :name column is updated
+(save *user*)
+```
+
+### Default Value Handling
+
+When inserting new records, only columns explicitly set (with dirty flag) are included in the INSERT statement, allowing database default values to be applied to unset columns.
+
+```common-lisp
+;; Create instance with some columns unset
+(defvar *user* (make-record '<user>
+                            :name "Taro"
+                            :email "taro@example.com"))
+;; :age column is not set, database default will be used
+
+(save *user*)
+;; => INSERT INTO users (name, email, created_at, updated_at, version)
+;;    VALUES ('Taro', 'taro@example.com', ..., ..., 0)
+```
+
+### Validation
+
+Define the `validate` method to validate data before saving.
+
+```common-lisp
+(defmethod validate ((inst <user>))
+  (when (or (null (ref inst :name))
+            (string= (ref inst :name) ""))
+    (setf (ref-error inst :name)
+          "Name is required"))
+
+  (when (or (null (ref inst :email))
+            (string= (ref inst :email) ""))
+    (setf (ref-error inst :email)
+          "Email is required")))
+
+;; Save returns NIL if validation errors exist
+(defvar *invalid-user* (make-record '<user> :name "" :email ""))
+(save *invalid-user*) ; => NIL
+
+;; Check errors
+(has-error-p *invalid-user*) ; => T
+(ref-error *invalid-user* :name) ; => "Name is required"
+(ref-error *invalid-user* :email) ; => "Email is required"
+```
+
+### Optimistic Locking
+
+To use optimistic locking, create a version management column in the migration and specify the `:version` option in `defmodel`.
+
+```common-lisp
+;; Migration: Create version management column
+(defmigration "20251001-000000-create-posts-table"
+  (:up #'(lambda (conn)
+           (create-table conn :table "posts"
+                              :columns '(("title" :type :string :not-null T)
+                                         ("content" :type :text)
+                                         ("lock-version" :type :integer
+                                                         :not-null T
+                                                         :default-value 0))))
+   :down #'(lambda (conn)
+             (drop-table conn :table "posts"))))
+
+;; Model: Specify version management column with :version option
+(defmodel <post> (<base-model>)
+  (:table "posts"
+   :version :lock-version))
+```
+
+When optimistic locking is enabled, an `optimistic-lock-error` is raised if the version doesn't match during update.
+
+```common-lisp
+;; Retrieve the same record in two instances
+(defvar *post1* (first (execute-query
+                         (query <post>
+                                :as :post
+                                :where (:= (:post :id) 1))
+                         '())))
+(defvar *post2* (first (execute-query
+                         (query <post>
+                                :as :post
+                                :where (:= (:post :id) 1))
+                         '())))
+
+;; Update post1 (succeeds)
+(setf (ref *post1* :title) "Updated by user 1")
+(save *post1*)
+(ref *post1* :lock-version) ; => 1
+
+;; Update post2 (fails: version is old)
+(setf (ref *post2* :title) "Updated by user 2")
+(handler-case
+    (save *post2*)
+  (clails/condition:optimistic-lock-error ()
+    (format t "Record was modified by another process~%")))
+```
+
+Note: Even if a column named `lock-version` exists, optimistic locking won't be enabled unless you specify the `:version` option in `defmodel`.
+
+---
+
+## 7. Saving Data
 
 ### Basic JOIN
 
@@ -479,120 +574,495 @@ Note: Use `ref-in` for more concise nested access:
 
 ---
 
-## 8. Validation
+## 8. Pessimistic Locking
 
-### Built-in Validators
+Pessimistic locking allows you to lock records or the entire database at the database level to prevent concurrent updates by other transactions.
 
-Define validators using the `:validators` option.
+In clails, pessimistic locking is achieved using the `with-locked-transaction` macro.
 
-```common-lisp
-(defmodel <user> (<base-model>)
-  (:table "users"
-   :validators ((:name :presence T
-                       :min-length 1
-                       :max-length 50)
-                (:email :presence T
-                        :format "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")
-                (:age :numericality (:>= 0 :<= 150)))))
-```
-
-### Available Validators
-
-- `:presence` - Check if value is not NIL or empty string
-- `:min-length` - Minimum string length
-- `:max-length` - Maximum string length
-- `:format` - Regular expression pattern
-- `:numericality` - Numeric range validation
-
-### Custom Validators
+### Basic Usage
 
 ```common-lisp
-(defmodel <user> (<base-model>)
-  (:table "users"
-   :validators ((:email :custom #'validate-email-uniqueness))))
-
-(defun validate-email-uniqueness (instance column-name value)
-  "Validate email uniqueness"
-  (when value
-    (let ((existing (execute-query
-                      (query <user>
-                             :as :user
-                             :where (:and (:= (:user :email) :email)
-                                          (:<> (:user :id) :id)))
-                      (list :email value
-                            :id (or (ref instance :id) 0)))))
-      (when existing
-        (add-error instance column-name "Email already exists")))))
+;; Lock and update a record
+(clails/model/lock:with-locked-transaction (user
+                                           (query <user>
+                                                  :as :user
+                                                  :where (:= (:user :id) :user-id))
+                                           (list :user-id 1))
+  ;; Safely update user within this transaction
+  (setf (ref user :balance) (+ (ref user :balance) 100))
+  (save user))
 ```
 
-### Validation Execution
+### Query Specification Methods
 
-Validation is automatically executed during `save`.
+`with-locked-transaction` accepts queries in two formats.
+
+#### 1. Using clails query DSL
 
 ```common-lisp
-(defvar *user* (make-record '<user>
-                            :name ""  ; Empty (validation error)
-                            :email "invalid"))  ; Invalid format
-
-(save *user*)  ; => NIL (validation failed)
-
-;; Check errors
-(has-error-p *user*)  ; => T
-(get-error *user* :name)  ; => "Name is required"
-(get-error *user* :email)  ; => "Email format is invalid"
+(with-locked-transaction (users
+                         (query <user>
+                                :as :user
+                                :where (:= (:user :status) :status))
+                         (list :status "active"))
+  ;; Process users
+  (loop for user in users
+        do (process-user user)))
 ```
+
+#### 2. Using cl-batis SQL definition
+
+```common-lisp
+(use-package :cl-batis)
+
+;; Define SQL with cl-batis
+(defparameter *get-active-users*
+  (@select ("SELECT * FROM users WHERE status = :status")))
+
+;; Use with with-locked-transaction
+(with-locked-transaction (users
+                         *get-active-users*
+                         (list :status "active"))
+  (loop for user in users
+        do (process-user user)))
+```
+
+### Lock Modes
+
+Supported lock modes differ by database.
+
+#### PostgreSQL Lock Modes
+
+- `:for-update` - Lock row for update or delete (default)
+- `:for-share` - Lock row for read
+- `:for-no-key-update` - Lock for non-key updates
+- `:for-key-share` - Lock for key reads
+
+```common-lisp
+;; Lock with FOR UPDATE
+(with-locked-transaction (user
+                         (query <user> :as :user :where (:= (:user :id) :id))
+                         (list :id 1)
+                         :mode :for-update)
+  (setf (ref user :status) "processing")
+  (save user))
+
+;; Lock with FOR SHARE
+(with-locked-transaction (user
+                         (query <user> :as :user :where (:= (:user :id) :id))
+                         (list :id 1)
+                         :mode :for-share)
+  ;; Read-only processing
+  (ref user :name))
+```
+
+#### MySQL Lock Modes
+
+- `:for-update` - Lock row for update or delete (default)
+- `:for-share` - Lock row for read
+
+```common-lisp
+(with-locked-transaction (user
+                         (query <user> :as :user :where (:= (:user :id) :id))
+                         (list :id 1)
+                         :mode :for-update)
+  (setf (ref user :balance) (+ (ref user :balance) 100))
+  (save user))
+```
+
+#### SQLite3 Lock Modes
+
+SQLite3 does not support row-level locking, so it locks at the database level.
+
+- `:immediate` - Allow reads, lock writes (default, recommended)
+- `:exclusive` - Lock all access (use with caution)
+- `:deferred` - Defer lock until first query
+
+```common-lisp
+;; IMMEDIATE mode (recommended)
+(with-locked-transaction (user
+                         (query <user> :as :user :where (:= (:user :id) :id))
+                         (list :id 1)
+                         :mode :immediate)
+  (setf (ref user :balance) (+ (ref user :balance) 100))
+  (save user))
+```
+
+**Note**: Using `:exclusive` mode in SQLite3 will cause all connections to error, including those not using locks. For most cases, `:immediate` mode is recommended.
+
+### NOWAIT Option
+
+Returns an error immediately if the lock cannot be acquired without waiting (supported by PostgreSQL and MySQL).
+
+```common-lisp
+(handler-case
+    (with-locked-transaction (user
+                             (query <user> :as :user :where (:= (:user :id) :id))
+                             (list :id 1)
+                             :nowait T)
+      (setf (ref user :balance) (+ (ref user :balance) 100))
+      (save user))
+  (error (e)
+    (format t "Could not acquire lock: ~A~%" e)))
+```
+
+### SKIP LOCKED Option
+
+Skips locked rows and retrieves only unlocked rows (supported by PostgreSQL and MySQL).
+
+```common-lisp
+;; Retrieve and process unlocked users
+(with-locked-transaction (users
+                         (query <user>
+                                :as :user
+                                :where (:= (:user :status) :status))
+                         (list :status "pending")
+                         :skip-locked T)
+  (loop for user in users
+        do (progn
+             (setf (ref user :status) "processing")
+             (save user))))
+```
+
+### Usage Notes
+
+1. **Transaction**: `with-locked-transaction` automatically starts a transaction, commits on success, and rolls back on error
+2. **Deadlocks**: When locking multiple records, always lock in the same order to avoid deadlocks
+3. **Lock Duration**: Keep transaction processing as short as possible
+4. **SQLite3 Limitations**: SQLite3 does not support row-level locking, so the entire database is locked
+5. **Retry Logic**: SQLite3 automatically retries on lock errors (with exponential backoff)
 
 ---
 
-## 9. Optimistic Locking
+## 9. Native Query
 
-Detect simultaneous updates by multiple users or processes using version numbers.
+In clails, you can execute native SQL queries using cl-batis.
+You can write complex aggregations and queries that are difficult to express with the query builder directly in SQL.
 
-### Setup
+### About cl-batis
 
-Add a `lock_version` column to the table.
+cl-batis is a SQL mapper library inspired by MyBatis.
+You can write SQL directly in Common Lisp code and bind parameters dynamically.
 
-```common-lisp
-(defmigration "20240104-150000-add-lock-version-to-users"
-  (:up #'(lambda (conn)
-           (add-column conn :table "users"
-                            :columns '(("lock_version" :type :integer
-                                                       :not-null T
-                                                       :default-value 0))))
-   :down #'(lambda (conn)
-             (drop-column conn :table "users"
-                               :column "lock_version"))))
-```
+For details, see [cl-batis documentation](https://github.com/tamurashingo/cl-batis).
 
-### Usage
+### Defining and Executing SELECT Queries
+
+#### Basic SELECT
+
+cl-batis allows you to define queries in two formats.
+
+**Annotation Style (@select):**
 
 ```common-lisp
-;; User A retrieves a record
-(defvar *user-a* (first (execute-query
-                         (query <user>
-                                :as :user
-                                :where (:= (:user :id) 1))
-                         '())))
+(use-package :cl-batis)
+(cl-syntax:use-syntax :annot)
 
-;; User B retrieves the same record
-(defvar *user-b* (first (execute-query
-                         (query <user>
-                                :as :user
-                                :where (:= (:user :id) 1))
-                         '())))
+;; Define SELECT query
+@select
+("SELECT * FROM users WHERE id = :id")
+(defsql get-user-by-id (id))
 
-;; User A updates the record
-(setf (ref *user-a* :name) "Updated by A")
-(save *user-a*)  ; => T (successful)
-
-;; User B tries to update the same record
-(setf (ref *user-b* :name) "Updated by B")
-(save *user-b*)  ; => NIL (failed due to version mismatch)
-
-;; Check for errors
-(has-error-p *user-b*)  ; => T
-(get-error *user-b* :lock-version)  ; => "Record has been modified by another user"
+;; Execute query
+(defvar *user* (first (execute-query get-user-by-id
+                                     (list :id 1))))
 ```
+
+**Function Style (select):**
+
+```common-lisp
+(use-package :cl-batis)
+
+;; Define SELECT query
+(select
+ ("SELECT * FROM users WHERE id = :id")
+ (defsql get-user-by-id (id)))
+
+;; Execute query
+(defvar *user* (first (execute-query get-user-by-id
+                                     (list :id 1))))
+```
+
+#### Queries with Multiple Conditions
+
+**Annotation Style:**
+
+```common-lisp
+@select
+("SELECT * FROM users"
+ (sql-where
+   (sql-cond (not (null name))
+             " AND name LIKE :name ")
+   (sql-cond (not (null email))
+             " AND email = :email "))
+ "ORDER BY created_at DESC")
+(defsql search-users (name email))
+```
+
+**Function Style:**
+
+```common-lisp
+(select
+ ("SELECT * FROM users"
+  (sql-where
+    (sql-cond (not (null name))
+              " AND name LIKE :name ")
+    (sql-cond (not (null email))
+              " AND email = :email "))
+  "ORDER BY created_at DESC")
+ (defsql search-users (name email)))
+```
+
+**Usage Examples:**
+
+```common-lisp
+;; Search by name
+(execute-query search-users
+               (list :name "%yamada%" :email nil))
+
+;; Search by name and email
+(execute-query search-users
+               (list :name "%yamada%" :email "yamada@example.com"))
+
+;; No conditions
+(execute-query search-users
+               (list :name nil :email nil))
+```
+
+#### Queries with JOIN
+
+```common-lisp
+;; Annotation style
+@select
+("SELECT u.*, d.name as department_name
+  FROM users u
+  INNER JOIN departments d ON u.department_id = d.id
+  WHERE u.is_active = :is_active")
+(defsql get-users-with-departments (is_active))
+
+;; Function style
+(select
+ ("SELECT u.*, d.name as department_name
+   FROM users u
+   INNER JOIN departments d ON u.department_id = d.id
+   WHERE u.is_active = :is_active")
+ (defsql get-users-with-departments (is_active)))
+
+(execute-query get-users-with-departments
+               (list :is_active T))
+```
+
+#### Aggregation Queries
+
+```common-lisp
+@select
+("SELECT department_id, COUNT(*) as user_count
+  FROM users
+  WHERE created_at >= :start_date
+    AND created_at < :end_date
+  GROUP BY department_id
+  HAVING COUNT(*) > :min_count")
+(defsql count-users-by-department (start_date end_date min_count))
+
+(execute-query count-users-by-department
+               (list :start_date "2024-01-01"
+                     :end_date "2024-12-31"
+                     :min_count 5))
+```
+
+### Defining and Executing UPDATE Queries
+
+Use `@update` or `update` for UPDATE queries.
+
+#### Basic UPDATE
+
+**Annotation Style:**
+
+```common-lisp
+@update
+("UPDATE users
+  SET status = :status,
+      updated_at = :updated_at
+  WHERE id = :id")
+(defsql update-user-status (status updated_at id))
+```
+
+**Function Style:**
+
+```common-lisp
+(update
+ ("UPDATE users
+   SET status = :status,
+       updated_at = :updated_at
+   WHERE id = :id")
+ (defsql update-user-status (status updated_at id)))
+```
+
+**Usage Example:**
+
+```common-lisp
+;; Execute query (returns number of affected rows)
+(defvar *affected-rows*
+  (execute-query update-user-status
+                 (list :status "active"
+                       :updated_at (get-universal-time)
+                       :id 1)))
+```
+
+#### Conditional UPDATE
+
+Use `sql-set` to dynamically build SET clauses based on conditions.
+
+```common-lisp
+@update
+("UPDATE users"
+ (sql-set
+   (sql-cond (not (null name))
+             " name = :name, ")
+   (sql-cond (not (null email))
+             " email = :email, ")
+   " updated_at = :updated_at ")
+ (sql-where
+   " id = :id "))
+(defsql update-user-fields (name email updated_at id))
+
+;; Update name only
+(execute-query update-user-fields
+               (list :id 1
+                     :name "New Name"
+                     :email nil
+                     :updated_at (get-universal-time)))
+
+;; Update name and email
+(execute-query update-user-fields
+               (list :id 1
+                     :name "New Name"
+                     :email "newemail@example.com"
+                     :updated_at (get-universal-time)))
+```
+
+#### Batch UPDATE
+
+```common-lisp
+@update
+("UPDATE users
+  SET is_active = FALSE,
+      updated_at = :updated_at
+  WHERE last_login_at < :threshold_date
+    AND is_active = TRUE")
+(defsql deactivate-old-users (updated_at threshold_date))
+
+(execute-query deactivate-old-users
+               (list :threshold_date "2023-01-01"
+                     :updated_at (get-universal-time)))
+```
+
+### INSERT/DELETE Queries
+
+INSERT and DELETE queries can also be defined with `@update` or `update` (regardless of SQL type, use `@update`/`update` for non-SELECT queries).
+
+```common-lisp
+;; INSERT (annotation style)
+@update
+("INSERT INTO logs (user_id, action, created_at)
+  VALUES (:user_id, :action, :created_at)")
+(defsql insert-log (user_id action created_at))
+
+;; INSERT (function style)
+(update
+ ("INSERT INTO logs (user_id, action, created_at)
+   VALUES (:user_id, :action, :created_at)")
+ (defsql insert-log (user_id action created_at)))
+
+(execute-query insert-log
+               (list :user_id 1
+                     :action "login"
+                     :created_at (get-universal-time)))
+
+;; DELETE
+@update
+("DELETE FROM logs
+  WHERE created_at < :threshold_date")
+(defsql delete-old-logs (threshold_date))
+
+(execute-query delete-old-logs
+               (list :threshold_date "2023-01-01"))
+```
+
+### cl-batis Dynamic SQL
+
+cl-batis provides dynamic SQL generation using `sql-cond`, `sql-where`, and `sql-set`.
+
+#### Using sql-where and sql-cond
+
+Controls whether to include parts of the WHERE clause based on conditions.
+
+```common-lisp
+@select
+("SELECT * FROM users"
+ (sql-where
+   (sql-cond (not (null name))
+             " AND name = :name ")
+   (sql-cond (not (null min_age))
+             " AND age >= :min_age ")))
+(defsql find-users (name min_age))
+
+;; Only name specified
+(execute-query find-users (list :name "Alice" :min_age nil))
+;; => SELECT * FROM users WHERE AND name = ?
+
+;; Both specified
+(execute-query find-users (list :name "Alice" :min_age 20))
+;; => SELECT * FROM users WHERE AND name = ? AND age >= ?
+
+;; No conditions
+(execute-query find-users (list :name nil :min_age nil))
+;; => SELECT * FROM users
+```
+
+#### Using sql-set
+
+Builds SET clauses conditionally in UPDATE statements.
+
+```common-lisp
+@update
+("UPDATE users"
+ (sql-set
+   (sql-cond (not (null name))
+             " name = :name, ")
+   (sql-cond (not (null email))
+             " email = :email, ")
+   " updated_at = :updated_at ")
+ (sql-where
+   " id = :id "))
+(defsql update-user (name email updated_at id))
+```
+
+### Using with Transactions
+
+Native queries can also be used within transactions like regular queries.
+
+```common-lisp
+(with-transaction
+  ;; Execute multiple queries atomically
+  (execute-query update-user-status
+                 (list :status "active" :id 1))
+  (execute-query insert-log
+                 (list :user_id 1
+                       :action "status_changed"
+                       :created_at (get-universal-time))))
+```
+
+### Usage Notes
+
+1. **SQL Injection Protection**: Always use `:param_name` format for parameters, do not concatenate strings directly
+2. **Return Value Types**:
+   - SELECT queries: Returns a list of plists
+   - UPDATE/INSERT/DELETE queries: Returns the number of affected rows
+3. **Parameter Names**: Use keyword symbols (`:id`, `:name`, etc.)
+4. **Database Dependencies**: When using native queries, be aware of database-specific SQL syntax
+5. **@select/@update Macros**: `@select` and `@update` are annotation-style macros that require `(cl-syntax:use-syntax :annot)`
 
 ---
 
@@ -632,7 +1102,7 @@ Nested `with-transaction` blocks use savepoints.
 (with-transaction
   ;; Outer transaction
   (save user1)
-  
+
   (handler-case
       (with-transaction
         ;; Inner transaction (savepoint)
@@ -641,7 +1111,7 @@ Nested `with-transaction` blocks use savepoints.
     (error (e)
       ;; Inner transaction is rolled back
       (format t "Inner transaction failed: ~A~%" e)))
-  
+
   ;; Outer transaction continues
   (save user3))
 ;; => user1 and user3 are saved, user2 is not saved
@@ -665,12 +1135,12 @@ Nested `with-transaction` blocks use savepoints.
                             (list :dept-id new-department-id)))))
       (unless (and emp new-dept)
         (error "Employee or department not found"))
-      
+
       ;; Update employee's department
       (setf (ref emp :department-id) new-department-id)
       (unless (save emp)
         (error "Failed to update employee"))
-      
+
       ;; Log the transfer
       (let ((log (make-record '<transfer-log>
                              :employee-id employee-id
@@ -679,7 +1149,7 @@ Nested `with-transaction` blocks use savepoints.
                              :transferred-at (local-time:now))))
         (unless (save log)
           (error "Failed to create transfer log")))
-      
+
       emp)))
 
 ;; Usage
@@ -922,7 +1392,8 @@ clails Models have the following features:
 2. **Efficient Updates**: Only modified columns are updated using dirty flags
 3. **Flexible Queries**: Query construction via DSL, supporting JOIN and complex conditions
 4. **Relation Management**: Define parent-child relationships with `:belongs-to` and `:has-many`
-5. **Safety**: Support for validation, optimistic locking, and transactions
+5. **Safety**: Support for validation, optimistic locking, pessimistic locking, and transactions
 6. **Transaction Management**: Easy transaction control with `with-transaction` and nested transaction (savepoint) support
+7. **Native Queries**: Flexible SQL query execution using cl-batis
 
 For detailed API reference, please refer to the docstring of each function.

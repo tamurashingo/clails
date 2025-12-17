@@ -20,6 +20,8 @@ clails コマンドは、clails アプリケーションの開発を支援する
 
 clails を使用するには、まず Roswell をインストールする必要があります。
 
+#### 書式
+
 ```bash
 # macOS (Homebrew)
 brew install roswell
@@ -28,17 +30,38 @@ brew install roswell
 # https://github.com/roswell/roswell/wiki/Installation を参照
 ```
 
+### 前提ライブラリのインストール
+
+```bash
+ros install fukamachi/cl-dbi
+ros install tamurashingo/cl-dbi-connection-pool
+ros install tamurashingo/cl-batis
+ros install tamurashingo/getcmd
+```
+
 ### clails のインストール
 
 ```bash
-# clails コマンドのインストール
 ros install tamurashingo/clails
-
-# インストール確認
-clails help
 ```
 
----
+特定のブランチやタグを指定する場合は / を付けて指定します。
+
+```bash
+# branch
+ros install tamurashingo/clails/release/0.0.2
+
+# tag
+ros install tamurashingo/clails/v0.0.2
+```
+
+
+#### インストール確認
+
+```bash
+clails --help
+```
+
 
 ## コマンド一覧
 
@@ -47,7 +70,6 @@ clails help
 | コマンド | 説明 |
 |---------|------|
 | `clails new` | 新しいプロジェクトを作成 |
-| `clails environment` | 現在の環境を表示 |
 | `clails server` | Web サーバーを起動 |
 | `clails stop` | Web サーバーを停止 |
 
@@ -60,6 +82,7 @@ clails help
 | `clails generate:view` | View ファイルを生成 |
 | `clails generate:controller` | Controller ファイルを生成 |
 | `clails generate:scaffold` | Model、View、Controller を一括生成 |
+| `clails generate:task` | Task ファイルを生成 |
 
 ### データベース
 
@@ -67,7 +90,23 @@ clails help
 |---------|------|
 | `clails db:create` | データベースを作成 |
 | `clails db:migrate` | Migration を実行 |
+| `clails db:migrate:up` | 指定したバージョンの Migration を実行 |
+| `clails db:migrate:down` | 指定したバージョンの Migration をロールバック |
+| `clails db:rollback` | Migration をロールバック |
+| `clails db:seed` | データベースにシードデータを投入 |
 | `clails db:status` | Migration の状態を表示 |
+
+### タスク管理
+
+| コマンド | 説明 |
+|---------|------|
+| `clails task` | カスタムタスクを実行 |
+
+### テスト
+
+| コマンド | 説明 |
+|---------|------|
+| `clails test` | テストを実行 |
 
 ---
 
@@ -125,24 +164,6 @@ myapp/
 └── README.md
 ```
 
-### `clails environment` - 現在の環境を表示
-
-現在のプロジェクト環境（development、test、production）を表示します。
-
-#### 書式
-
-```bash
-clails environment
-```
-
-#### 使用例
-
-```bash
-cd myapp
-clails environment
-# => environment: DEVELOPMENT
-```
-
 ### `clails server` - Web サーバーを起動
 
 開発用 Web サーバーを起動します。
@@ -159,6 +180,9 @@ clails server [OPTIONS]
 |-----------|--------|-----------|------|
 | `--port PORT` | `-p PORT` | `5000` | サーバーのポート番号 |
 | `--bind ADDRESS` | `-b ADDRESS` | `127.0.0.1` | バインドするIPアドレス |
+| `--swank` | `-s` | なし | Swankサーバーを起動（127.0.0.1:4005） |
+| `--swank-address ADDRESS` | なし | `127.0.0.1` | Swankサーバーのバインドアドレス |
+| `--swank-port PORT` | なし | `4005` | Swankサーバーのポート番号 |
 
 #### 使用例
 
@@ -174,6 +198,12 @@ clails server -b 0.0.0.0
 
 # ポートとアドレスを両方指定
 clails server -p 8080 -b 0.0.0.0
+
+# Swankサーバーも同時に起動（REPL接続用）
+clails server --swank
+
+# Swankサーバーのアドレスとポートを指定
+clails server --swank --swank-address 0.0.0.0 --swank-port 4006
 ```
 
 #### サーバー起動時の動作
@@ -439,6 +469,62 @@ app/controllers/CONTROLLER_NAME_controller.lisp
   (set-redirect controller "/users"))
 ```
 
+### `clails generate:task` - Task ファイルを生成
+
+タスクファイルを生成します。
+
+#### 書式
+
+```bash
+clails generate:task TASK_NAME [OPTIONS]
+```
+
+#### オプション
+
+| オプション | 短縮形 | 説明 |
+|-----------|--------|------|
+| `--namespace NS` | `-ns NS` | タスクの名前空間を指定 |
+| `--no-overwrite` | なし | 既存ファイルを上書きしない（デフォルト：有効） |
+
+#### 使用例
+
+```bash
+# タスクを生成
+clails generate:task cleanup
+
+# 名前空間を指定してタスクを生成
+clails generate:task import --namespace data
+
+# 短縮形で名前空間を指定
+clails generate:task cleanup -ns maintenance
+```
+
+#### 生成されるファイル
+
+```
+app/tasks/NAMESPACE/TASK_NAME.lisp
+```
+
+例：`app/tasks/maintenance/cleanup.lisp`
+
+#### 生成される Task の例
+
+```common-lisp
+(in-package #:cl-user)
+(defpackage #:myapp/tasks/maintenance/cleanup
+  (:use #:cl)
+  (:import-from #:clails/task
+                #:deftask))
+
+(in-package #:myapp/tasks/maintenance/cleanup)
+
+(deftask "maintenance:cleanup"
+  :description "Task description here"
+  :function #'(lambda (&rest args)
+                ;; Task implementation here
+                ))
+```
+
 ### `clails generate:scaffold` - Scaffold を生成
 
 Model、View、Controller を一括で生成します。
@@ -460,9 +546,6 @@ clails generate:scaffold NAME [OPTIONS]
 ```bash
 # User の scaffold を生成
 clails generate:scaffold user
-
-# 複雑なリソースの scaffold を生成
-clails generate:scaffold blog/post
 ```
 
 #### 生成されるファイル
@@ -515,21 +598,23 @@ clails db:create
 #### 書式
 
 ```bash
-clails db:migrate
+clails db:migrate [OPTIONS]
 ```
 
-#### エイリアス
+#### オプション
 
-```bash
-clails db:migrate:up
-```
+| オプション | 説明 |
+|-----------|------|
+| `--version VERSION` | 指定したバージョンまでの Migration を実行 |
 
 #### 使用例
 
 ```bash
+# すべての未実行 Migration を実行
 clails db:migrate
-# => Running migration: 20241022-143000-create-users-table
-# => Migration completed successfully
+
+# 特定のバージョンまで Migration を実行
+clails db:migrate --version 20241022143000
 ```
 
 #### 動作
@@ -538,6 +623,86 @@ clails db:migrate
 2. 未実行の Migration を実行順にソート
 3. 各 Migration の `:up` 関数を実行
 4. Migration テーブルに実行記録を保存
+
+### `clails db:migrate:up` - 指定した Migration を実行
+
+指定したバージョンの Migration を実行します。
+
+#### 書式
+
+```bash
+clails db:migrate:up VERSION
+```
+
+#### 使用例
+
+```bash
+clails db:migrate:up 20241022143000
+```
+
+### `clails db:migrate:down` - 指定した Migration をロールバック
+
+指定したバージョンの Migration をロールバックします。
+
+#### 書式
+
+```bash
+clails db:migrate:down VERSION
+```
+
+#### 使用例
+
+```bash
+clails db:migrate:down 20241022143000
+```
+
+### `clails db:rollback` - Migration をロールバック
+
+最新の Migration をロールバックします。
+
+#### 書式
+
+```bash
+clails db:rollback [OPTIONS]
+```
+
+#### オプション
+
+| オプション | デフォルト | 説明 |
+|-----------|-----------|------|
+| `--step N` | `1` | ロールバックする Migration の数 |
+
+#### 使用例
+
+```bash
+# 最新の Migration を1つロールバック
+clails db:rollback
+
+# 最新の Migration を3つロールバック
+clails db:rollback --step 3
+```
+
+### `clails db:seed` - データベースにシードデータを投入
+
+データベースにシードデータを投入します。
+
+#### 書式
+
+```bash
+clails db:seed
+```
+
+#### 使用例
+
+```bash
+clails db:seed
+# => Seeding database...
+# => Seed completed successfully
+```
+
+#### 動作
+
+`db/seed.lisp` に定義されたシード処理を実行します。
 
 ### `clails db:status` - Migration の状態を表示
 
@@ -566,7 +731,94 @@ clails db:status
 
 ---
 
-## 4. よくある使用パターン
+## 4. タスク管理コマンド
+
+### `clails task` - カスタムタスクを実行
+
+カスタムタスクを実行します。
+
+#### 書式
+
+```bash
+clails task [TASK] [OPTIONS]
+```
+
+#### オプション
+
+| オプション | 短縮形 | 説明 |
+|-----------|--------|------|
+| `--list [NAMESPACE]` | `-l [NAMESPACE]` | 利用可能なタスクを一覧表示（名前空間でフィルタ可能） |
+| `--info <task>` | なし | タスクの詳細情報を表示 |
+
+#### 使用例
+
+```bash
+# すべてのタスクを一覧表示
+clails task --list
+
+# 特定の名前空間のタスクを一覧表示
+clails task --list db
+
+# タスクの詳細情報を表示
+clails task --info maintenance:cleanup
+
+# カスタムタスクを実行
+clails task maintenance:cleanup
+```
+
+---
+
+## 5. テストコマンド
+
+### `clails test` - テストを実行
+
+テストを実行します。
+
+#### 書式
+
+```bash
+clails test [PACKAGES...] [OPTIONS]
+```
+
+#### オプション
+
+| オプション | 説明 |
+|-----------|------|
+| `--tag TAG` | 指定したタグのテストを実行（複数指定可能） |
+| `--exclude TAG` | 指定したタグのテストを除外（複数指定可能） |
+| `--list-tags` | 利用可能なタグを一覧表示 |
+| `--list-packages` | 利用可能なパッケージを一覧表示 |
+| `--list-tests-tag TAG` | 特定のタグを持つテストを一覧表示 |
+| `--list-tests-pkg PKG` | 特定のパッケージのテストを一覧表示 |
+
+#### 使用例
+
+```bash
+# すべてのテストを実行
+clails test
+
+# 特定のパッケージのテストを実行
+clails test pkg1 pkg2
+
+# 特定のタグのテストを実行
+clails test --tag model
+
+# 複数のタグのテストを実行
+clails test --tag model --tag sqlite3
+
+# 特定のタグを除外してテストを実行
+clails test --exclude slow
+
+# 利用可能なタグを一覧表示
+clails test --list-tags
+
+# 特定のパッケージのテストを実行
+clails test todoapp/models/user
+```
+
+---
+
+## 6. よくある使用パターン
 
 ### 新規プロジェクトの開始
 
@@ -634,9 +886,38 @@ clails db:migrate
 clails server
 ```
 
+### タスクを使ったバッチ処理
+
+```bash
+# 1. タスクを生成
+clails generate:task cleanup --namespace maintenance
+
+# 2. タスクの実装
+# app/tasks/maintenance/cleanup.lisp を編集
+
+# 3. タスクを実行
+clails task maintenance:cleanup
+
+# 4. 利用可能なタスクを確認
+clails task --list
+```
+
+### テストの実行
+
+```bash
+# すべてのテストを実行
+clails test
+
+# 特定のパッケージのテストを実行
+clails test myapp/models/user
+
+# タグでテストをフィルタ
+clails test --tag model --exclude slow
+```
+
 ---
 
-## 5. コマンドのオプション
+## 7. コマンドのオプション
 
 ### 共通オプション
 
@@ -659,13 +940,13 @@ clails generate:model user --no-overwrite
 
 ---
 
-## 6. トラブルシューティング
+## 8. トラブルシューティング
 
 ### コマンドが見つからない
 
 ```bash
 # clails コマンドが見つからない場合
-# Roswell のパスを確認
+# PATH に ~/.roswell/bin が設定されていることの確認
 echo $PATH
 
 # Roswell のインストール先を確認
@@ -683,10 +964,6 @@ pwd
 
 # clails.boot ファイルがあることを確認
 ls clails.boot
-
-# 依存関係を再インストール
-rm -rf .qlot
-qlot install
 ```
 
 ### Migration が実行できない
@@ -717,23 +994,7 @@ clails server -p 8080
 
 ---
 
-## 7. 高度な使用方法
-
-### カスタムコマンドの追加
-
-clails コマンドは拡張可能です。`roswell/clails.ros` を編集することで、
-独自のコマンドを追加できます。
-
-```common-lisp
-;; roswell/clails.ros に追加
-(defun custom/command ()
-  (load-project)
-  (clails/cmd:custom/command))
-
-;; *config* に追加
-(:command "custom:command"
- :function ,#'custom/command)
-```
+## 9. 高度な使用方法
 
 ### スタートアップ・シャットダウンフック
 
@@ -750,6 +1011,21 @@ clails コマンドは拡張可能です。`roswell/clails.ros` を編集する�
                 (format t "Server stopping...~%"))))
 ```
 
+### Swankサーバーを使った開発
+
+Swankサーバーを起動することで、Emacs/SLIMEやVim/SLIMVなどからREPL経由でアプリケーションに接続できます。
+
+```bash
+# Swankサーバーを起動してWebサーバーを起動
+clails server --swank
+
+# Emacsから接続
+M-x slime-connect RET 127.0.0.1 RET 4005 RET
+
+# 別のアドレス・ポートで起動
+clails server --swank --swank-address 0.0.0.0 --swank-port 4006
+```
+
 ---
 
 ## まとめ
@@ -757,9 +1033,12 @@ clails コマンドは拡張可能です。`roswell/clails.ros` を編集する�
 clails コマンドは以下の特徴を持ちます：
 
 1. **統一されたインターフェース**: すべての操作を `clails` コマンドで実行
-2. **自動生成**: Model、View、Controller などのコードを自動生成
-3. **データベース管理**: Migration によるスキーマのバージョン管理
+2. **自動生成**: Model、View、Controller、Taskなどのコードを自動生成
+3. **データベース管理**: Migration によるスキーマのバージョン管理とロールバック機能
 4. **開発サーバー**: 組み込みの Web サーバーで即座に動作確認
-5. **拡張性**: カスタムコマンドやフックによる拡張が可能
+5. **Swankサーバー**: REPL経由でのライブコーディングをサポート
+6. **タスクシステム**: カスタムタスクによるバッチ処理の実行
+7. **テストフレームワーク**: タグやパッケージでフィルタ可能なテスト実行
+8. **拡張性**: カスタムコマンドやフックによる拡張が可能
 
 詳細な API リファレンスについては、各コマンドの実装（`src/cmd.lisp`）を参照してください。

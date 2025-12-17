@@ -11,11 +11,10 @@ LOG_FILE="${LOG_DIR}/${TIMESTAMP}-e2e-todo-app.txt"
 exec > >(tee -a ${LOG_FILE}) 2>&1
 
 echo "=== Setting up clails ===" 
-cd /qlot
-qlot install
-
 echo "=== Install clails command ==="
-qlot exec ros install /app/roswell/clails.ros
+ros install /app/roswell/clails.ros
+echo "=== cheking clails cmd ==="
+clails --help
 
 echo "=== Creating new todo app ==="
 cd /tmp/clails-e2e-test-project

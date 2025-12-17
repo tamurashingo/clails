@@ -201,7 +201,7 @@
    @param overwrite [boolean] Whether to overwrite existing files
    "
   (let ((dir (format nil "app/views/~A/" view-name)))
-    (ensure-directories-exist dir)
+    (ensure-directories-exist (format nil "~A/~A" *project-dir* dir))
     (gen/template view-name "package.lisp" dir "template/generate/views/package.lisp.tmpl"
                   overwrite
                   :start-delimiter "<%%"

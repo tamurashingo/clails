@@ -1,112 +1,137 @@
 # clails
 
-web framework inspired by Ruby on Rails
+A web framework inspired by Ruby on Rails, built with Common Lisp.
 
-# requirement
+## Features
 
-- roswell
-- qlot
-- sbcl 
+- **MVC Architecture** - Model-View-Controller design pattern
+- **RESTful Routing** - Rails-like routing with automatic REST resource generation
+- **Active Record Pattern** - Intuitive database operations with ORM
+- **Database Migrations** - Version control for database schema
+- **Multiple Database Support** - SQLite3, MySQL, PostgreSQL
+- **Task System** - Custom task definition and execution with dependency management
+- **Template Engine** - Built-in templating for views
+- **Scaffolding** - Rapid prototyping with code generation
+- **Docker Support** - Ready-to-use Docker development environment
+- **Swank Integration** - Remote debugging via REPL
 
-# install
+## Requirements
 
-clails is alpha version. so you will need to manually configure various settings.
+- Roswell (Common Lisp implementation manager)
+- SBCL (Steel Bank Common Lisp)
 
-```bash
-git clone https://github.com/tamurashingo/clails.git
-cd clails
-qlot install
-qlot exec ros install ./roswell/clails.ros
-export PATH=$PWD/.qlot/bin:$PATH
-```
+## Installation
 
-# configuration
-
-clails uses qlot to manage dependencies, including libraries not registered in Quicklisp and to reference the latest code.
-
-At runtime, clails creates a `qlfile` in the directory specified by `CLAILS_CONF_DIR` if one does not exist.
-If `CLAILS_CONF_DIR` is not specified, it uses `$HOME/.clails`.
-
-This qlfile contains the necessary dependencies for clails to function properly.
-
-## development with local clails
-
-When developing clails locally and testing your changes, you can configure clails to use your local version by modifying `$CLAILS_CONF_DIR/qlfile`.
-
-Update the qlfile to specify the local path to your clails repository:
-
-```text
-github fukamachi/cl-dbi
-github tamurashingo/cl-dbi-connection-pool
-github tamurashingo/getcmd
-local clails /path/to/clails
-```
-
-After modifying the qlfile, you must delete the `.qlot` directory and `qlfile.lock` to apply the changes:
+### Installing Roswell
 
 ```bash
-rm -rf $CLAILS_CONF_DIR/.qlot $CLAILS_CONF_DIR/qlfile.lock
+# macOS (Homebrew)
+brew install roswell
+
+# Linux
+# See https://github.com/roswell/roswell/wiki/Installation
 ```
 
-Additionally, set the `CL_SOURCE_REGISTRY` environment variable to ensure the local clails is loaded:
+### Installing Required Libraries
 
 ```bash
-export CL_SOURCE_REGISTRY=/path/to/clails
+ros install fukamachi/cl-dbi
+ros install tamurashingo/cl-dbi-connection-pool
+ros install tamurashingo/cl-batis
+ros install tamurashingo/getcmd
 ```
 
-This allows you to test local modifications to clails without reinstalling.
-
-# usage
-
-## create project
+### Installing clails
 
 ```bash
-clails new project-name
+ros install tamurashingo/clails
 ```
 
-## create new database
+To specify a specific branch or tag:
 
-execute `create database` command
+```bash
+# branch
+ros install tamurashingo/clails/release/0.0.2
+
+# tag
+ros install tamurashingo/clails/v0.0.2
+```
+
+### Verify Installation
+
+```bash
+clails --help
+```
+
+## Quick Start
+
+### Create a New Project
+
+```bash
+clails new todoapp
+cd todoapp
+```
+
+### Docker Development (Recommended)
+
+Build and start the Docker environment:
+
+```bash
+make build
+make up
+```
+
+Create database and run migrations:
+
+```bash
+make db.create
+make db.migrate
+```
+
+Available Make commands:
+- `make build` - Build Docker image
+- `make up` - Start containers
+- `make down` - Stop containers
+- `make console` - Open shell in container
+- `make db.create` - Create database
+- `make db.migrate` - Run migrations
+
+### Local Development
+
+Create database:
 
 ```bash
 clails db:create
 ```
-## migrate database
+
+Run migrations:
 
 ```bash
-clails db:migrate:up
+clails db:migrate
 ```
-## startup server
+
+Start server:
 
 ```bash
 clails server
 ```
 
-visit `http://localhost:5000/`
-
-you'll see
+Visit `http://localhost:5000/` to see the welcome page:
 
 ![clails initial page](document/img/startup.png)
 
-# documentation
+## Documentation
 
 Comprehensive guides for developing with clails:
 
-- **[QuickStart](document/quickstart.md)** ([日本語](document/quickstart_ja.md)) - Build your first TODO application with clails
-- **[Model Guide](document/model.md)** ([日本語](document/model_ja.md)) - Database models, queries, migrations, and ORM features
-- **[View Guide](document/view.md)** ([日本語](document/view_ja.md)) - Template engine, data binding, and HTML rendering
-- **[Controller Guide](document/controller.md)** ([日本語](document/controller_ja.md)) - Request handling, routing, and REST controllers
-- **[Command Guide](document/command.md)** ([日本語](document/command_ja.md)) - CLI commands for scaffolding and project management
-- **[Environment Guide](document/environment.md)** ([日本語](document/environment_ja.md)) - Configuration, environment variables, and setup
-- **[Testing Guide](document/testing.md)** ([日本語](document/testing_ja.md)) - Testing framework and best practices
-
-# example
-
-It contains instructions on how to create an application using commands:\
-~~https://github.com/tamurashingo/clails/wiki/create-todo-application~~
-
-Implementation examples for various databases, Docker, and REST:\
-~~https://github.com/tamurashingo/clails-sample-apps~~
+- **[QuickStart](document/quickstart.md)** ([日本語](document/quickstart_ja.md)) - Build your first TODO application
+- **[Command Guide](document/command.md)** ([日本語](document/command_ja.md)) - CLI commands reference
+- **[Model Guide](document/model.md)** ([日本語](document/model_ja.md)) - Database operations, queries, transactions, and pessimistic locking
+- **[Task Guide](document/task.md)** ([日本語](document/task_ja.md)) - Custom task system with dependency management
+- **[View Guide](document/view.md)** ([日本語](document/view_ja.md)) - Template engine and rendering (coming soon)
+- **[Controller Guide](document/controller.md)** ([日本語](document/controller_ja.md)) - Request handling and routing (coming soon)
+- **[Environment Guide](document/environment.md)** ([日本語](document/environment_ja.md)) - Configuration management (coming soon)
+- **[Testing Guide](document/testing.md)** ([日本語](document/testing_ja.md)) - Testing framework (coming soon)
 
 
 ---

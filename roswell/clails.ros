@@ -5,31 +5,8 @@ exec ros -Q -- $0 "$@"
 |#
 (progn ;;init forms
   (ros:ensure-asdf)
-  (ql:quickload '(:qlot) :silent t)
+  (ql:quickload '(:getcmd :clails) :silent t)
   )
-
-
-(defpackage :ros.script.clails.3961085205.boot
-  (:use :cl))
-(in-package :ros.script.clails.3961085205.boot)
-
-(defparameter CLAILS_CONF_DIR (uiop:getenv "CLAILS_CONF_DIR"))
-(unless CLAILS_CONF_DIR
-  (setf CLAILS_CONF_DIR (format NIL "~A/.clails/" (user-homedir-pathname))))
-
-(progn
-  (setf qlot/logger:*logger-message-stream* (make-broadcast-stream))
-  (ensure-directories-exist CLAILS_CONF_DIR)
-  (setf qlot:*project-root* CLAILS_CONF_DIR)
-  (unless (probe-file (merge-pathnames "qlfile" CLAILS_CONF_DIR))
-    (qlot:add "tamurashingo/cl-dbi-connection-pool")
-    (qlot:add "tamurashingo/getcmd")
-
-    (qlot:add "tamurashingo/clails"))
-
-  (qlot:install)
-  (push (format NIL "~A/.qlot/" CLAILS_CONF_DIR) ql:*local-project-directories*)
-  (ql:quickload :clails :silent t))
 
 
 (defpackage :ros.script.clails.3961085205
@@ -196,6 +173,14 @@ exec ros -Q -- $0 "$@"
     (push project-dir ql:*local-project-directories*)
     (load boot-file)))
 
+(defun load-db-package ()
+  (let* ((clails-home (uiop:getenv "CLAILS_HOME"))
+          (project-dir (if clails-home
+                           (uiop:ensure-directory-pathname clails-home)
+                           (uiop/os:getcwd)))
+          (db-package-file (merge-pathnames "db/package.lisp" project-dir)))
+    (load db-package-file)))
+
 ;; Command definition macro
 (defmacro define-command (name params &body body)
   (let* ((sanitized (substitute #\_ #\: name))
@@ -321,7 +306,7 @@ exec ros -Q -- $0 "$@"
     (help/db)
     (uiop:quit 0))
   (load-project)
-  (load "db/package.lisp")
+  (load-db-package)
   (if version
       (clails/cmd:db/migrate :version version)
       (clails/cmd:db/migrate)))
@@ -337,7 +322,7 @@ exec ros -Q -- $0 "$@"
       (format *error-output* "ERROR: VERSION parameter is required for db:migrate:up~%")
       (uiop:quit 1))
     (load-project)
-    (load "db/package.lisp")
+    (load-db-package)
     (clails/cmd:db/migrate-up version)))
 
 (define-command "db:migrate:down" (args &key (help :short-option "h"
@@ -351,7 +336,7 @@ exec ros -Q -- $0 "$@"
       (format *error-output* "ERROR: VERSION parameter is required for db:migrate:down~%")
       (uiop:quit 1))
     (load-project)
-    (load "db/package.lisp")
+    (load-db-package)
     (clails/cmd:db/migrate-down version)))
 
 (define-command "db:rollback" (&key (step :long-option "step"
@@ -363,7 +348,7 @@ exec ros -Q -- $0 "$@"
     (help/db)
     (uiop:quit 0))
   (load-project)
-  (load "db/package.lisp")
+  (load-db-package)
   (if step
       (clails/cmd:db/rollback :step (parse-integer step))
       (clails/cmd:db/rollback)))
@@ -375,7 +360,7 @@ exec ros -Q -- $0 "$@"
     (help/db)
     (uiop:quit 0))
   (load-project)
-  (load "db/package.lisp")
+  (load-db-package)
   (clails/cmd:db/seed))
 
 (define-command "db:status" (&key (help :short-option "h"
@@ -385,7 +370,7 @@ exec ros -Q -- $0 "$@"
     (help/db)
     (uiop:quit 0))
   (load-project)
-  (load "db/package.lisp")
+  (load-db-package)
   (clails/cmd:db/status))
 
 (define-command "generate:model" (args &key (no-overwrite :long-option "no-overwrite")
