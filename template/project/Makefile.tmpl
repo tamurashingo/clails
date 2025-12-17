@@ -1,10 +1,14 @@
+CLAILS_BRANCH ?= develop
+
+
 .PHONY: build
 build:
-	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env build
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env build --build-arg CLAILS_BRANCH=${CLAILS_BRANCH}
+	chmod +x docker/run-dev.sh
 
 .PHONY: rebuild
 rebuild:
-	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env build --no-cache
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env build --no-cache --build-arg CLAILS_BRANCH=${CLAILS_BRANCH}
 
 .PHONY: up down
 up:

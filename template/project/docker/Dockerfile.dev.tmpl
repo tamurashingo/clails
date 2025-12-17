@@ -1,10 +1,11 @@
 # <%= (@ project-name ) %> development Dockerfile
 FROM fukamachi/sbcl:2.5.10
 
-ENV BIND_ADDRESS="127.0.0.1"
-ENV PORT="5000"
-ENV SWANK_ADDRESS="127.0.0.1"
-ENV SWANK_PORT="4005"
+ENV BIND_ADDRESS="127.0.0.1" \
+    PORT="5000" \
+    SWANK_ADDRESS="127.0.0.1" \
+    SWANK_PORT="4005" \
+    PATH=${PATH}:/root/.roswell/bin:/qlot/.qlot/bin
 
 
 RUN apt-get update && apt-get install -y \
@@ -13,30 +14,22 @@ RUN apt-get update && apt-get install -y \
   libsqlite3-dev \
   default-mysql-client \
   postgresql-client \
-  sqlite3
+  sqlite3 \
+  && rm -rf /var/lib/apt/lists/*
 
-RUN ros run -e "(ql-dist:install-dist \"http://dist.shirakumo.org/shirakumo.txt\" :prompt nil)"
-RUN ros install qlot
+RUN ros install fukamachi/cl-dbi
+RUN ros install tamurashingo/cl-dbi-connection-pool
+RUN ros install tamurashingo/cl-batis
+RUN ros install tamurashingo/getcmd
 
-ENV PATH=${PATH}:/root/.roswell/bin:/qlot/.qlot/bin
 
-RUN mkdir /qlot
-RUN echo 'github fukamachi/cl-dbi' > /qlot/qlfile
-RUN echo 'github tamurashingo/cl-dbi-connection-pool' >> /qlot/qlfile
-RUN echo 'github tamurashingo/cl-batis' >> /qlot/qlfile
-RUN echo 'github tamurashingo/getcmd' >> /qlot/qlfile
-# use clails develop version
-RUN cd /qlot && qlot install &&  qlot exec ros install tamurashingo/clails/develop
+# install clails
+ARG CLAILS_BRANCH=develop
+RUN ros install tamurashingo/clails/${CLAILS_BRANCH}
 
-ENV CLAILS_CONF_DIR=/qlot
-
-COPY docker/run-dev.sh /qlot
-RUN chmod +x /qlot/run-dev.sh
 
 RUN mkdir -p /app
 WORKDIR /app
 
-# load libraries
-RUN clails
+ENTRYPOINT /app/docker/run-dev.sh
 
-ENTRYPOINT /qlot/run-dev.sh

@@ -30,61 +30,38 @@ brew install roswell
 # https://github.com/roswell/roswell/wiki/Installation を参照
 ```
 
-### clails の必要モジュールの取得
-
-clails は qlot を使い必要なモジュールをダウンロードしているため、clails の qlfile を取得します。
-
-#### 作業用ディレクトリの作成
-
-インストール作業用のディレクトリを作成し、移動します。
+### 前提ライブラリのインストール
 
 ```bash
-mkdir -p ~/clails-install
-cd ~/clails-install
-```
-
-#### qlfile の取得
-
-```bash
-wget https://raw.githubusercontent.com/tamurashingo/clails/refs/heads/main/qlfile
-```
-
-#### モジュールの取得
-
-```bash
-qlot install
+ros install fukamachi/cl-dbi
+ros install tamurashingo/cl-dbi-connection-pool
+ros install tamurashingo/cl-batis
+ros install tamurashingo/getcmd
 ```
 
 ### clails のインストール
 
-clails コマンドをインストールし、PATH を設定します。
-
-#### PATH の設定
-
-作業用ディレクトリに配置された clails コマンドを PATH に追加します。
-
 ```bash
-export PATH=$PWD/.qlot/bin:$PATH
+ros install tamurashingo/clails
 ```
 
-#### clails コマンドのインストール
+特定のブランチやタグを指定する場合は / を付けて指定します。
 
 ```bash
-qlot exec ros install tamurashingo/clails
+# branch
+ros install tamurashingo/clails/release/0.0.2
+
+# tag
+ros install tamurashingo/clails/v0.0.2
 ```
+
 
 #### インストール確認
 
 ```bash
-clails help
+clails --help
 ```
 
-#### 注意事項
-
-- PATH の設定は、シェルを閉じると消えます。恒久的に設定する場合は `~/.bashrc` や `~/.zshrc` などに追記してください。
-- インストール作業用ディレクトリ（例：`~/clails-install`）は削除しないでください。clails コマンドが配置されています。
-
----
 
 ## コマンド一覧
 
@@ -569,9 +546,6 @@ clails generate:scaffold NAME [OPTIONS]
 ```bash
 # User の scaffold を生成
 clails generate:scaffold user
-
-# 複雑なリソースの scaffold を生成
-clails generate:scaffold blog/post
 ```
 
 #### 生成されるファイル
@@ -972,7 +946,7 @@ clails generate:model user --no-overwrite
 
 ```bash
 # clails コマンドが見つからない場合
-# Roswell のパスを確認
+# PATH に ~/.roswell/bin が設定されていることの確認
 echo $PATH
 
 # Roswell のインストール先を確認
@@ -990,10 +964,6 @@ pwd
 
 # clails.boot ファイルがあることを確認
 ls clails.boot
-
-# 依存関係を再インストール
-rm -rf .qlot
-qlot install
 ```
 
 ### Migration が実行できない
@@ -1025,22 +995,6 @@ clails server -p 8080
 ---
 
 ## 9. 高度な使用方法
-
-### カスタムコマンドの追加
-
-clails コマンドは拡張可能です。`roswell/clails.ros` を編集することで、
-独自のコマンドを追加できます。
-
-```common-lisp
-;; roswell/clails.ros に追加
-(defun custom/command ()
-  (load-project)
-  (clails/cmd:custom/command))
-
-;; *config* に追加
-(:command "custom:command"
- :function ,#'custom/command)
-```
 
 ### スタートアップ・シャットダウンフック
 

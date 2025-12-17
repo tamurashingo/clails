@@ -11,7 +11,7 @@ services:
       - ${PORT}:${PORT}
       - ${SWANK_PORT}:${SWANK_PORT}
     tty: true
-    command: ["/qlot/run-dev.sh"]
+    command: ["/app/docker/run-dev.sh"]
     environment:
       CLAILS_HOME: "/app"
       BIND_ADDRESS: "${BIND_ADDRESS}"

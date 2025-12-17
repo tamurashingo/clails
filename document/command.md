@@ -30,59 +30,36 @@ brew install roswell
 # See https://github.com/roswell/roswell/wiki/Installation
 ```
 
-### Obtaining Required Modules for clails
-
-Since clails uses qlot to download required modules, you need to obtain the clails qlfile.
-
-#### Create Working Directory
-
-Create a working directory for installation and navigate to it.
+### Installing Required Libraries
 
 ```bash
-mkdir -p ~/clails-install
-cd ~/clails-install
-```
-
-#### Obtain qlfile
-
-```bash
-wget https://raw.githubusercontent.com/tamurashingo/clails/refs/heads/main/qlfile
-```
-
-#### Obtain Modules
-
-```bash
-qlot install
+ros install fukamachi/cl-dbi
+ros install tamurashingo/cl-dbi-connection-pool
+ros install tamurashingo/cl-batis
+ros install tamurashingo/getcmd
 ```
 
 ### Installing clails
 
-Install the clails command and configure PATH.
-
-#### Configure PATH
-
-Add the clails command placed in the working directory to your PATH.
-
 ```bash
-export PATH=$PWD/.qlot/bin:$PATH
+ros install tamurashingo/clails
 ```
 
-#### Install clails Command
+To specify a specific branch or tag, use `/` to specify it.
 
 ```bash
-qlot exec ros install tamurashingo/clails
+# branch
+ros install tamurashingo/clails/release/0.0.2
+
+# tag
+ros install tamurashingo/clails/v0.0.2
 ```
 
 #### Verify Installation
 
 ```bash
-clails help
+clails --help
 ```
-
-#### Notes
-
-- The PATH setting will be lost when you close the shell. To make it permanent, add it to `~/.bashrc` or `~/.zshrc`.
-- Do not delete the installation working directory (e.g., `~/clails-install`) as the clails command is located there.
 
 ---
 
@@ -331,40 +308,35 @@ clails generate:migration MIGRATION_NAME
 #### Examples
 
 ```bash
-# Generate Migration
+# Migration for creating table
+clails generate:migration create-users-table
+
+# Migration for adding column
 clails generate:migration add-email-to-users
 
-# Generate with timestamp
-clails generate:migration create-posts-table
+# Migration for adding index
+clails generate:migration add-index-to-users-email
 ```
 
 #### Generated File
 
 ```
-db/migrate/YYYYMMDD-HHMMSS-add-email-to-users.lisp
+db/migrate/YYYYMMDD-HHMMSS-MIGRATION_NAME.lisp
 ```
+
+Example: `db/migrate/20241022-143000-create-users-table.lisp`
 
 #### Generated Migration Example
 
 ```common-lisp
-(in-package #:cl-user)
-(defpackage #:myapp/db/migrate/add-email-to-users
-  (:use #:cl)
-  (:import-from #:clails/model/migration
-                #:defmigration
-                #:create-table
-                #:drop-table
-                #:add-column
-                #:drop-column))
+(in-package #:myapp/db/migrate)
 
-(in-package #:myapp/db/migrate/add-email-to-users)
-
-(defmigration "YYYYMMDD-HHMMSS-add-email-to-users"
+(defmigration "20241022-143000-create-users-table"
   (:up #'(lambda (conn)
-           ;; Add your migration code here
+           ;; Write table creation code here
            ))
   (:down #'(lambda (conn)
-             ;; Add your rollback code here
+             ;; Write rollback code here
              )))
 ```
 
@@ -375,27 +347,39 @@ Generates a View file and package definition.
 #### Syntax
 
 ```bash
-clails generate:view VIEW_PATH
+clails generate:view VIEW_NAME [OPTIONS]
 ```
+
+#### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--no-overwrite` | None | Do not overwrite existing files (default: enabled) |
 
 #### Examples
 
 ```bash
-# Generate View
+# Generate top-level View
+clails generate:view index
+
+# Generate nested View
 clails generate:view users/index
 
-# Generate with subdirectories
+# Generate View with multiple hierarchies
 clails generate:view admin/users/list
 ```
 
 #### Generated Files
 
 ```
-app/views/users/index.html       # View file
-app/views/users/package.lisp     # Package definition (if not exists)
+app/views/VIEW_NAME.html       # View template
+app/views/package.lisp         # Package definition (top level)
+app/views/DIRECTORY/package.lisp  # Package definition (per directory)
 ```
 
 #### Generated View Example
+
+`app/views/users/index.html`:
 
 ```html
 <!DOCTYPE html>
@@ -405,9 +389,21 @@ app/views/users/package.lisp     # Package definition (if not exists)
 </head>
 <body>
   <h1>Users Index</h1>
-  <!-- Your view content here -->
 </body>
 </html>
+```
+
+`app/views/users/package.lisp`:
+
+```common-lisp
+(in-package #:cl-user)
+(defpackage #:myapp/views/users/package
+  (:use #:cl)
+  (:import-from #:clails/view/view-helper
+                #:*view-context*
+                #:view))
+
+(in-package #:myapp/views/users/package)
 ```
 
 ### `clails generate:controller` - Generate Controller File
@@ -424,26 +420,22 @@ clails generate:controller CONTROLLER_NAME [OPTIONS]
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--type TYPE` | `-t TYPE` | Controller type (web, rest, base) |
-| `--no-overwrite` | None | Do not overwrite existing files |
+| `--no-overwrite` | None | Do not overwrite existing files (default: enabled) |
 
 #### Examples
 
 ```bash
-# Generate web Controller
+# Generate Controller
 clails generate:controller users
 
-# Generate REST API Controller
-clails generate:controller api/users -t rest
-
-# Generate base Controller
-clails generate:controller admin/dashboard -t base
+# Generate nested Controller
+clails generate:controller admin/users
 ```
 
 #### Generated File
 
 ```
-app/controllers/users_controller.lisp
+app/controllers/CONTROLLER_NAME_controller.lisp
 ```
 
 #### Generated Controller Example
@@ -452,8 +444,12 @@ app/controllers/users_controller.lisp
 (in-package #:cl-user)
 (defpackage #:myapp/controllers/users-controller
   (:use #:cl)
-  (:import-from #:clails/controller/web-controller
+  (:import-from #:clails/controller/base-controller
                 #:<web-controller>
+                #:do-get
+                #:do-post
+                #:do-put
+                #:do-delete
                 #:set-view
                 #:set-redirect
                 #:param))
@@ -464,12 +460,12 @@ app/controllers/users_controller.lisp
   ()
   (:documentation "Users controller"))
 
-;; GET /users
 (defmethod do-get ((controller <users-controller>))
+  ;; GET request processing
   (set-view controller "users/index.html" '()))
 
-;; POST /users
 (defmethod do-post ((controller <users-controller>))
+  ;; POST request processing
   (set-redirect controller "/users"))
 ```
 
@@ -536,29 +532,33 @@ Generates Model, View, Controller, and Migration files together.
 #### Syntax
 
 ```bash
-clails generate:scaffold RESOURCE_NAME
+clails generate:scaffold NAME [OPTIONS]
 ```
+
+#### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--no-overwrite` | None | Do not overwrite existing files (default: enabled) |
 
 #### Examples
 
 ```bash
-# Generate scaffold
-clails generate:scaffold post
-
-# Generate scaffold for nested resource
-clails generate:scaffold admin/article
+# Generate User scaffold
+clails generate:scaffold user
 ```
 
 #### Generated Files
 
 ```
-app/models/post.lisp
-app/controllers/post_controller.lisp
-app/views/post/index.html
-app/views/post/show.html
-app/views/post/new.html
-app/views/post/edit.html
-db/migrate/YYYYMMDD-HHMMSS-create-posts-table.lisp
+app/models/NAME.lisp
+app/controllers/NAME_controller.lisp
+app/views/NAME/index.html
+app/views/NAME/show.html
+app/views/NAME/new.html
+app/views/NAME/edit.html
+app/views/NAME/package.lisp
+db/migrate/YYYYMMDD-HHMMSS-NAME.lisp
 ```
 
 ---
@@ -703,11 +703,6 @@ clails db:seed
 #### Behavior
 
 Executes the seed process defined in `db/seed.lisp`.
-
-### `clails db:status` - Display Migration Status
-2. Sort pending migrations by execution order
-3. Execute `:up` function of each Migration
-4. Save execution records to Migration table
 
 ### `clails db:status` - Display Migration Status
 
@@ -951,7 +946,7 @@ clails generate:model user --no-overwrite
 
 ```bash
 # If clails command is not found
-# Check Roswell path
+# Verify that ~/.roswell/bin is in PATH
 echo $PATH
 
 # Check Roswell installation
@@ -969,10 +964,6 @@ pwd
 
 # Verify clails.boot file exists
 ls clails.boot
-
-# Reinstall dependencies
-rm -rf .qlot
-qlot install
 ```
 
 ### Cannot Run Migration
@@ -1004,21 +995,6 @@ clails server -p 8080
 ---
 
 ## 9. Advanced Usage
-
-### Adding Custom Commands
-
-The clails command is extensible. You can add custom commands by editing `roswell/clails.ros`.
-
-```common-lisp
-;; Add to roswell/clails.ros
-(defun custom/command ()
-  (load-project)
-  (clails/cmd:custom/command))
-
-;; Add to *config*
-(:command "custom:command"
- :function ,#'custom/command)
-```
 
 ### Startup and Shutdown Hooks
 
