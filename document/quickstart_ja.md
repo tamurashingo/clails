@@ -199,7 +199,7 @@ clails db:migrate
   (:import-from #:clails/datetime
                 #:from-universal-time
                 #:format-datetime)
-  (:import-from #:clails/datetime
+  (:import-from #:local-time
                 #:now)
   (:export #:<todo>
            #:find-all
