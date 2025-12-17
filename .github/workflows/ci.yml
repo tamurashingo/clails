@@ -16,7 +16,7 @@ jobs:
       run: docker compose -f docker-compose.test.yml up -d
 
     - name: run test
-      run: docker compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test exec rove /app/clails-test.asd
+      run: docker compose -f docker-compose.test-runner.yml run --rm --entrypoint rove clails-test /app/clails-test.asd
       env:
         CL_SOURCE_REGISTRY: ${{ github.workspace }}
         CLAILS_MIGRATION_DIR_0001: ${{ github.workspace }}/test/data/0001-migration-test

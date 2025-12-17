@@ -7,7 +7,6 @@ services:
     container_name: clails_test_app
     volumes:
       - ./:/app
-      - qlfiles:/qlot
     ports:
       - 4005:4005
     environment:

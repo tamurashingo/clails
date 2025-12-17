@@ -4,10 +4,10 @@ DEV_DEPS := Dockerfile docker-compose.dev.yml qlfile clails.asd
 DEV_NW_EXISTS := $(shell docker network ls --filter name=$(DEV_NW) --format '{{ .ID }}')
 
 TEST_BUILDER := .test_image_built
-TEST_DEPS := Dockerfile docker-compose.test.yml docker-compose.test-runner.yml qlfile clails.asd
+TEST_DEPS := Dockerfile docker-compose.test.yml docker-compose.test-runner.yml clails.asd
 
 E2E_BUILDER := .e2e_image_build
-E2E_DEPS := Dockerfile.e2e docker-compose.e2e.yml qlfile clails.asd
+E2E_DEPS := Dockerfile.e2e docker-compose.e2e.yml clails.asd
 
 .PHONY: setup
 setup: dev.setup
@@ -76,7 +76,7 @@ test.prev:
 .PHONY: test
 test: $(TEST_BUILDER) test.prev
 	@echo "Running tests..."
-	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test exec rove /app/clails-test.asd
+	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint rove clails-test /app/clails-test.asd
 
 .PHONY: test.down
 test.down:
