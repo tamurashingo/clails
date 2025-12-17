@@ -58,6 +58,13 @@
               :formatter (make-instance '<text-formatter>))
    :level :info)
 
+  ;; task logger
+  (register-logger
+   :task
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :info)
+
   nil)
 
 
@@ -95,6 +102,13 @@
   ;; audit logger
   (register-logger
    :audit
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :info)
+
+  ;; task logger
+  (register-logger
+   :task
    :appender (make-console-appender
               :formatter (make-instance '<text-formatter>))
    :level :info)
@@ -148,6 +162,14 @@
    :audit
    :appender (make-file-appender
               :filepath "logs/audit.log"
+              :formatter (make-instance '<json-formatter>))
+   :level :info)
+
+  ;; task logger
+  (register-logger
+   :task
+   :appender (make-file-appender
+              :filepath "logs/task.log"
               :formatter (make-instance '<json-formatter>))
    :level :info)
 

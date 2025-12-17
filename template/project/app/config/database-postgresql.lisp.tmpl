@@ -13,16 +13,16 @@
 
 (defun initialize-database-config ()
   (setf clails/environment:*database-config*
-        `(:database :mysql
-          :develop (:database-name ,(env-or-default "CLAILS_DB_NAME" "<%= (@ project-name ) %>_develop")
+        `(:database :postgresql
+          :develop (:database-name ,(env-or-default "CLAILS_DB_NAME" "<%= (@ project-name ) %>_development")
                     :host ,(env-or-default "CLAILS_DB_HOST" "localhost")
                     :port ,(env-or-default "CLAILS_DB_PORT" "5432")
-                    :username ,(env-or-default "CLAILS_DB_USERNAME" "clails")
+                    :username ,(env-or-default "CLAILS_DB_USERNAME" "<%= (@ project-name ) %>")
                     :password ,(env-or-default "CLAILS_DB_PASSWORD" "password"))
           :test (:database-name ,(env-or-default "CLAILS_DB_NAME" "<%= (@ project-name ) %>_test")
                  :host ,(env-or-default "CLAILS_DB_HOST" "localhost")
                  :port ,(env-or-default "CLAILS_DB_PORT" "5432")
-                 :username ,(env-or-default "CLAILS_DB_USERNAME" "clails")
+                 :username ,(env-or-default "CLAILS_DB_USERNAME" "<%= (@ project-name ) %>")
                  :password ,(env-or-default "CLAILS_DB_PASSWORD" "password"))
           :production (:database-name ,(env "CLAILS_DB_NAME")
                        :host ,(env "CLAILS_DB_HOST")

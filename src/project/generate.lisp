@@ -9,7 +9,8 @@
            #:gen/view
            #:gen/controller
            #:gen/scaffold
-           #:gen/schema))
+           #:gen/schema
+           #:gen/task))
 (in-package #:clails/project/generate)
 
 
@@ -64,6 +65,15 @@
                                 `(:project-name ,*project-name*
                                   :name ,name
                                   :current-datetime ,(current-datetime)))))))
+
+(defun add-import-model (name)
+  "Add model import-from to application-loader.lisp.
+
+   @param name [string] Model name
+   "
+  (let ((filepath (format nil "~A/app/application-loader.lisp" *project-dir*))
+        (package-name (format nil "~A/models/~A" *project-name* name)))
+    (add-import-to-defpackage filepath package-name)))
 
 (defun add-import-controller (name)
   "Add controller import-from to application-loader.lisp.
@@ -166,6 +176,8 @@
     (gen/template model-name filename "/app/models/" "template/generate/model.lisp.tmpl" overwrite))
   (let ((test-filename (format nil "~A.lisp" model-name)))
     (gen/template model-name test-filename "/test/models/" "template/generate/test/model.lisp.tmpl" overwrite))
+  ;; Add to application-loader.lisp
+  (add-import-model model-name)
   ;; Add to test-loader.lisp
   (add-test-import-model model-name))
 
@@ -189,7 +201,7 @@
    @param overwrite [boolean] Whether to overwrite existing files
    "
   (let ((dir (format nil "app/views/~A/" view-name)))
-    (ensure-directories-exist dir)
+    (ensure-directories-exist (format nil "~A/~A" *project-dir* dir))
     (gen/template view-name "package.lisp" dir "template/generate/views/package.lisp.tmpl"
                   overwrite
                   :start-delimiter "<%%"
@@ -287,3 +299,45 @@
       (format out "~A" (funcall (cl-template:compile-template template-content)
                                 `(:project-name ,*project-name*
                                   :tables ,tables))))))
+
+;; ----------------------------------------
+;; task
+(defun gen/task (task-name &key namespace)
+  "Generate task file.
+
+   @param task-name [string] Task name (e.g., 'cleanup', 'import')
+   @param namespace [string or nil] Optional namespace (e.g., 'maintenance', 'data')
+   "
+  (let* ((task-dir (if namespace
+                      (format nil "lib/tasks/~A" (string-downcase namespace))
+                      "lib/tasks"))
+         (package-name (if namespace
+                          (format nil "~A/tasks/~A/~A"
+                                  *project-name*
+                                  (string-downcase namespace)
+                                  (string-downcase task-name))
+                          (format nil "~A/tasks/~A"
+                                  *project-name*
+                                  (string-downcase task-name))))
+         (filename (format nil "~A.lisp" (string-downcase task-name)))
+         (outfile (format nil "~A/~A/~A" *project-dir* task-dir filename))
+         (template-file (asdf:system-relative-pathname :clails "template/generate/lib/tasks/task.lisp.tmpl"))
+         (template-content (uiop:read-file-string template-file
+                                                  :external-format :utf-8)))
+
+    ;; Ensure directory exists
+    (ensure-directories-exist (format nil "~A/~A/" *project-dir* task-dir))
+
+    (format t "output: ~A~%" outfile)
+    (when (probe-file outfile)
+      (error "already exists: ~A" outfile))
+
+    (with-open-file (out outfile
+                         :direction :output
+                         :if-exists :supersede)
+      (format out "~A" (funcall (cl-template:compile-template template-content)
+                                `(:project-name ,*project-name*
+                                  :package-name ,package-name
+                                  :task-name ,task-name
+                                  :namespace ,(when namespace (string-upcase namespace))))))))
+

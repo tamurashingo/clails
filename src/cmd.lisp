@@ -11,7 +11,8 @@
                 #:gen/migration
                 #:gen/view
                 #:gen/controller
-                #:gen/scaffold)
+                #:gen/scaffold
+                #:gen/task)
   (:import-from #:clails/model/migration
                 #:db-create
                 #:db-migrate
@@ -41,12 +42,16 @@
                 #:shutdown-connection-pool)
   (:import-from #:clails/model/base-model
                 #:initialize-table-information)
+  (:import-from #:clails/task
+                #:initialize-task-system
+                #:run-task)
   (:export #:create-project
            #:generate/model
            #:generate/migration
            #:generate/view
            #:generate/controller
            #:generate/scaffold
+           #:generate/task
            #:db/create
            #:db/migrate
            #:db/migrate-up
@@ -57,7 +62,10 @@
            #:console
            #:server
            #:stop
-           #:test))
+           #:test
+           #:task/run
+           #:task/list
+           #:task/info))
 (in-package #:clails/cmd)
 
 (defparameter *app* nil
@@ -65,6 +73,28 @@
 
 (defparameter *handler* nil
   "Server handler instance returned by clackup.")
+
+(defparameter *swank-server* nil
+  "Swank server instance for development.")
+
+(defun start-swank-server (address port)
+  "Start swank server on the specified port.
+
+   @param port [string] Port number for swank server
+   @return [t] Swank server start result
+   "
+  (unless *swank-server*
+    (handler-case
+        (let ((swank-port (parse-integer port)))
+          (setf swank::*loopback-interface* address)
+          (setf *swank-server*
+                (funcall (intern "CREATE-SERVER" :swank)
+                         :style :spawn
+                         :port swank-port
+                         :dont-close t))
+          (format t "Swank server started on ~A:~A~%" address swank-port))
+      (error (e)
+        (format *error-output* "Failed to start swank server: ~A~%" e)))))
 
 
 (defun create-project (project-name &key project-path (database :sqlite3))
@@ -128,6 +158,15 @@
    @return [t] Generation result
    "
   (gen/scaffold name :overwrite (not no-overwrite)))
+
+(defun generate/task (name &key namespace)
+  "Generate task file.
+
+   @param name [string] Task name (e.g., 'cleanup', 'import')
+   @param namespace [string or nil] Optional namespace (e.g., 'maintenance', 'data')
+   @return [t] Generation result
+   "
+  (gen/task name :namespace namespace))
 
 
 (defun db/create (&key (env :development))
@@ -208,7 +247,7 @@
    "
   (error "Not yet implemented"))
 
-(defun server (&key (port "5000") (bind "127.0.0.1"))
+(defun server (&key (port "5000") (bind "127.0.0.1") swank-port (swank-address "127.0.0.1"))
   "Start the web server with the specified port and bind address.
 
    Initializes routing tables, builds middleware stack, starts the server,
@@ -216,8 +255,13 @@
 
    @param port [string] Port number to listen on (default: \"5000\")
    @param bind [string] IP address to bind to (default: \"127.0.0.1\")
+   @param swank-port [string] Port number for swank server (nil to disable)
+   @param swank-address [string] IP address to bind to (default: \"127.0.0.1\")
    @return [nil] Does not return until server is stopped
    "
+  (when swank-port
+    (start-swank-server swank-address swank-port))
+
   (initialize-routing-tables)
   (let* ((args (append *clails-middleware-stack* (list *app*)))
          (builder `(lack:builder ,@args)))
@@ -246,7 +290,15 @@
   (when *handler*
     (call-shutdown-hooks)
     (clack:stop *handler*)
-    (setf *handler* nil)))
+    (setf *handler* nil))
+  (when *swank-server*
+    (handler-case
+        (progn
+          (funcall (intern "STOP-SERVER" :swank) *swank-server*)
+          (format t "Swank server stopped~%"))
+      (error (e)
+        (format *error-output* "Failed to stop swank server: ~A~%" e)))
+    (setf *swank-server* nil)))
 
 (defun call-startup-hooks ()
   "Execute all registered startup hooks.
@@ -324,3 +376,118 @@
        ;; Cleanup: shutdown connection pool
        (shutdown-connection-pool)))))
 
+
+(defun task/run (task-name &rest args)
+  "Execute a task by name.
+
+   @param task-name [string] Task name (e.g., 'db:migrate' or 'cleanup')
+   @param args [list] Task arguments
+   @return [t] Task execution result
+   "
+  ;; Initialize task system (logger, load custom tasks)
+  (initialize-task-system)
+
+  ;; Parse task name
+  (let* ((colon-pos (position #\: task-name))
+         (namespace (when colon-pos
+                     (intern (string-upcase (subseq task-name 0 colon-pos)) :keyword)))
+         (name (intern (string-upcase
+                        (if colon-pos
+                            (subseq task-name (1+ colon-pos))
+                            task-name))
+                      :keyword)))
+    ;; Execute task
+    (if namespace
+        (apply #'run-task name namespace args)
+        (apply #'run-task name args))))
+
+(defun task/list (&optional namespace-str)
+  "List all available tasks.
+
+   @param namespace-str [string or nil] Optional namespace filter
+   @return [t] Returns t after listing tasks
+   "
+  ;; Initialize task system
+  (initialize-task-system)
+
+  (let ((ns (when namespace-str (intern (string-upcase namespace-str) :keyword))))
+    (if ns
+        (format t "Available tasks in namespace '~A':~%~%" ns)
+        (format t "Available tasks:~%~%"))
+
+    (let ((tasks (clails/task:list-tasks ns)))
+      (if (null tasks)
+          (format t "No tasks found.~%")
+          (progn
+            (when (null ns)
+              ;; Global tasks (no namespace)
+              (let ((global-tasks (remove-if #'(lambda (ts)
+                                                 (clails/task:task-info-namespace (cdr ts)))
+                                             tasks)))
+                (when global-tasks
+                  (format t "Global tasks:~%")
+                  (dolist (task global-tasks)
+                    (format t "  ~A~30T~A~%"
+                            (clails/task:task-info-name (cdr task))
+                            (or (clails/task:task-info-description (cdr task)) "")))
+                  (format t "~%")))
+
+              ;; Tasks grouped by namespace
+              (let ((namespaces (clails/task:list-namespaces)))
+                (dolist (ns namespaces)
+                  (format t "~A:~%" ns)
+                  (let ((ns-tasks (remove-if-not
+                                   #'(lambda (task)
+                                     (equal ns (clails/task:task-info-namespace (cdr task))))
+                                   tasks)))
+                    (dolist (task ns-tasks)
+                      (format t "  ~A:~A~30T~A~%"
+                              ns
+                              (clails/task:task-info-name (cdr task))
+                              (or (clails/task:task-info-description (cdr task)) ""))))
+                  (format t "~%"))))
+
+            (when ns
+              ;; Specific namespace tasks
+              (dolist (task tasks)
+                (format t "  ~A:~A~30T~A~%"
+                        ns
+                        (clails/task:task-info-name (cdr task))
+                        (or (clails/task:task-info-description (cdr task)) ""))))))))
+  t)
+
+(defun task/info (task-name-str)
+  "Show detailed information about a specific task.
+
+   @param task-name-str [string] Task name (format: 'name' or 'namespace:name')
+   @return [t] Returns t after displaying task info
+   "
+  ;; Initialize task system
+  (initialize-task-system)
+
+  (let* ((colon-pos (position #\: task-name-str))
+         (namespace (when colon-pos
+                     (intern (string-upcase (subseq task-name-str 0 colon-pos)) :keyword)))
+         (name (intern (string-upcase
+                        (if colon-pos
+                            (subseq task-name-str (1+ colon-pos))
+                            task-name-str))
+                      :keyword)))
+    (let ((task-info (clails/task:find-task name namespace)))
+      (if task-info
+          (progn
+            (format t "Task: ~@[~A:~]~A~%"
+                    namespace
+                    name)
+            (format t "Description: ~A~%"
+                    (or (clails/task:task-info-description task-info) "No description"))
+            (when (clails/task:task-info-args task-info)
+              (format t "Arguments: ~A~%"
+                      (clails/task:task-info-args task-info)))
+            (when (clails/task:task-info-depends-on task-info)
+              (format t "Dependencies: ~A~%"
+                      (clails/task:task-info-depends-on task-info)))
+            t)
+          (progn
+            (format *error-output* "Error: Task not found: ~A~%" task-name-str)
+            (uiop:quit 1))))))

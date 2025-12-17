@@ -18,6 +18,7 @@
            #:log.sql
            #:log.web-access
            #:log.audit
+           #:log.task
            #:set-logger-level
            #:add-appender
            #:clear-loggers
@@ -381,6 +382,19 @@
    @param context [plist] Additional context (e.g., :user-id, :ip-address, :action)
    "
   `(clails/logger/core::log-message-to :audit :info ,message ,@context))
+
+(defmacro log.task (message &rest context)
+  "Log a task event to the :task logger with :info level.
+
+   Used for logging task execution events.
+
+   @param message [string] Task event message
+   @param context [plist] Additional context (e.g., :task-name, :namespace, :duration, :status)
+   @example
+     (log.task \"Task started\" :task-name \"db:migrate\" :namespace :db)
+     (log.task \"Task completed\" :task-name \"cleanup\" :duration 1.234 :status :success)
+   "
+  `(clails/logger/core::log-message-to :task :info ,message ,@context))
 
 ;;; ------------------------------------------------------------------
 ;;; Log Level Check API

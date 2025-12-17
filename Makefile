@@ -1,17 +1,22 @@
 DEV_NW := clails_dev_nw
+DEV_BUILDER := .dev_image_build
+DEV_DEPS := Dockerfile docker-compose.dev.yml qlfile clails.asd
 DEV_NW_EXISTS := $(shell docker network ls --filter name=$(DEV_NW) --format '{{ .ID }}')
 
-TEST_BUILDER = .test_image_built
-TEST_DEPS = Dockerfile docker-compose.test.yml docker-compose.test-runner.yml qlfile clails.asd
+TEST_BUILDER := .test_image_built
+TEST_DEPS := Dockerfile docker-compose.test.yml docker-compose.test-runner.yml clails.asd
 
-E2E_BUILDER = .e2e_image_build
-E2E_DEPS = Dockerfile.e2e docker-compose.e2e.yml qlfile clails.asd
+E2E_BUILDER := .e2e_image_build
+E2E_DEPS := Dockerfile.e2e docker-compose.e2e.yml clails.asd
 
 .PHONY: setup
 setup: dev.setup
 	@echo "Setting up..."
 	docker build -t clails-dev .
 
+.PHONY: clean
+clean:
+	rm -f $(DEV_BUILDER) $(TEST_BUILDER) $(E2E_BUILDER)
 
 # ----------------------------------------
 # for developing
@@ -22,15 +27,27 @@ dev.setup:
 	    docker network create -d bridge $(DEV_NW) ; \
 	fi
 
+.PHONY: dev.build
+dev.build: $(DEV_BUILDER)
+
+$(DEV_BUILDER): $(DEV_DEPS)
+	docker compose -f docker-compose.dev.yml build --no-cache
+	touch $(DEV_BUILDER)
+
 .PHONY: dev.up
-dev.up:
+dev.up: $(DEV_BUILDER)
 	@echo "Booting up..."
-	docker compose -f docker-compose.dev.yml up -d
+	docker compose -f docker-compose.dev.yml up
 
 .PHONY: dev.down
 dev.down:
 	@echo "Shutting down..."
 	docker compose -f docker-compose.dev.yml down
+
+.PHONY: dev.clean
+dev.clean:
+	docker compose -f docker-compose.dev.down -v
+	rm -f $(DEV_BUILDER)
 
 
 # ----------------------------------------
@@ -40,8 +57,13 @@ dev.down:
 test.build: $(TEST_BUILDER)
 
 $(TEST_BUILDER): $(TEST_DEPS)
+	docker compose -f docker-compose.test-runner.yml build
+	touch $(TEST_BUILDER)
+
+test.rebuild:
 	docker compose -f docker-compose.test-runner.yml build --no-cache
 	touch $(TEST_BUILDER)
+
 
 .PHONY: test.prev
 test.prev:
@@ -54,9 +76,7 @@ test.prev:
 .PHONY: test
 test: $(TEST_BUILDER) test.prev
 	@echo "Running tests..."
-	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test install
-	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint cp clails-test /app/clails-test.asd /qlot
-	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint qlot clails-test exec rove clails-test.asd
+	docker compose -f docker-compose.test-runner.yml run --rm --entrypoint rove clails-test /app/clails-test.asd
 
 .PHONY: test.down
 test.down:

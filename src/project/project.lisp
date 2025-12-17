@@ -22,7 +22,8 @@
     "test"
     "test/models"
     "test/controllers"
-    "test/views")
+    "test/views"
+    "docker")
   "List of directories to create in a new Clails project.")
 
 (defun create-project (project-name project-dir database)
@@ -205,7 +206,43 @@
                                project-name
                                project-dir
                                database
-                               (read-template "test/sample.lisp.tmpl"))))
+                               (read-template "test/sample.lisp.tmpl"))
+
+    ;; docker files
+    (create-file-with-template "docker/Dockerfile.dev"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "docker/Dockerfile.dev.tmpl"))
+    (create-file-with-template "docker/docker-compose.dev.yml"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "docker/docker-compose.dev.yml.tmpl"))
+    (create-file-with-template "docker/dev.env"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "docker/dev.env.tmpl"))
+    (create-file-with-template "docker/run-dev.sh"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "docker/run-dev.sh.tmpl"))
+
+    ;; Makefile
+    (create-file-with-template "Makefile"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "Makefile.tmpl"))
+
+    ;; README
+    (create-file-with-template "README.md"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "README.md.tmpl"))))
 
 
 (defun copy-asset-files (project-dir)

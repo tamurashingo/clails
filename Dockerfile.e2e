@@ -1,4 +1,4 @@
-FROM fukamachi/sbcl
+FROM fukamachi/sbcl:2.5.10
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -8,26 +8,22 @@ RUN apt-get update && apt-get install -y \
   default-mysql-client \
   postgresql-client \
   sqlite3 \
-  curl
+  curl \
+  && rm -rf /var/lib/apt/lists/*
 
 RUN ros run -e "(ql-dist:install-dist \"http://dist.shirakumo.org/shirakumo.txt\" :prompt nil)"
-RUN ros install qlot rove
+RUN ros install rove
+RUN ros install fukamachi/cl-dbi
+RUN ros install tamurashingo/cl-dbi-connection-pool
+RUN ros install tamurashingo/cl-batis
+RUN ros install tamurashingo/getcmd
 
 # Set up environment
-ENV PATH="/root/.roswell/bin:/qlot/.qlot/bin:${PATH}"
-ENV CLAILS_CONF_DIR="/qlot/"
+ENV PATH="/root/.roswell/bin:${PATH}"
 ENV CL_SOURCE_REGISTRY="/app"
 
 # current source code is placed
 RUN mkdir /app
-
-# qlfile is placed and clails installed
-RUN mkdir /qlot
-WORKDIR /qlot
-RUN echo 'github fukamachi/cl-dbi' > /qlot/qlfile
-RUN echo 'github tamurashingo/cl-dbi-connection-pool' >> /qlot/qlfile
-RUN echo 'github tamurashingo/getcmd' >> /qlot/qlfile
-#COPY ./qlfile /qlot
 
 # clails application
 RUN mkdir /tmp/clails-e2e-test-project

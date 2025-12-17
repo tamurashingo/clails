@@ -56,7 +56,6 @@
 
 
 (setup
-  (shutdown-connection-pool)
   (clear-loggers)
   (register-logger
    :sql
@@ -85,6 +84,9 @@
   (startup-connection-pool)
   (initialize-table-information))
 
+
+(teardown
+  (shutdown-connection-pool))
 
 
 (deftest nested-transaction-savepoint-test-mysql

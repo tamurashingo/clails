@@ -5,31 +5,8 @@ exec ros -Q -- $0 "$@"
 |#
 (progn ;;init forms
   (ros:ensure-asdf)
-  (ql:quickload '(:qlot) :silent t)
+  (ql:quickload '(:getcmd :clails) :silent t)
   )
-
-
-(defpackage :ros.script.clails.3961085205.boot
-  (:use :cl))
-(in-package :ros.script.clails.3961085205.boot)
-
-(defparameter CLAILS_CONF_DIR (uiop:getenv "CLAILS_CONF_DIR"))
-(unless CLAILS_CONF_DIR
-  (setf CLAILS_CONF_DIR (format NIL "~A/.clails/" (user-homedir-pathname))))
-
-(progn
-  (setf qlot/logger:*logger-message-stream* (make-broadcast-stream))
-  (ensure-directories-exist CLAILS_CONF_DIR)
-  (setf qlot:*project-root* CLAILS_CONF_DIR)
-  (unless (probe-file (merge-pathnames "qlfile" CLAILS_CONF_DIR))
-    (qlot:add "tamurashingo/cl-dbi-connection-pool")
-    (qlot:add "tamurashingo/getcmd")
-
-    (qlot:add "tamurashingo/clails"))
-
-  (qlot:install)
-  (push (format NIL "~A/.qlot/" CLAILS_CONF_DIR) ql:*local-project-directories*)
-  (ql:quickload :clails :silent t))
 
 
 (defpackage :ros.script.clails.3961085205
@@ -47,12 +24,14 @@ exec ros -Q -- $0 "$@"
   (format t "  generate:view <name>              Generate view files~%")
   (format t "  generate:controller <name>        Generate controller file~%")
   (format t "  generate:scaffold <name>          Generate scaffold~%")
+  (format t "  generate:task <name>              Generate task file~%")
   (format t "  db:create                         Create database~%")
   (format t "  db:migrate                        Run migrations~%")
   (format t "  db:migrate:up <version>           Migrate up to version~%")
   (format t "  db:migrate:down <version>         Migrate down to version~%")
   (format t "  db:rollback                       Rollback migrations~%")
   (format t "  db:status                         Show migration status~%")
+  (format t "  task [TASK] [OPTIONS]             Execute custom tasks~%")
   (format t "  test [packages...]                Run tests~%")
   (format t "  server                            Start web server~%")
   (format t "  stop                              Stop web server~%")
@@ -74,18 +53,24 @@ exec ros -Q -- $0 "$@"
 
 (defun help/generate ()
   (format t "Usage: clails generate:TYPE NAME [OPTIONS]~%~%")
-  (format t "Generate files for model, migration, view, controller, or scaffold.~%~%")
+  (format t "Generate files for model, migration, view, controller, scaffold, or task.~%~%")
   (format t "Commands:~%")
   (format t "  generate:model <name>             Generate model file~%")
   (format t "  generate:migration <name>         Generate migration file~%")
   (format t "  generate:view <name>              Generate view file~%")
   (format t "  generate:controller <name>        Generate controller file~%")
   (format t "  generate:scaffold <name>          Generate model, view, and controller~%")
+  (format t "  generate:task <name>              Generate task file~%")
   (format t "~%")
   (format t "Options:~%")
   (format t "  --no-overwrite            Do not overwrite existing files (not available for migration)~%")
   (format t "  -n, --no-migration        Skip migration file generation (model only)~%")
-  (format t "  -h, --help                Show this help message~%"))
+  (format t "  -ns, --namespace NS       Specify namespace for task (task only)~%")
+  (format t "  -h, --help                Show this help message~%~%")
+  (format t "Examples:~%")
+  (format t "  clails generate:task cleanup~%")
+  (format t "  clails generate:task import --namespace data~%")
+  (format t "  clails generate:task cleanup -ns maintenance~%"))
 
 (defun help/db ()
   (format t "Usage: clails db:COMMAND [OPTIONS]~%~%")
@@ -144,12 +129,17 @@ exec ros -Q -- $0 "$@"
   (format t "Options:~%")
   (format t "  -p, --port PORT           Port number (default: 5000)~%")
   (format t "  -b, --bind ADDRESS        Bind address (default: 127.0.0.1)~%")
+  (format t "  -s, --swank               Start swank server (default: 127.0.0.1:4005)~%")
+  (format t "  --swank-address ADDRES    Specify swank server bind address (default: 127.0.0.1)~%")
+  (format t "  --swank-port PORT         Specify swank server port (default: 4005)~%")
   (format t "  -h, --help                Show this help message~%")
   (format t "~%")
   (format t "Examples:~%")
   (format t "  clails server~%")
   (format t "  clails server --port 8080~%")
-  (format t "  clails server --bind 0.0.0.0 --port 3000~%"))
+  (format t "  clails server --bind 0.0.0.0 --port 3000~%")
+  (format t "  clails server --swank                                            # Start swank on 127.0.0.1:4005~%")
+  (format t "  clails server --swank --swank-address 0.0.0.0 --swank-port 4006  # Start swank on 0.0.0.0:4006~%"))
 
 (defun help/stop ()
   (format t "Usage: clails stop [OPTIONS]~%~%")
@@ -160,10 +150,36 @@ exec ros -Q -- $0 "$@"
   (format t "Examples:~%")
   (format t "  clails stop~%"))
 
+(defun help/task ()
+  (format t "Usage: clails task [TASK] [OPTIONS]~%~%")
+  (format t "Execute custom tasks or built-in task system.~%~%")
+  (format t "Options:~%")
+  (format t "  -l, --list [NAMESPACE]    List all available tasks (optionally filter by namespace)~%")
+  (format t "  --info <task>             Show detailed information about a task~%")
+  (format t "  -h, --help                Show this help message~%~%")
+  (format t "Examples:~%")
+  (format t "  clails task --list                        # List all tasks~%")
+  (format t "  clails task --list db                     # List tasks in 'db' namespace~%")
+  (format t "  clails task --info maintenance:cleanup    # Show info about db:migrate task~%")
+  (format t "  clails task maintenance:cleanup           # Run custom task~%"))
+
 ;; Utility functions
 (defun load-project ()
-  (push (uiop/os:getcwd) ql:*local-project-directories*)
-  (load "clails.boot"))
+  (let* ((clails-home (uiop:getenv "CLAILS_HOME"))
+         (project-dir (if clails-home
+                          (uiop:ensure-directory-pathname clails-home)
+                          (uiop/os:getcwd)))
+         (boot-file (merge-pathnames "clails.boot" project-dir)))
+    (push project-dir ql:*local-project-directories*)
+    (load boot-file)))
+
+(defun load-db-package ()
+  (let* ((clails-home (uiop:getenv "CLAILS_HOME"))
+          (project-dir (if clails-home
+                           (uiop:ensure-directory-pathname clails-home)
+                           (uiop/os:getcwd)))
+          (db-package-file (merge-pathnames "db/package.lisp" project-dir)))
+    (load db-package-file)))
 
 ;; Command definition macro
 (defmacro define-command (name params &body body)
@@ -290,7 +306,7 @@ exec ros -Q -- $0 "$@"
     (help/db)
     (uiop:quit 0))
   (load-project)
-  (load "db/package.lisp")
+  (load-db-package)
   (if version
       (clails/cmd:db/migrate :version version)
       (clails/cmd:db/migrate)))
@@ -306,7 +322,7 @@ exec ros -Q -- $0 "$@"
       (format *error-output* "ERROR: VERSION parameter is required for db:migrate:up~%")
       (uiop:quit 1))
     (load-project)
-    (load "db/package.lisp")
+    (load-db-package)
     (clails/cmd:db/migrate-up version)))
 
 (define-command "db:migrate:down" (args &key (help :short-option "h"
@@ -320,7 +336,7 @@ exec ros -Q -- $0 "$@"
       (format *error-output* "ERROR: VERSION parameter is required for db:migrate:down~%")
       (uiop:quit 1))
     (load-project)
-    (load "db/package.lisp")
+    (load-db-package)
     (clails/cmd:db/migrate-down version)))
 
 (define-command "db:rollback" (&key (step :long-option "step"
@@ -332,7 +348,7 @@ exec ros -Q -- $0 "$@"
     (help/db)
     (uiop:quit 0))
   (load-project)
-  (load "db/package.lisp")
+  (load-db-package)
   (if step
       (clails/cmd:db/rollback :step (parse-integer step))
       (clails/cmd:db/rollback)))
@@ -344,7 +360,7 @@ exec ros -Q -- $0 "$@"
     (help/db)
     (uiop:quit 0))
   (load-project)
-  (load "db/package.lisp")
+  (load-db-package)
   (clails/cmd:db/seed))
 
 (define-command "db:status" (&key (help :short-option "h"
@@ -354,7 +370,7 @@ exec ros -Q -- $0 "$@"
     (help/db)
     (uiop:quit 0))
   (load-project)
-  (load "db/package.lisp")
+  (load-db-package)
   (clails/cmd:db/status))
 
 (define-command "generate:model" (args &key (no-overwrite :long-option "no-overwrite")
@@ -428,6 +444,22 @@ exec ros -Q -- $0 "$@"
     (load-project)
     (clails/cmd:generate/scaffold name :no-overwrite no-overwrite)))
 
+(define-command "generate:task" (args &key (namespace :short-option "ns"
+                                                      :long-option "namespace"
+                                                      :consume t)
+                                           (help :short-option "h"
+                                                 :long-option "help"))
+  (:help-function #'help/generate)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
+  (let ((name (first args)))
+    (when (null name)
+      (format *error-output* "ERROR: NAME parameter is required for generate:task~%")
+      (uiop:quit 1))
+    (load-project)
+    (clails/cmd:generate/task name :namespace namespace)))
+
 (define-command "test" (args &key (tags :long-option "tag"
                                         :consume t
                                         :multiple t)
@@ -446,9 +478,9 @@ exec ros -Q -- $0 "$@"
   (when help
     (help/test)
     (uiop:quit 0))
-  
+
   (load-project)
-  
+
   ;; Set environment to test after loading project
   (clails/environment:set-environment "test")
 
@@ -492,6 +524,13 @@ exec ros -Q -- $0 "$@"
                                      :short-option "b"
                                      :long-option "bind"
                                      :consume t)
+                               (swank :short-option "s"
+                                      :long-option "swank")
+                               (swank-address :default "127.0.0.1"
+                                              :long-option "swank-address"
+                                              :consume t)
+                               (swank-port :long-option "swank-port"
+                                           :consume t)
                                (help :short-option "h"
                                      :long-option "help"))
   (:help-function #'help/server)
@@ -499,7 +538,13 @@ exec ros -Q -- $0 "$@"
     (help/server)
     (uiop:quit 0))
   (load-project)
-  (clails/cmd:server :port port :bind bind))
+  (clails/cmd:server :port port
+                     :bind bind
+                     :swank-port (cond
+                                   (swank-port swank-port)
+                                   (swank "4005")
+                                   (t nil))
+                     :swank-address swank-address))
 
 (define-command "stop" (&key (help :short-option "h"
                                    :long-option "help"))
@@ -509,6 +554,52 @@ exec ros -Q -- $0 "$@"
     (uiop:quit 0))
   (load-project)
   (clails/cmd:stop))
+
+(define-command "task" (args &key (list :short-option "l"
+                                        :long-option "list")
+                                  (info :long-option "info"
+                                        :consume t)
+                                  (help :short-option "h"
+                                        :long-option "help"))
+  (:help-function #'help/task)
+  (when help
+    (help/task)
+    (uiop:quit 0))
+
+  (load-project)
+  (clails/task:initialize-task-system)
+
+  (cond
+    ;; List tasks
+    (list
+     (if args
+         (clails/cmd:task/list (first args))
+         (clails/cmd:task/list)))
+
+    ;; Task info
+    (info
+     (clails/cmd:task/info info))
+
+    ;; Execute task
+    (args
+     (let* ((task-spec (first args))
+            (bracket-pos (position #\[ task-spec))
+            (task-name (if bracket-pos
+                           (subseq task-spec 0 bracket-pos)
+                           task-spec))
+            (args-string (when bracket-pos
+                          (subseq task-spec bracket-pos)))
+            (task-args (when args-string
+                        (let ((close-pos (position #\] args-string)))
+                          (when close-pos
+                            (let ((args-part (subseq args-string 1 close-pos)))
+                              (uiop:split-string args-part :separator ",")))))))
+       (apply #'clails/cmd:task/run task-name task-args)))
+
+    ;; No arguments - show help
+    (t
+     (help/task)
+     (uiop:quit 0))))
 
 
 (defun main (&rest argv)

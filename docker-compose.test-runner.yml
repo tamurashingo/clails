@@ -7,10 +7,9 @@ services:
     container_name: clails_test_app
     volumes:
       - ./:/app
-      - qlfiles:/qlot
     ports:
       - 4005:4005
     environment:
-      - CLAILS_SQLITE3_DATABASE=/qlot
+      - CLAILS_SQLITE3_DATABASE=
 volumes:
   qlfiles:

@@ -1,0 +1,200 @@
+# <%= (@ project-name ) %>
+
+A web application built with [clails](https://github.com/tamurashingo/clails) framework.
+
+## Prerequisites
+
+- Docker
+- Docker Compose
+
+## Getting Started
+
+### 1. Build Docker Image
+
+```bash
+make build
+```
+
+To specify a clails branch or tag, use the `CLAILS_BRANCH` environment variable (defaults to `develop` if not specified):
+
+```bash
+# branch
+CLAILS_BRANCH=release/0.0.2 make build
+
+# tag
+CLAILS_BRANCH=v0.0.1 make build
+```
+
+### 2. Start Development Environment
+
+```bash
+make up
+```
+
+This will start:
+- Application server on http://localhost:5000
+- Swank server on localhost:4005 (for REPL development)
+<% (when (eq (@ database) :mysql) %>
+- MySQL database on localhost:3306
+<% ) %>
+<% (when (eq (@ database) :postgresql) %>
+- PostgreSQL database on localhost:5432
+<% ) %>
+
+### 3. Setup Database
+
+Create the database:
+
+```bash
+make db.create
+```
+
+Run migrations:
+
+```bash
+make db.migrate
+```
+
+Seed the database (optional):
+
+```bash
+make db.seed
+```
+
+### 4. Access the Application
+
+Open your browser and navigate to:
+```
+http://localhost:5000
+```
+
+## Development
+
+### REPL Development with Swank
+
+Connect to the Swank server from your editor (Emacs/SLIME, Vim/Slimv, etc.):
+
+- Host: `localhost`
+- Port: `4005`
+
+### Available Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build Docker image |
+| `make rebuild` | Rebuild Docker image without cache |
+| `make up` | Start containers in detached mode |
+| `make down` | Stop and remove containers |
+| `make console` | Open bash shell in the application container |
+| `make logs` | View application logs |
+<% (when (eq (@ database) :mysql) %>
+| `make logs.mysql` | View MySQL logs |
+<% ) %>
+<% (when (eq (@ database) :postgresql) %>
+| `make logs.postgresql` | View PostgreSQL logs |
+<% ) %>
+| `make db.create` | Create database |
+| `make db.migrate` | Run pending migrations |
+| `make db.rollback` | Rollback the last migration |
+| `make db.seed` | Load seed data |
+
+### Project Structure
+
+```
+.
+├── app/
+│   ├── config/         # Configuration files
+│   ├── controllers/    # Controller files
+│   ├── models/         # Model files
+│   └── views/          # View templates
+├── db/
+│   ├── migrate/        # Database migration files
+│   └── seeds.lisp      # Seed data
+├── docker/
+│   ├── Dockerfile.dev           # Development Dockerfile
+│   ├── docker-compose.dev.yml   # Docker Compose configuration
+│   ├── dev.env                  # Environment variables
+│   └── run-dev.sh               # Application startup script
+├── public/             # Static assets
+├── test/               # Test files
+└── Makefile            # Make commands
+```
+
+## Database Configuration
+
+<% (when (eq (@ database) :mysql) %>
+**MySQL Configuration**
+
+Default settings:
+- Host: `mysql-dev` (inside Docker), `localhost` (from host)
+- Port: `3306`
+- Username: `<%= (@ project-name ) %>`
+- Password: `password`
+- Database: `<%= (@ project-name ) %>_development`
+
+You can override these settings by editing `docker/dev.env`.
+<% ) %>
+<% (when (eq (@ database) :postgresql) %>
+**PostgreSQL Configuration**
+
+Default settings:
+- Host: `postgresql-dev` (inside Docker), `localhost` (from host)
+- Port: `5432`
+- Username: `<%= (@ project-name ) %>`
+- Password: `password`
+- Database: `<%= (@ project-name ) %>_development`
+
+You can override these settings by editing `docker/dev.env`.
+<% ) %>
+<% (when (eq (@ database) :sqlite3) %>
+**SQLite3 Configuration**
+
+Database file location: `tmp/<%= (@ project-name ) %>-develop.sqlite3`
+<% ) %>
+
+## Troubleshooting
+
+### Container won't start
+
+Check logs:
+```bash
+make logs
+```
+
+### Database connection issues
+<% (when (or (eq (@ database) :mysql) (eq (@ database) :postgresql)) %>
+
+Make sure the database container is running:
+```bash
+docker compose -f docker/docker-compose.dev.yml ps
+```
+
+Check database logs:
+<% (when (eq (@ database) :mysql) %>
+```bash
+make logs.mysql
+```
+<% ) %>
+<% (when (eq (@ database) :postgresql) %>
+```bash
+make logs.postgresql
+```
+<% ) %>
+<% ) %>
+
+### Reset everything
+
+Stop containers and remove volumes:
+```bash
+make down
+<% (when (eq (@ database) :mysql) %>
+docker volume rm <%= (@ project-name ) %>-mysql-data
+<% ) %>
+<% (when (eq (@ database) :postgresql) %>
+docker volume rm <%= (@ project-name ) %>-postgresql-data
+<% ) %>
+```
+
+## License
+
+[Add your license here]

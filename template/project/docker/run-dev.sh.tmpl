@@ -1,0 +1,5 @@
+#!/bin/sh
+# <%= (@ project-name ) %> dev run script
+
+exec clails server -b ${BIND_ADDRESS} --port ${PORT} --swank --swank-address ${SWANK_ADDRESS} --swank-port ${SWANK_PORT}
+

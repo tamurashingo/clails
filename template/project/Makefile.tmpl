@@ -1,0 +1,48 @@
+CLAILS_BRANCH ?= develop
+
+
+.PHONY: build
+build:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env build --build-arg CLAILS_BRANCH=${CLAILS_BRANCH}
+	chmod +x docker/run-dev.sh
+
+.PHONY: rebuild
+rebuild:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env build --no-cache --build-arg CLAILS_BRANCH=${CLAILS_BRANCH}
+
+.PHONY: up down
+up:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env up -d
+
+down:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env down
+
+.PHONY: console
+console:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env run --rm -it --entrypoint /bin/bash <%= (@ project-name ) %>-app
+
+.PHONY: logs<% (when (eq (@ database) :mysql) %> logs.mysql<% ) %><% (when (eq (@ database) :postgresql) %> logs.postgresql<% ) %>
+logs:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env logs -f <%= (@ project-name ) %>-app
+<% (when (eq (@ database) :mysql) %>
+logs.mysql:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env logs -f mysql-dev
+<% ) %>
+<% (when (eq (@ database) :postgresql) %>
+logs.postgresql:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env logs -f postgresql-dev
+<% ) %>
+
+.PHONY: db.create db.migrate db.rollback db.seed
+db.create:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env run --rm --entrypoint clails <%= (@ project-name ) %>-app db:create
+
+db.migrate:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env run --rm --entrypoint clails <%= (@ project-name ) %>-app db:migrate
+
+db.rollback:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env run --rm --entrypoint clails <%= (@ project-name ) %>-app db:rollback
+
+db.seed:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env run --rm --entrypoint clails <%= (@ project-name ) %>-app db:seed
+
