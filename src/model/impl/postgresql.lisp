@@ -83,14 +83,23 @@
                                                          :null))))
     ("date" . (:type :date
                :db-cl-fn ,#'keyword-null
-               :cl-db-fn ,#'identity-null))
+                :cl-db-fn ,#'(lambda (ut)
+                                (if ut
+                                    (multiple-value-bind (sec min hour date month year day daylight-p zone)
+                                        (decode-universal-time ut)
+                                      (format nil "~4,\'0d-~2,\'0d-~2,\'0d" year month date))
+                                    :null))))
     ("time without time zone" . (:type :time
                                  :db-cl-fn ,#'(lambda (v)
                                                 (when (not (eq v :null))
                                                   (+ (* 60 60 (cadr (assoc :HOURS v)))
                                                      (* 60 (cadr (assoc :MINUTES v)))
                                                      (cadr (assoc :SECONDS v)))))
-                                 :cl-db-fn ,#'identity-null))
+                                 :cl-db-fn ,#'(lambda (ut)
+                                                 (when ut
+                                                   (multiple-value-bind (sec min hour date month year day daylight-p zone)
+                                                       (decode-universal-time ut)
+                                                     (format nil "~2,\'0d:~2,\'0d:~2,\'0d" hour min sec))))))
     ("boolean" . (:type :boolean
                   :db-cl-fn ,#'(lambda (v)
                                  (cond ((and (numberp v)
