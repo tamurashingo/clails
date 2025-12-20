@@ -85,6 +85,14 @@ YYYYmmdd-HHMMSS-description.lisp
 - `:time` - 時刻
 - `:boolean` - 真偽値
 
+### データベースからの戻り値
+
+カラムの型によって、データベースから取得される値の形式が異なります。
+
+- `:datetime` - Universal Time（整数）として返されます
+- `:date` - Universal Time（整数）として返されます。時刻部分は 00:00:00 です
+- `:time` - 00:00:00 からの経過秒数（整数）として返されます
+
 ### カラムオプション
 
 - `:not-null` - NULL を許可しない場合は `T`、許可する場合は `NIL`

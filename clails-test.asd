@@ -47,6 +47,9 @@
                #:clails-test/model/native-query/sqlite3
                #:clails-test/model/native-query/mysql
                #:clails-test/model/native-query/postgresql
+               #:clails-test/model/datetime/datetime-sqlite3
+               #:clails-test/model/datetime/datetime-mysql
+               #:clails-test/model/datetime/datetime-postgresql
                #:clails-test/task/registry
                #:clails-test/task/runner
                #:clails-test/task/core)

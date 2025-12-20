@@ -91,7 +91,15 @@
                                  (parse-integer (subseq v 8 10))
                                  (parse-integer (subseq v 5 7))
                                  (parse-integer (subseq v 0 4)))))
-               :cl-db-fn ,#'identity))
+               :cl-db-fn ,#'(lambda (ut)
+                              (when ut
+                                    (let ((universal-time 
+                                           (if (typep ut 'local-time:timestamp)
+                                               (local-time:timestamp-to-universal ut)
+                                               ut)))
+                                      (multiple-value-bind (sec min hour date month year day daylight-p zone)
+                                          (decode-universal-time universal-time)
+                                        (format nil "~4,\'0d-~2,\'0d-~2,\'0d" year month date)))))))
     ("time" . (:type :time
                :db-cl-fn ,#'(lambda (v)
                               (when v
@@ -100,7 +108,12 @@
                                 (+ (* 60 60 (parse-integer (subseq v 0 2)))
                                    (* 60 (parse-integer (subseq v 3 5)))
                                    (parse-integer (subseq v 6 8)))))
-               :cl-db-fn ,#'identity))
+               :cl-db-fn ,#'(lambda (n)
+                              (when n
+                                (let* ((hours (floor n 3600))
+                                       (minutes (floor (mod n 3600) 60))
+                                       (seconds (mod n 60)))
+                                  (format nil "~2,\'0d:~2,\'0d:~2,\'0d" hours minutes seconds))))))
     ("boolean" . (:type :boolean
                   :db-cl-fn ,#'(lambda (v)
                                  (if (or (null v)

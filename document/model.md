@@ -85,6 +85,14 @@ Example: `20240101-120000-create-users-table.lisp`
 - `:time` - Time
 - `:boolean` - Boolean
 
+### Return Values from Database
+
+The format of values retrieved from the database differs depending on the column type.
+
+- `:datetime` - Returned as Universal Time (integer)
+- `:date` - Returned as Universal Time (integer). The time part is 00:00:00
+- `:time` - Returned as seconds elapsed from 00:00:00 (integer)
+
 ### Column Options
 
 - `:not-null` - `T` if NULL is not allowed, `NIL` if allowed
