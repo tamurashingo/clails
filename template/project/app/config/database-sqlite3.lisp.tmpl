@@ -15,9 +15,36 @@
 (defun initialize-database-config ()
   (setf clails/environment:*database-config*
         `(:database :sqlite3
-          :develop (:database-name ,(env-or-default "CLAILS_DB_NAME" (format nil "~A/tmp/<%= (@ project-name ) %>-develop.sqlite3" *project-dir*)))
-          :test (:database-name ,(env-or-default "CLAILS_DB_NAME" (format nil "~A/tmp/<%= (@ project-name ) %>-test.sqlite3" *project-dir*)))
-          :production (:database-name ,(env "CLAILS_DB_NAME")))))
+          :develop (:database-name ,(env-or-default "CLAILS_DB_NAME" (format nil "~A/tmp/<%= (@ project-name ) %>-develop.sqlite3" *project-dir*))
+                    ;; Connection pool parameters (optional)
+                    ;; :initial-size 10
+                    ;; :max-size 10
+                    ;; :checkout-timeout 30
+                    ;; :idle-timeout 600
+                    ;; :max-lifetime 1800
+                    ;; :keepalive-interval 0
+                    ;; :reaper-interval 60
+                    )
+          :test (:database-name ,(env-or-default "CLAILS_DB_NAME" (format nil "~A/tmp/<%= (@ project-name ) %>-test.sqlite3" *project-dir*))
+                 ;; Connection pool parameters (optional)
+                 ;; :initial-size 10
+                 ;; :max-size 10
+                 ;; :checkout-timeout 30
+                 ;; :idle-timeout 600
+                 ;; :max-lifetime 1800
+                 ;; :keepalive-interval 0
+                 ;; :reaper-interval 60
+                 )
+          :production (:database-name ,(env "CLAILS_DB_NAME")
+                       ;; Connection pool parameters (optional)
+                       ;; :initial-size 10
+                       ;; :max-size 10
+                       ;; :checkout-timeout 30
+                       ;; :idle-timeout 600
+                       ;; :max-lifetime 1800
+                       ;; :keepalive-interval 0
+                       ;; :reaper-interval 60
+                       ))))
 
 (setf clails/environment:*database-type*
       (make-instance 'clails/environment::<database-type-sqlite3>))
