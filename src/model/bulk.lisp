@@ -44,7 +44,7 @@
    @param query-or-sql [<query>|<batis-sql>] Query specification
    @param parameter-plist [plist] Query parameters
    @param batch-size [integer] Number of rows per batch (default: 1000)
-   @param connection [connection] Optional database connection
+   @param connection [dbi-cp.proxy::<dbi-connection-proxy>] Optional database connection proxy
    @return [value] Returns the value of the last form in body
 
    Example:
@@ -53,7 +53,7 @@
                        nil
                        :batch-size 500)
      (dolist (row user-rows)
-       (format t \"User: ~A~%\" (gethash :name row))))
+       (format t \"User: ~A~%\" (getf row :name))))
    "
   (let ((conn-var (gensym "CONN"))
         (sql-var (gensym "SQL"))
@@ -182,7 +182,6 @@
   (cond
     ((null value) "NULL")
     ((eq value t) "TRUE")
-    ((eq value nil) "FALSE")
     ((stringp value) (format nil "'~A'" (escape-sql-string value)))
     ((numberp value) (format nil "~A" value))
     ((keywordp value) (format nil "'~A'" (string-downcase (symbol-name value))))
@@ -207,7 +206,7 @@
    Implementation must be provided for each database type.
 
    @param database-type [<database-type>] Database type instance
-   @param connection [connection] Database connection
+   @param connection [dbi-cp.proxy::<dbi-connection-proxy>] Database connection proxy
    @param sql [string] SQL to execute
    @param params [list] SQL parameters
    @param batch-size [integer] Batch size
@@ -229,7 +228,7 @@
    Uses cl-dbi's make-cursor, execute, fetch to operate cursors.
 
    @param db-type [<database-type-postgresql>] Database type
-   @param connection [connection] Database connection
+   @param connection [dbi-cp.proxy::<dbi-connection-proxy>] Database connection proxy
    @param sql [string] SQL to execute
    @param params [list] SQL parameters
    @param batch-size [integer] Batch size
@@ -239,48 +238,49 @@
     (log.sql (format nil "PostgreSQL CURSOR: ~A" sql))
     (log.sql (format nil "PARAMS: ~A" params)))
 
-  (labels ((fetch-batches (cursor)
-             "Fetch data in batch units from cursor and process.
+  (let ((dbi-conn (dbi-cp.proxy:dbi-connection connection)))
+    (labels ((fetch-batches (cursor)
+               "Fetch data in batch units from cursor and process.
 
-              @param cursor [dbi-cursor] Cursor object
-              "
-             (loop
-               (let ((batch (loop repeat batch-size
-                                 for row = (dbi:fetch cursor :format :hash-table)
-                                 while row
-                                 collect row)))
-                 (when (null batch)
-                   (return))
-                 (funcall callback batch))))
+                @param cursor [dbi-cursor] Cursor object
+                "
+               (loop
+                 (let ((batch (loop repeat batch-size
+                                   for row = (dbi:fetch cursor :format :plist)
+                                   while row
+                                   collect row)))
+                   (when (null batch)
+                     (return))
+                   (funcall callback batch))))
 
-           (process-with-cursor ()
-             "Create cursor and execute processing.
-             "
-             (let ((cursor nil))
-               (unwind-protect
-                    (progn
-                      ;; Create and execute cursor
-                      ;; cl-dbi's make-cursor returns dbi-cursor object
-                      (setf cursor (dbi:make-cursor connection sql))
+             (process-with-cursor ()
+               "Create cursor and execute processing.
+               "
+               (let ((cursor nil))
+                 (unwind-protect
+                      (progn
+                        ;; Create and execute cursor
+                        ;; cl-dbi's make-cursor returns dbi-cursor object
+                        (setf cursor (dbi:make-cursor dbi-conn sql))
 
-                      ;; execute-using-connection executes DECLARE CURSOR for PostgreSQL
-                      (dbi:execute cursor params)
+                        ;; execute-using-connection executes DECLARE CURSOR for PostgreSQL
+                        (dbi:execute cursor params)
 
-                      ;; Fetch and process in batch units
-                      (fetch-batches cursor))
+                        ;; Fetch and process in batch units
+                        (fetch-batches cursor))
 
-                 ;; Cleanup
-                 (when cursor
-                   ;; Execute CLOSE CURSOR
-                   (ignore-errors (dbi:close-cursor cursor)))))))
+                   ;; Cleanup
+                   (when cursor
+                     ;; Execute CLOSE CURSOR
+                     (ignore-errors (dbi:close-cursor cursor)))))))
 
-    ;; Automatically start transaction if not started
-    (if (dbi:in-transaction connection)
-        ;; Already in transaction: execute as-is
-        (process-with-cursor)
-        ;; Start transaction and execute
-        (with-transaction-using-connection connection
-          (process-with-cursor)))))
+      ;; Automatically start transaction if not started
+      (if (dbi:in-transaction dbi-conn)
+          ;; Already in transaction: execute as-is
+          (process-with-cursor)
+          ;; Start transaction and execute
+          (with-transaction-using-connection connection
+            (process-with-cursor))))))
 
 
 (defmethod execute-batch-query ((db-type <database-type-mysql>)
@@ -297,7 +297,7 @@
    Resources are reliably freed using unwind-protect on error.
 
    @param db-type [<database-type-mysql>] Database type
-   @param connection [connection] Database connection
+   @param connection [dbi-cp.proxy::<dbi-connection-proxy>] Database connection proxy
    @param sql [string] SQL to execute
    @param params [list] SQL parameters
    @param batch-size [integer] Batch size
@@ -307,14 +307,15 @@
     (log.sql (format nil "MySQL STREAMING: ~A" sql))
     (log.sql (format nil "PARAMS: ~A" params)))
 
-  (let ((stmt (dbi:prepare connection sql :store nil)))  ;; Streaming mode
+  (let* ((dbi-conn (dbi-cp.proxy:dbi-connection connection))
+         (stmt (dbi:prepare dbi-conn sql :store nil)))  ;; Streaming mode
     (unwind-protect
          (progn
            (dbi:execute stmt params)
 
            (loop
              (let ((batch (loop for i from 1 to batch-size
-                               for row = (dbi:fetch stmt :format :hash-table)
+                               for row = (dbi:fetch stmt :format :plist)
                                while row
                                collect row)))
 
@@ -339,7 +340,7 @@
    ORDER BY in SQL is strongly recommended.
 
    @param db-type [<database-type-sqlite3>] Database type
-   @param connection [connection] Database connection
+   @param connection [dbi-cp.proxy::<dbi-connection-proxy>] Database connection proxy
    @param sql [string] SQL to execute (ORDER BY recommended)
    @param params [list] SQL parameters
    @param batch-size [integer] Batch size
@@ -354,7 +355,7 @@
            (let* ((paginated-sql (format nil "~A LIMIT ? OFFSET ?" sql))
                   (stmt (dbi:prepare connection paginated-sql))
                   (result (dbi:execute stmt (append params (list batch-size offset))))
-                  (batch (loop for row = (dbi:fetch result :format :hash-table)
+                  (batch (loop for row = (dbi:fetch result :format :plist)
                               while row
                               collect row)))
 
