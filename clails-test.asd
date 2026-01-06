@@ -32,6 +32,10 @@
                #:clails-test/model/pessimistic-lock/lock-sqlite3
                #:clails-test/model/pessimistic-lock/lock-mysql
                #:clails-test/model/pessimistic-lock/lock-postgresql
+               #:clails-test/model/bulk
+               #:clails-test/model/bulk/bulk-sqlite3
+               #:clails-test/model/bulk/bulk-mysql
+               #:clails-test/model/bulk/bulk-postgresql
                #:clails-test/logger/registry
                #:clails-test/logger/purpose-specific
                #:clails-test/logger/file-appender

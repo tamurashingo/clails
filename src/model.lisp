@@ -18,9 +18,13 @@
                 #:make-record
                 #:destroy)
   (:import-from #:clails/model/transaction
-                #:with-transaction)
+                #:with-transaction
+                #:with-transaction-using-connection)
   (:import-from #:clails/model/lock
                 #:with-locked-transaction)
+  (:import-from #:clails/model/bulk
+                #:with-query-cursor
+                #:show-query-sql)
   (:import-from #:clails/model/impl/sqlite3)
   (:import-from #:clails/model/impl/mysql)
   (:import-from #:clails/model/impl/postgresql)
@@ -41,7 +45,11 @@
            #:make-record
            #:destroy
            #:with-transaction
-           #:with-locked-transaction))
+           #:with-transaction-using-connection
+           #:with-locked-transaction
+
+           #:with-query-cursor
+           #:show-query-sql))
 
 
 
