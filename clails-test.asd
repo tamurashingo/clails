@@ -39,6 +39,9 @@
                #:clails-test/model/bulk/insert-sqlite3
                #:clails-test/model/bulk/insert-mysql
                #:clails-test/model/bulk/insert-postgresql
+               #:clails-test/model/bulk/update-sqlite3
+               #:clails-test/model/bulk/update-mysql
+               #:clails-test/model/bulk/update-postgresql
                #:clails-test/logger/registry
                #:clails-test/logger/purpose-specific
                #:clails-test/logger/file-appender
