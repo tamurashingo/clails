@@ -7,6 +7,8 @@
                 #:generate-values
                 #:make-record
                 #:<query>)
+  (:import-from #:clails/model/query
+                #:update1)
   (:import-from #:clails/model/connection
                 #:get-connection)
   (:import-from #:clails/model/transaction
@@ -36,6 +38,8 @@
            #:show-query-sql
            #:insert-all
            #:insert-bulk
+           #:update-all
+           #:update-bulk
            #:type-mismatch-error))
 (in-package #:clails/model/bulk)
 
@@ -826,3 +830,184 @@
     (if table-info
         (getf table-info :table-name)
         (kebab->snake (string-downcase (symbol-name model-class))))))
+
+;;;; ========================================
+;;;; UPDATE Operations
+;;;; ========================================
+
+;;; ----------------------------------------
+;;; update-all
+;;; ----------------------------------------
+
+(defun update-all (list-of-model &key connection)
+  "Update model instances one by one.
+
+   Each instance is updated using update1, so
+   updated_at is set on each instance after UPDATE.
+   Only columns marked as dirty are updated.
+
+   Note: The list can contain instances of different model classes.
+   Each instance will be updated to its own table independently.
+   This is an intentional design to allow flexible update operations.
+
+   @param list-of-model [list] List of <base-model> instances (can be mixed model classes)
+   @param connection [connection] Optional database connection (uses connection pool if not provided)
+   @return [list] List of model instances with updated_at updated
+   @condition database-error When UPDATE fails
+   @condition optimistic-lock-error Optimistic lock error (version mismatch)
+   "
+  (when (null list-of-model)
+    (return-from update-all nil))
+
+  (unless (typep (first list-of-model) '<base-model>)
+    (error "update-all requires a list of model instances"))
+
+  (dolist (model list-of-model)
+    (let ((rows-updated (clails/model/query::update1 model :connection connection)))
+      (when (= rows-updated 0)
+        (error 'clails/condition:optimistic-lock-error))))
+
+  list-of-model)
+
+
+;;; ----------------------------------------
+;;; update-bulk
+;;; ----------------------------------------
+
+(defun update-bulk (model-class columns list-of-model &key (batch-size 100) (use-transaction t) (on-type-mismatch :error) connection)
+  "Execute bulk UPDATE and return the number of updated rows.
+
+   Accepts a list of model instances and performs bulk UPDATE.
+   Explicitly specifies the model class and columns to update.
+
+   Column information is automatically adjusted:
+   - :id is removed if included (not updatable)
+   - :created-at is removed if included (not updatable)
+   - :updated-at is added if not included (automatically updated)
+
+   @param model-class [symbol] Model symbol to UPDATE (e.g., '<user>)
+   @param columns [list] List of columns to UPDATE (list of keywords) (e.g., '(:name :age))
+   @param list-of-model [list] List of model instances
+   @param batch-size [integer] Batch size (default: 100)
+   @param use-transaction [boolean] Use transaction (default: t)
+   @param on-type-mismatch [keyword] Behavior on type mismatch (default: :error)
+                                     :error - Raise error when type mismatch occurs (default)
+                                     :skip - Skip instances that don't match the model class
+   @param connection [connection] Optional database connection (uses connection pool if not provided)
+   @return [integer] Number of updated records
+   @condition database-error When UPDATE fails
+   @condition type-mismatch-error When on-type-mismatch is :error and type mismatch occurs
+   "
+  (when (null list-of-model)
+    (return-from update-bulk 0))
+
+  ;; Validate and adjust column information
+  (let ((adjusted-columns (validate-and-adjust-update-columns columns)))
+
+    ;; Type check and filtering
+    (let ((filtered-list (filter-models-by-class model-class list-of-model on-type-mismatch)))
+
+      (when (null filtered-list)
+        (return-from update-bulk 0))
+
+      ;; Execute bulk UPDATE
+      (batch-update-instances model-class adjusted-columns filtered-list batch-size use-transaction connection))))
+
+
+;;; ----------------------------------------
+;;; Column validation and adjustment for UPDATE
+;;; ----------------------------------------
+
+(defun validate-and-adjust-update-columns (columns)
+  "Validate and adjust column list for UPDATE.
+
+   - Removes :id if included (not updatable)
+   - Removes :created-at if included (not updatable)
+   - Adds :updated-at if not included
+
+   @param columns [list] Column list (keywords)
+   @return [list] Adjusted column list
+   "
+  (let ((adjusted-columns (remove-if (lambda (col)
+                                      (or (eq col :id)
+                                          (eq col :created-at)))
+                                    columns)))
+    ;; Add updated-at (avoid duplicates)
+    (unless (member :updated-at adjusted-columns)
+      (push :updated-at adjusted-columns))
+    adjusted-columns))
+
+
+;;; ----------------------------------------
+;;; Batch update for model instances
+;;; ----------------------------------------
+
+(defun batch-update-instances (model-class columns list-of-model batch-size use-transaction connection)
+  "Execute batch UPDATE for model instance list (internal function).
+
+   Updates only the specified columns.
+   updated-at is automatically set to the current time.
+
+   @param model-class [symbol] Model class name
+   @param columns [list] List of columns to update (keywords)
+   @param list-of-model [list] List of model instances
+   @param batch-size [integer] Batch size
+   @param use-transaction [boolean] Use transaction
+   @param connection [connection] Optional database connection
+   @return [integer] Number of updated records
+   "
+  (let ((table-name (get-table-name model-class))
+        (total 0)
+        (now (get-universal-time)))  ;; Pre-generate timestamp
+
+    (labels ((execute-batch (batch)
+               ;; Generate UPDATE SQL (once per batch)
+               (let* ((set-clause (generate-set-clause columns))
+                      (sql (format nil "UPDATE ~A SET ~A WHERE id = ?"
+                                  table-name set-clause))
+                      (conn (or connection (get-connection))))
+
+                 (when (log-level-enabled-p :sql :debug)
+                   (log.sql (format nil "sql: ~S" sql)))
+
+                 ;; Execute for each instance
+                 (dolist (instance batch)
+                   ;; Set updated-at timestamp
+                   (when (member :updated-at columns)
+                     (setf (ref instance :updated-at) now))
+
+                   ;; Extract values with cl-db-fn conversion
+                   (let ((params (append
+                                  (extract-instance-values instance columns model-class)
+                                  (list (ref instance :id)))))
+                     (when (log-level-enabled-p :sql :debug)
+                       (log.sql (format nil "params: ~S" params)))
+                     (dbi-cp:execute (dbi-cp:prepare conn sql) params)
+                     (incf total)))
+                 total)))
+
+      (if (and use-transaction (null connection))
+          (let ((conn (get-connection)))
+            (with-transaction-using-connection conn
+              (loop for batch in (split-into-batches list-of-model batch-size)
+                    do (execute-batch batch))))
+          (loop for batch in (split-into-batches list-of-model batch-size)
+                do (execute-batch batch)))
+
+      total)))
+
+
+;;; ----------------------------------------
+;;; Helper function for UPDATE
+;;; ----------------------------------------
+
+(defun generate-set-clause (columns)
+  "Generate SET clause for UPDATE statement.
+
+   @param columns [list] List of columns to update (keywords)
+   @return [string] SET clause (e.g., \"name = ?, age = ?, updated_at = ?\")
+   "
+  (let ((column-strs (mapcar (lambda (col)
+                              (kebab->snake (symbol-name col)))
+                            columns)))
+    (format nil "~{~A = ?~^, ~}" column-strs)))
