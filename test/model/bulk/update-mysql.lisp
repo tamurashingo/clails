@@ -30,7 +30,7 @@
   (:import-from #:clails/util
                 #:env-or-default))
 
-(defpackage #:clails-test/model/db/bulk-update-mysql
+(defpackage #:clails-test/model/db/bulk-insert
   (:use #:cl)
   (:import-from #:clails/model/migration
                 #:defmigration
