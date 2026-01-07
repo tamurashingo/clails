@@ -2,12 +2,18 @@
 (defpackage #:clails/model/bulk
   (:use #:cl)
   (:import-from #:clails/model/query
+                #:insert1
                 #:generate-query
+                #:generate-values
+                #:make-record
                 #:<query>)
   (:import-from #:clails/model/connection
                 #:get-connection)
   (:import-from #:clails/model/transaction
                 #:with-transaction-using-connection)
+  (:import-from #:clails/model/base-model
+                #:<base-model>
+                #:ref)
   (:import-from #:clails/environment
                 #:*database-type*
                 #:<database-type-postgresql>
@@ -16,14 +22,37 @@
   (:import-from #:clails/logger
                 #:log-level-enabled-p
                 #:log.sql)
+  (:import-from #:clails/util
+                #:kebab->snake
+                #:snake->kebab)
   (:import-from #:cl-batis
                 #:<batis-sql>
                 #:gen-sql-and-params)
   (:import-from #:cl-ppcre
                 #:regex-replace-all)
+  (:import-from #:alexandria
+                #:flatten)
   (:export #:with-query-cursor
-           #:show-query-sql))
+           #:show-query-sql
+           #:insert-all
+           #:insert-bulk
+           #:type-mismatch-error))
 (in-package #:clails/model/bulk)
+
+;;;; ----------------------------------------
+;;;; Error Definitions
+;;;; ----------------------------------------
+
+(define-condition type-mismatch-error (error)
+  ((expected-class :initarg :expected-class
+                   :reader type-mismatch-error-expected-class)
+   (actual-instances :initarg :actual-instances
+                     :reader type-mismatch-error-actual-instances))
+  (:report (lambda (condition stream)
+             (format stream "Type mismatch: expected ~A, but found instances of different types: ~A"
+                     (type-mismatch-error-expected-class condition)
+                     (mapcar (lambda (inst) (class-name (class-of inst)))
+                             (type-mismatch-error-actual-instances condition))))))
 
 ;;;; ----------------------------------------
 ;;;; Main API
@@ -363,3 +392,437 @@
                (return))
 
              (funcall callback batch))))
+
+;;;; ========================================
+;;;; INSERT Operations
+;;;; ========================================
+
+;;; ----------------------------------------
+;;; insert-all
+;;; ----------------------------------------
+
+(defun insert-all (list-of-model &key connection)
+  "Insert model instances one by one and write back IDs.
+
+   Each instance is inserted using insert1, so
+   id, created-at, and updated-at are set on each instance after INSERT.
+
+   @param list-of-model [list] List of <base-model> instances
+   @param connection [connection] Optional database connection (uses connection pool if not provided)
+   @return [list] List of model instances with IDs set
+   @condition database-error When INSERT fails
+   "
+  (when (null list-of-model)
+    (return-from insert-all nil))
+
+  (unless (typep (first list-of-model) '<base-model>)
+    (error "insert-all requires a list of model instances"))
+
+  (dolist (model list-of-model)
+    (insert1 model :connection connection))
+
+  list-of-model)
+
+
+;;; ----------------------------------------
+;;; insert-bulk
+;;; ----------------------------------------
+
+(defun insert-bulk (model-class columns list &key (batch-size 100) (use-transaction t) (on-type-mismatch :error) connection)
+  "Execute bulk INSERT and return the number of inserted rows.
+
+   Accepts a list of plists or model instances and performs bulk INSERT.
+   Does not write back IDs (for performance).
+
+   Column information is automatically adjusted:
+   - :id is removed if included
+   - :created-at is added if not included
+   - :updated-at is added if not included
+
+   Timestamps are automatically set:
+   - :created-at is set to current time if not set
+   - :updated-at is set to current time if not set
+
+   @param model-class [symbol] Model symbol to INSERT (e.g., '<user>)
+   @param columns [list] List of columns to INSERT (list of keywords) (e.g., '(:name :age :address))
+   @param list [list] List of plists or list of model instances
+   @param batch-size [integer] Batch size (default: 100)
+   @param use-transaction [boolean] Use transaction (default: t)
+   @param on-type-mismatch [keyword] Behavior on type mismatch (default: :error)
+                                     :error - Raise error when type mismatch occurs (default)
+                                     :skip - Skip instances that don't match the model class
+   @param connection [connection] Optional database connection (uses connection pool if not provided)
+   @return [integer] Number of inserted records
+   @condition database-error When INSERT fails
+   @condition type-mismatch-error When on-type-mismatch is :error and type mismatch occurs
+   "
+  (when (null list)
+    (return-from insert-bulk 0))
+
+  ;; Validate and adjust column information
+  (let ((adjusted-columns (validate-and-adjust-columns model-class columns)))
+
+    ;; Determine if plist or model
+    (let ((first-item (first list)))
+      (cond
+        ;; plist case
+        ((and (listp first-item) (keywordp (first first-item)))
+         (batch-insert-plist model-class adjusted-columns list batch-size use-transaction connection))
+
+        ;; model case
+        ((typep first-item '<base-model>)
+         ;; Type check and filtering
+         (let ((filtered-list (filter-models-by-class model-class list on-type-mismatch)))
+           (when (null filtered-list)
+             (return-from insert-bulk 0))
+           (batch-insert-instances model-class adjusted-columns filtered-list batch-size use-transaction connection)))
+
+        (t
+         (error "insert-bulk requires a list of plists or model instances"))))))
+
+
+;;; ----------------------------------------
+;;; Column validation and adjustment
+;;; ----------------------------------------
+
+(defun validate-and-adjust-columns (model-class columns)
+  "Validate and adjust column list.
+
+   Removes :id if included, adds :created-at and :updated-at if not included.
+
+   @param model-class [symbol] Model class name
+   @param columns [list] Column list (keywords)
+   @return [list] Adjusted column list
+   @condition error When model-class is not found
+   "
+  (let ((table-info (gethash model-class clails/model/base-model::*table-information*)))
+    (unless table-info
+      (error "Model class '~A' not found in table information. Did you forget to call initialize-table-information?" model-class))
+
+    (let ((adjusted-columns (remove :id columns)))
+      (unless (member :created-at adjusted-columns)
+        (push :created-at adjusted-columns))
+      (unless (member :updated-at adjusted-columns)
+        (push :updated-at adjusted-columns))
+      adjusted-columns)))
+
+
+;;; ----------------------------------------
+;;; Model type filtering
+;;; ----------------------------------------
+
+(defun filter-models-by-class (model-class list-of-model on-type-mismatch)
+  "Filter model instances by class.
+
+   Checks if all instances are of the specified model class.
+   Behavior depends on on-type-mismatch:
+   - :error - Signal error if different class exists (default)
+   - :skip - Filter out different classes and continue
+
+   @param model-class [symbol] Model class name
+   @param list-of-model [list] List of model instances
+   @param on-type-mismatch [keyword] Error handling mode (:error or :skip)
+   @return [list] Filtered list of model instances
+   @condition type-mismatch-error When on-type-mismatch is :error and type mismatch occurs
+   "
+  (let ((filtered nil)
+        (mismatched nil))
+    (dolist (inst list-of-model)
+      (if (eq (class-name (class-of inst)) model-class)
+          (push inst filtered)
+          (push inst mismatched)))
+
+    (when mismatched
+      (case on-type-mismatch
+        (:error
+         (error 'type-mismatch-error
+                :expected-class model-class
+                :actual-instances mismatched))
+        (:skip
+         (warn "insert-bulk: Skipping ~D instances that are not of class '~A'."
+               (length mismatched)
+               model-class))))
+
+    (nreverse filtered)))
+
+
+;;; ----------------------------------------
+;;; Batch insert for plists
+;;; ----------------------------------------
+
+(defun batch-insert-plist (model-class columns list batch-size use-transaction connection)
+  "Execute batch INSERT for plist list.
+
+   @param model-class [symbol] Model class name
+   @param columns [list] Column list (keywords)
+   @param list [list] List of plists
+   @param batch-size [integer] Batch size
+   @param use-transaction [boolean] Use transaction
+   @param connection [connection] Optional database connection
+   @return [integer] Number of inserted rows
+   "
+  (let ((table-name (get-table-name model-class))
+        (total-inserted 0)
+        (now (get-universal-time)))
+
+    ;; Prepare timestamps for all records
+    (let ((prepared-list (mapcar (lambda (plist)
+                                  (prepare-timestamps-plist plist columns now))
+                                list)))
+
+      ;; Split into batches
+      (let ((batches (split-into-batches prepared-list batch-size)))
+        (labels ((do-insert ()
+                   (dolist (batch batches)
+                     (let ((count (execute-bulk-insert-plist model-class table-name columns batch connection)))
+                       (incf total-inserted count)))))
+
+          (if use-transaction
+              (let ((conn (or connection (get-connection))))
+                (with-transaction-using-connection conn
+                  (do-insert)))
+              (do-insert)))))
+
+    total-inserted))
+
+
+;;; ----------------------------------------
+;;; Batch insert for model instances
+;;; ----------------------------------------
+
+(defun batch-insert-instances (model-class columns list batch-size use-transaction connection)
+  "Execute batch INSERT for model instance list.
+
+   @param model-class [symbol] Model class name
+   @param columns [list] Column list (keywords)
+   @param list [list] List of model instances
+   @param batch-size [integer] Batch size
+   @param use-transaction [boolean] Use transaction
+   @param connection [connection] Optional database connection
+   @return [integer] Number of inserted rows
+   "
+  (let ((table-name (get-table-name model-class))
+        (total-inserted 0)
+        (now (get-universal-time)))
+
+    ;; Prepare timestamps for all instances
+    (dolist (inst list)
+      (prepare-timestamps-instance inst columns now))
+
+    ;; Split into batches
+    (let ((batches (split-into-batches list batch-size)))
+      (labels ((do-insert ()
+                 (dolist (batch batches)
+                   (let ((count (execute-bulk-insert-instances model-class table-name columns batch connection)))
+                     (incf total-inserted count)))))
+
+        (if use-transaction
+            (let ((conn (or connection (get-connection))))
+              (with-transaction-using-connection conn
+                (do-insert)))
+            (do-insert))))
+
+    total-inserted))
+
+
+;;; ----------------------------------------
+;;; Execute bulk INSERT for plists
+;;; ----------------------------------------
+
+(defun execute-bulk-insert-plist (model-class table-name columns batch connection)
+  "Execute bulk INSERT for a batch of plists.
+
+   @param model-class [symbol] Model class name
+   @param table-name [string] Table name
+   @param columns [list] Column list (keywords)
+   @param batch [list] Batch of plists
+   @param connection [connection] Optional database connection
+   @return [integer] Number of inserted rows
+   "
+  (let* ((conn (or connection (get-connection)))
+         (placeholder (make-placeholders (length columns)))
+         (values-clause (make-multi-row-values placeholder (length batch)))
+         (column-names (mapcar #'kebab->snake columns))
+         (sql (format nil "INSERT INTO ~A (~{~A~^, ~}) VALUES ~A"
+                     table-name
+                     column-names
+                     values-clause))
+         (params (flatten (mapcar (lambda (plist)
+                                   (extract-plist-values plist columns model-class))
+                                 batch))))
+
+    (when (log-level-enabled-p :sql :debug)
+      (log.sql (format nil "sql: ~S" sql))
+      (log.sql (format nil "params: ~S" params)))
+
+    (dbi-cp:execute
+     (dbi-cp:prepare conn sql)
+     params)
+    (dbi-cp:row-count conn)))
+
+
+;;; ----------------------------------------
+;;; Execute bulk INSERT for model instances
+;;; ----------------------------------------
+
+(defun execute-bulk-insert-instances (model-class table-name columns batch connection)
+  "Execute bulk INSERT for a batch of model instances.
+
+   @param model-class [symbol] Model class name
+   @param table-name [string] Table name
+   @param columns [list] Column list (keywords)
+   @param batch [list] Batch of model instances
+   @param connection [connection] Optional database connection
+   @return [integer] Number of inserted rows
+   "
+  (let* ((conn (or connection (get-connection)))
+         (placeholder (make-placeholders (length columns)))
+         (values-clause (make-multi-row-values placeholder (length batch)))
+         (column-names (mapcar #'kebab->snake columns))
+         (sql (format nil "INSERT INTO ~A (~{~A~^, ~}) VALUES ~A"
+                     table-name
+                     column-names
+                     values-clause))
+         (params (flatten (mapcar (lambda (inst)
+                                   (extract-instance-values inst columns model-class))
+                                 batch))))
+
+    (when (log-level-enabled-p :sql :debug)
+      (log.sql (format nil "sql: ~S" sql))
+      (log.sql (format nil "params: ~S" params)))
+
+    (dbi-cp:execute
+     (dbi-cp:prepare conn sql)
+     params)
+    (dbi-cp:row-count conn)))
+
+
+;;; ----------------------------------------
+;;; Helper functions
+;;; ----------------------------------------
+
+(defun prepare-timestamps-plist (plist columns now)
+  "Set created-at and updated-at timestamps in plist.
+
+   If :created-at or :updated-at is in the column list and not set in plist,
+   sets the specified time.
+
+   @param plist [plist] Property list
+   @param columns [list] Column list (keywords)
+   @param now [integer] Timestamp to set
+   @return [plist] Plist with timestamps set
+   "
+  (let ((result (copy-list plist)))
+    (when (and (member :created-at columns)
+               (null (getf result :created-at)))
+      (setf (getf result :created-at) now))
+    (when (and (member :updated-at columns)
+               (null (getf result :updated-at)))
+      (setf (getf result :updated-at) now))
+    result))
+
+
+(defun prepare-timestamps-instance (instance columns now)
+  "Set created-at and updated-at timestamps in model instance.
+
+   If :created-at or :updated-at is in the column list and not set in instance,
+   sets the specified time.
+
+   @param instance [<base-model>] Model instance
+   @param columns [list] Column list (keywords)
+   @param now [integer] Timestamp to set
+   @return [<base-model>] Instance with timestamps set
+   "
+  (when (and (member :created-at columns)
+             (null (ref instance :created-at)))
+    (setf (ref instance :created-at) now))
+  (when (and (member :updated-at columns)
+             (null (ref instance :updated-at)))
+    (setf (ref instance :updated-at) now))
+  instance)
+
+
+(defun split-into-batches (items batch-size)
+  "Split list into batches of specified size.
+
+   @param items [list] List to split
+   @param batch-size [integer] Batch size
+   @return [list of list] List of batches
+   "
+  (loop for i from 0 below (length items) by batch-size
+        collect (subseq items i (min (+ i batch-size) (length items)))))
+
+
+(defun make-placeholders (count)
+  "Create SQL placeholder string.
+
+   @param count [integer] Number of placeholders
+   @return [string] Placeholder string (e.g., \"(?, ?, ?)\")
+   "
+  (format nil "(~{~A~^, ~})" (make-list count :initial-element "?")))
+
+
+(defun make-multi-row-values (placeholder-template row-count)
+  "Create multi-row VALUES clause.
+
+   @param placeholder-template [string] Placeholder template (e.g., \"(?, ?, ?)\")
+   @param row-count [integer] Number of rows
+   @return [string] VALUES clause (e.g., \"(?, ?, ?), (?, ?, ?), (?, ?, ?)\")
+   "
+  (format nil "~{~A~^, ~}" (make-list row-count :initial-element placeholder-template)))
+
+
+(defun extract-plist-values (plist columns model-class)
+  "Extract values for specified columns from plist.
+
+   Applies cl-db-fn conversion for each column.
+
+   @param plist [plist] Property list
+   @param columns [list] Column list (keywords)
+   @param model-class [symbol] Model class name
+   @return [list] List of values
+   "
+  (let ((columns-plist (getf (gethash model-class clails/model/base-model::*table-information*)
+                            :columns-plist)))
+    (mapcar (lambda (col)
+              (let* ((value (getf plist col))
+                     (column-info (getf columns-plist col))
+                     (cl-db-fn (if column-info
+                                  (getf column-info :cl-db-fn)
+                                  #'identity)))
+                (funcall cl-db-fn value)))
+            columns)))
+
+
+(defun extract-instance-values (instance columns model-class)
+  "Extract values for specified columns from model instance.
+
+   Applies cl-db-fn conversion for each column.
+
+   @param instance [<base-model>] Model instance
+   @param columns [list] Column list (keywords)
+   @param model-class [symbol] Model class name
+   @return [list] List of values
+   "
+  (let ((columns-plist (getf (gethash model-class clails/model/base-model::*table-information*)
+                            :columns-plist)))
+    (mapcar (lambda (col)
+              (let* ((value (ref instance col))
+                     (column-info (getf columns-plist col))
+                     (cl-db-fn (if column-info
+                                  (getf column-info :cl-db-fn)
+                                  #'identity)))
+                (funcall cl-db-fn value)))
+            columns)))
+
+
+(defun get-table-name (model-class)
+  "Get table name from model class name.
+
+   @param model-class [symbol] Model class name
+   @return [string] Table name
+   "
+  (let ((table-info (gethash model-class clails/model/base-model::*table-information*)))
+    (if table-info
+        (getf table-info :table-name)
+        (kebab->snake (string-downcase (symbol-name model-class))))))
