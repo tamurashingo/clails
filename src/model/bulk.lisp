@@ -8,7 +8,8 @@
                 #:make-record
                 #:<query>)
   (:import-from #:clails/model/query
-                #:update1)
+                #:update1
+                #:destroy)
   (:import-from #:clails/model/connection
                 #:get-connection)
   (:import-from #:clails/model/transaction
@@ -40,6 +41,8 @@
            #:insert-bulk
            #:update-all
            #:update-bulk
+           #:delete-all
+           #:delete-bulk
            #:type-mismatch-error))
 (in-package #:clails/model/bulk)
 
@@ -1011,3 +1014,116 @@
                               (kebab->snake (symbol-name col)))
                             columns)))
     (format nil "~{~A = ?~^, ~}" column-strs)))
+
+;;;; ========================================
+;;;; DELETE Operations
+;;;; ========================================
+
+;;; ----------------------------------------
+;;; delete-all
+;;; ----------------------------------------
+
+(defun delete-all (list-of-model &key (cascade nil) connection)
+  "Delete model instances one by one.
+
+   Each instance is deleted using destroy.
+   Cascade deletion option can be specified.
+
+   @param list-of-model [list] List of <base-model> instances
+   @param cascade [boolean] Whether to perform cascade delete (default: nil)
+   @param connection [connection] Optional database connection (uses connection pool if not provided)
+   @return [list] List of deleted model instances
+   @condition database-error When DELETE fails
+   "
+  (when (null list-of-model)
+    (return-from delete-all nil))
+
+  (unless (typep (first list-of-model) '<base-model>)
+    (error "delete-all requires a list of model instances"))
+
+  (dolist (model list-of-model)
+    (destroy model :cascade cascade))
+
+  list-of-model)
+
+
+;;; ----------------------------------------
+;;; delete-bulk
+;;; ----------------------------------------
+
+(defun delete-bulk (model-class list-of-model &key (batch-size 100) (use-transaction t) (on-type-mismatch :error) connection)
+  "Execute bulk DELETE and return the number of deleted rows.
+
+   Deletes only instances of the specified model class.
+   Does not support cascade deletion.
+
+   @param model-class [symbol] Model symbol to DELETE (e.g., '<user>)
+   @param list-of-model [list] List of model instances
+   @param batch-size [integer] Batch size (default: 100)
+   @param use-transaction [boolean] Use transaction (default: t)
+   @param on-type-mismatch [keyword] Behavior on type mismatch (default: :error)
+                                     :error - Raise error when type mismatch occurs (default)
+                                     :skip - Skip instances that don't match the model class
+   @param connection [connection] Optional database connection (uses connection pool if not provided)
+   @return [integer] Number of deleted records
+   @condition database-error When DELETE fails
+   @condition type-mismatch-error When on-type-mismatch is :error and type mismatch occurs
+   "
+  (when (null list-of-model)
+    (return-from delete-bulk 0))
+
+  ;; Type check and filtering
+  (let ((filtered-list (filter-models-by-class model-class list-of-model on-type-mismatch)))
+
+    (when (null filtered-list)
+      (return-from delete-bulk 0))
+
+    ;; Execute bulk DELETE
+    (batch-delete-instances model-class filtered-list batch-size use-transaction connection)))
+
+
+;;; ----------------------------------------
+;;; Batch delete for model instances
+;;; ----------------------------------------
+
+(defun batch-delete-instances (model-class list-of-model batch-size use-transaction connection)
+  "Execute batch DELETE for model instance list (internal function).
+
+   Uses IN clause for optimized deletion.
+
+   @param model-class [symbol] Model class name
+   @param list-of-model [list] List of model instances
+   @param batch-size [integer] Batch size
+   @param use-transaction [boolean] Use transaction
+   @param connection [connection] Optional database connection
+   @return [integer] Number of deleted records
+   "
+  (let ((table-name (get-table-name model-class))
+        (total 0))
+
+    (labels ((execute-batch (batch)
+               ;; Extract IDs from batch
+               (let* ((ids (mapcar (lambda (inst) (ref inst :id)) batch))
+                      (placeholders (format nil "~{~A~^, ~}" (make-list (length ids) :initial-element "?")))
+                      (sql (format nil "DELETE FROM ~A WHERE id IN (~A)"
+                                  table-name
+                                  placeholders))
+                      (conn (or connection (get-connection))))
+
+                 (when (log-level-enabled-p :sql :debug)
+                   (log.sql (format nil "sql: ~S" sql))
+                   (log.sql (format nil "params: ~S" ids)))
+
+                 (dbi-cp:execute (dbi-cp:prepare conn sql) ids)
+                 (let ((count (dbi-cp:row-count conn)))
+                   (incf total count)))))
+
+      (if (and use-transaction (null connection))
+          (let ((conn (get-connection)))
+            (with-transaction-using-connection conn
+              (loop for batch in (split-into-batches list-of-model batch-size)
+                    do (execute-batch batch))))
+          (loop for batch in (split-into-batches list-of-model batch-size)
+                do (execute-batch batch)))
+
+      total)))
