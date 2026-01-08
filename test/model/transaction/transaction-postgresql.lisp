@@ -24,7 +24,7 @@
   (:import-from #:clails/util
                 #:env-or-default))
 
-(defpackage #:clails-test/model/transaction/db/transaction-postgresql
+(defpackage #:clails-test/model/db/transaction
   (:use #:cl)
   (:import-from #:clails/model/migration
                 #:defmigration

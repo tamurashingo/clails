@@ -1392,6 +1392,517 @@ When processing large amounts of data, use transactions appropriately.
 
 ---
 
+## 14. Bulk Operations
+
+Bulk operations are designed for efficiently processing large amounts of data. They are intended for batch processing and background jobs, not for online processing.
+
+### 14.1. SELECT: `with-query-cursor`
+
+Efficiently processes large SELECT results in batch units. Performs streaming processing without loading all records into memory.
+
+#### Features
+
+- **Database-specific optimizations**
+  - PostgreSQL: Server-side cursor (automatic transaction management)
+  - MySQL: Streaming result set
+  - SQLite3: LIMIT/OFFSET pagination
+- Configurable batch size (default: 1000)
+- Supports both `query` macro and cl-batis
+
+#### Basic Usage
+
+```common-lisp
+;; Using query macro
+(with-query-cursor (user-rows
+                    (query <user> :as :u :order-by ((:u :id)))
+                    nil
+                    :batch-size 500)
+  (dolist (row user-rows)
+    (format t "User: ~A, Email: ~A~%"
+            (getf row :name)
+            (getf row :email))))
+```
+
+#### Query with Parameters
+
+```common-lisp
+(with-query-cursor (user-rows
+                    (query <user>
+                           :as :u
+                           :where (:> (:u :age) :age)
+                           :order-by ((:u :id)))
+                    '(:age 20)
+                    :batch-size 1000)
+  (dolist (row user-rows)
+    (process-user-row row)))
+```
+
+#### Query with JOIN
+
+```common-lisp
+(with-query-cursor (blog-rows
+                    (query <blog>
+                           :as :blog
+                           :joins ((:left-join :account))
+                           :order-by ((:blog :id)))
+                    nil
+                    :batch-size 500)
+  (dolist (row blog-rows)
+    (format t "Blog: ~A, Author: ~A~%"
+            (getf row :|BLOG.TITLE|)
+            (getf row :|ACCOUNT.NAME|))))
+```
+
+#### Using cl-batis
+
+```common-lisp
+(select ("SELECT * FROM users WHERE age > :age ORDER BY id")
+  (defsql find-users-by-age-greater-than (age)))
+
+(with-query-cursor (user-rows
+                    find-users-by-age-greater-than
+                    '(:age 20)
+                    :batch-size 500)
+  (dolist (row user-rows)
+    (format t "User: ~A, Age: ~A~%"
+            (getf row :name)
+            (getf row :age))))
+```
+
+#### Using within Transactions
+
+```common-lisp
+;; PostgreSQL: Explicitly start transaction (recommended)
+(with-transaction
+  (with-query-cursor (user-rows
+                      (query <user> :as :u :order-by ((:u :id)))
+                      nil
+                      :batch-size 500)
+    (dolist (row user-rows)
+      (process-user-row row)))
+  
+  ;; Other operations can be executed in the same transaction
+  (save summary-data))
+
+;; Using external connection
+(with-db-connection (conn)
+  (with-transaction-using-connection conn
+    (with-query-cursor (user-rows
+                        (query <user> :as :u :order-by ((:u :id)))
+                        nil
+                        :batch-size 500
+                        :connection conn)
+      (dolist (row user-rows)
+        (process-user-row row)))))
+```
+
+#### Checking SQL (for debugging)
+
+```common-lisp
+(show-query-sql (query <user>
+                       :as :u
+                       :where (:and (:= (:u :status) :status)
+                                   (:> (:u :age) :age))
+                       :order-by ((:u :id)))
+                '(:status "active" :age 20))
+;; => "SELECT U.ID as \"U.ID\", U.NAME as \"U.NAME\", ...
+;;     WHERE U.STATUS = 'active' AND U.AGE > 20 ORDER BY U.ID"
+```
+
+#### Important Notes
+
+1. **ORDER BY is required**: It is strongly recommended to specify ORDER BY for all databases. Without ORDER BY, the order of results between batches is not guaranteed, which may cause duplicates or missing records.
+
+2. **Database-specific notes**:
+   - **PostgreSQL**: Automatically starts a transaction when using cursors
+   - **MySQL**: Connection is occupied while using streaming result set
+   - **SQLite3**: Performance degrades as OFFSET increases
+
+3. **Choosing batch size**: Default is 1000 rows. Consider the trade-off between memory usage and database round trips (recommended range: 100-5000 rows)
+
+### 14.2. INSERT: `insert-all` and `insert-bulk`
+
+Provides two functions for efficient bulk insertion.
+
+#### `insert-all`: Insert one by one (with ID write-back)
+
+Executes `insert1` for each model instance, setting id, created_at, and updated_at on each instance after INSERT.
+
+```common-lisp
+(let* ((users (list (make-record '<user> :name "Alice" :age 30 :email "alice@example.com")
+                    (make-record '<user> :name "Bob" :age 25 :email "bob@example.com")
+                    (make-record '<user> :name "Charlie" :age 35 :email "charlie@example.com")))
+       (inserted-users (insert-all users)))
+  
+  ;; ID is set on each instance
+  (dolist (user inserted-users)
+    (format t "Inserted ID: ~A, Name: ~A~%"
+            (slot-value user 'id)
+            (ref user :name))))
+;; Output:
+;; Inserted ID: 1, Name: Alice
+;; Inserted ID: 2, Name: Bob
+;; Inserted ID: 3, Name: Charlie
+```
+
+**Execute within transaction:**
+
+```common-lisp
+(with-transaction (conn)
+  (let ((users (list (make-record '<user> :name "Alice" :age 30)
+                     (make-record '<user> :name "Bob" :age 25))))
+    (insert-all users :connection conn)))
+```
+
+#### `insert-bulk`: Bulk INSERT (fast, no ID write-back)
+
+Executes bulk INSERT and returns only the count of inserted rows. Accepts a list of plists or models.
+
+**Using plist:**
+
+```common-lisp
+(insert-bulk '<user>
+             '(:name :age :email)
+             '((:name "Alice" :age 30 :email "alice@example.com")
+               (:name "Bob" :age 25 :email "bob@example.com")
+               (:name "Charlie" :age 35 :email "charlie@example.com"))
+             :batch-size 100)
+;; => 3
+```
+
+**Using model instances:**
+
+```common-lisp
+(let ((users (list (make-record '<user> :name "Alice" :age 30 :email "alice@example.com")
+                   (make-record '<user> :name "Bob" :age 25 :email "bob@example.com")
+                   (make-record '<user> :name "Charlie" :age 35 :email "charlie@example.com"))))
+  (insert-bulk '<user>
+               '(:name :age :email)
+               users
+               :batch-size 100))
+;; => 3
+```
+
+**Automatic timestamp setting:**
+
+```common-lisp
+;; created_at and updated_at are automatically set even if not specified
+(insert-bulk '<user>
+             '(:name :age)  ; created_at and updated_at are automatically added
+             '((:name "Alice" :age 30)
+               (:name "Bob" :age 25))
+             :batch-size 100)
+```
+
+**Execute within transaction:**
+
+```common-lisp
+(with-transaction (conn)
+  (insert-bulk '<user>
+               '(:name :age :email)
+               large-data-list
+               :connection conn
+               :use-transaction nil))  ; External transaction management
+```
+
+#### Comparison
+
+| Function | Use Case | Return Value | ID Write-back | Speed |
+|----------|----------|--------------|---------------|-------|
+| `insert-all` | Use models after INSERT | List of models | ✅ | Slow |
+| `insert-bulk` | Fast insertion like CSV import | Count (integer) | ❌ | Fast |
+
+### 14.3. UPDATE: `update-all` and `update-bulk`
+
+Provides two functions for efficient bulk updates.
+
+#### `update-all`: Update one by one
+
+Executes `update1` for each model instance. Only columns marked with dirty-flag are updated.
+
+```common-lisp
+(let* ((users (list user1 user2 user3)))
+  ;; Modify each user's information
+  (setf (ref user1 :name) "Alice Updated")
+  (setf (ref user2 :age) 26)
+  (setf (ref user3 :email) "charlie-new@example.com")
+  
+  ;; Bulk update
+  (let ((updated-users (update-all users)))
+    (dolist (user updated-users)
+      (format t "Updated ID: ~A, updated-at: ~A~%"
+              (slot-value user 'id)
+              (ref user :updated-at)))))
+```
+
+**Mixed model classes:**
+
+```common-lisp
+(let* ((user (make-record '<user> :name "Alice" :age 30))
+       (post (make-record '<post> :title "Hello" :content "World"))
+       (inserted-user (first (insert-all (list user))))
+       (inserted-post (first (insert-all (list post)))))
+  
+  ;; Modify both instances
+  (setf (ref inserted-user :age) 31)
+  (setf (ref inserted-post :title) "Hello World")
+  
+  ;; Bulk update (user goes to users table, post goes to posts table)
+  (let ((updated (update-all (list inserted-user inserted-post))))
+    (format t "Updated ~A records~%" (length updated))))
+;; => Updated 2 records
+```
+
+**Execute within transaction:**
+
+```common-lisp
+(with-transaction (conn)
+  (let ((users (list user1 user2)))
+    (update-all users :connection conn)))
+```
+
+#### `update-bulk`: Batch UPDATE
+
+Executes bulk UPDATE and returns the count of updated rows. Explicitly specifies columns to update.
+
+```common-lisp
+(let ((users (list user1 user2 user3)))
+  ;; Modify each user's information
+  (setf (ref user1 :name) "Alice Updated")
+  (setf (ref user2 :age) 26)
+  (setf (ref user3 :email) "charlie-new@example.com")
+  
+  ;; Bulk update (specify columns)
+  (let ((count (update-bulk '<user> '(:name :age :email) users)))
+    (format t "Updated ~A records~%" count)))
+;; => Updated 3 records
+```
+
+**updated_at is automatically updated:**
+
+```common-lisp
+;; updated_at is automatically updated even if not specified
+(update-bulk '<user> '(:name :age) users)
+;; => name, age, updated_at are updated
+```
+
+**id and created_at are excluded:**
+
+```common-lisp
+;; id and created_at are ignored even if specified
+(update-bulk '<user> '(:id :name :created-at :age) users)
+;; => name, age, updated_at are updated (id and created_at are excluded)
+```
+
+**Handling type mismatch:**
+
+```common-lisp
+;; Default is :error - raises error if different types exist
+(update-bulk '<user>
+             '(:name :age)
+             (list user1 post1 user2))  ; post1 is a <post> instance
+;; => type-mismatch-error is raised
+
+;; :skip - Skip instances of different types
+(update-bulk '<user>
+             '(:name :age)
+             (list user1 post1 user2)
+             :on-type-mismatch :skip)
+;; => 2 (only user1 and user2 are updated, post1 is skipped)
+```
+
+#### Comparison
+
+| Function | Use Case | Return Value | Column Specification | Speed |
+|----------|----------|--------------|---------------------|-------|
+| `update-all` | Update based on dirty-flag | List of models | dirty-flag | Slow |
+| `update-bulk` | Update with explicit columns | Count (integer) | Explicit | Medium |
+
+### 14.4. DELETE: `delete-all` and `delete-bulk`
+
+Provides two functions for efficient bulk deletion.
+
+#### `delete-all`: Delete one by one
+
+Executes `destroy` for each model instance. Supports cascade deletion.
+
+```common-lisp
+;; Basic deletion
+(let ((users (list user1 user2 user3)))
+  (let ((deleted-users (delete-all users)))
+    (format t "Deleted ~A users~%" (length deleted-users))))
+;; => Deleted 3 users
+```
+
+**Cascade deletion:**
+
+```common-lisp
+;; Enable cascade deletion
+(let ((users (list user1 user2)))
+  (delete-all users :cascade t))
+;; => Deletes user1, user2 and their related records
+```
+
+**Execute within transaction:**
+
+```common-lisp
+(with-transaction (conn)
+  (let ((users (list user1 user2)))
+    (delete-all users :connection conn)))
+```
+
+#### `delete-bulk`: Batch DELETE
+
+Executes bulk DELETE and returns the count of deleted rows. Implemented with IN clause optimization.
+
+```common-lisp
+;; Basic usage
+(let ((users (list user1 user2 user3)))
+  (let ((count (delete-bulk '<user> users)))
+    (format t "Deleted ~A records~%" count)))
+;; => Deleted 3 records
+```
+
+**Custom batch size:**
+
+```common-lisp
+(delete-bulk '<user> large-user-list :batch-size 50)
+```
+
+**Handling type mismatch:**
+
+```common-lisp
+;; Default is :error - raises error if different types exist
+(delete-bulk '<user> (list user1 product1 user2))
+;; => type-mismatch-error is raised
+
+;; :skip - Skip instances of different types
+(delete-bulk '<user> (list user1 product1 user2) :on-type-mismatch :skip)
+;; => 2 (only user1 and user2 are deleted, product1 is skipped)
+```
+
+**Execute within transaction:**
+
+```common-lisp
+(with-transaction (conn)
+  (delete-bulk '<user> users
+               :connection conn
+               :use-transaction nil))  ; External transaction management
+```
+
+#### Comparison
+
+| Function | Use Case | Return Value | Cascade | Speed |
+|----------|----------|--------------|---------|-------|
+| `delete-all` | When cascade deletion is needed | List of models | ✅ | Slow |
+| `delete-bulk` | Fast deletion | Count (integer) | ❌ | Fast |
+
+### 14.5. Error Handling
+
+#### `type-mismatch-error`
+
+Error raised when type mismatch occurs.
+
+```common-lisp
+(handler-case
+    (update-bulk '<user>
+                 '(:name :age)
+                 (list user1 post1 user2))
+  (type-mismatch-error (e)
+    (format t "Type mismatch: ~A~%" e)))
+```
+
+#### `:on-type-mismatch` Option
+
+- `:error`: Raise error (default)
+- `:skip`: Skip and continue
+
+```common-lisp
+;; Skip without raising error
+(let ((count (update-bulk '<user>
+                          '(:name :age)
+                          (list user1 post1 user2)
+                          :on-type-mismatch :skip)))
+  (format t "Updated ~A records~%" count))
+;; => Updated 2 records
+```
+
+### 14.6. Best Practices for Bulk Operations
+
+#### 1. Specify ORDER BY
+
+It is strongly recommended to specify ORDER BY for all databases.
+
+```common-lisp
+;; Recommended
+(with-query-cursor (rows
+                    (query <user> :as :u :order-by ((:u :id)))
+                    nil)
+  (dolist (row rows)
+    (process-row row)))
+
+;; Not recommended: Without ORDER BY (order not guaranteed)
+(with-query-cursor (rows
+                    (query <user> :as :u)
+                    nil)
+  (dolist (row rows)
+    (process-row row)))
+```
+
+#### 2. Choosing Batch Size
+
+Consider the trade-off between memory usage and database round trips.
+
+```common-lisp
+;; Recommended range: 100-5000 rows
+(with-query-cursor (rows
+                    (query <user> :as :u :order-by ((:u :id)))
+                    nil
+                    :batch-size 1000)  ; Default
+  ...)
+```
+
+#### 3. Transaction Management
+
+Use `with-transaction` when consistency is required.
+
+```common-lisp
+(with-transaction
+  (with-query-cursor (rows
+                      (query <user> :as :u :order-by ((:u :id)))
+                      nil)
+    (dolist (row rows)
+      (process-row row)))
+  
+  ;; Other operations in the same transaction
+  (save summary-data))
+```
+
+#### 4. Not Recommended for Online Processing
+
+Bulk operations occupy connections for long periods and maintain transactions, so they are not recommended for online processing. They are intended for batch processing and background jobs.
+
+```common-lisp
+;; Not recommended: Use in online processing
+(defun show-all-users ()
+  (with-query-cursor (rows
+                      (query <user> :as :u :order-by ((:u :id)))
+                      nil
+                      :batch-size 10000)  ; Batch size too large
+    (render-html rows)))  ; Display all results on screen
+
+;; Recommended: Use in batch processing
+(defun batch-process-users ()
+  (with-query-cursor (rows
+                      (query <user> :as :u :order-by ((:u :id)))
+                      nil
+                      :batch-size 1000)
+    (dolist (row rows)
+      (process-user-row row))))
+```
+
+---
+
 ## Summary
 
 clails Models have the following features:
@@ -1403,5 +1914,6 @@ clails Models have the following features:
 5. **Safety**: Support for validation, optimistic locking, pessimistic locking, and transactions
 6. **Transaction Management**: Easy transaction control with `with-transaction` and nested transaction (savepoint) support
 7. **Native Queries**: Flexible SQL query execution using cl-batis
+8. **Bulk Operations**: Support for streaming processing and batch operations for efficient handling of large data
 
 For detailed API reference, please refer to the docstring of each function.

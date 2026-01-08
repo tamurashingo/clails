@@ -32,6 +32,19 @@
                #:clails-test/model/pessimistic-lock/lock-sqlite3
                #:clails-test/model/pessimistic-lock/lock-mysql
                #:clails-test/model/pessimistic-lock/lock-postgresql
+               #:clails-test/model/bulk
+               #:clails-test/model/bulk/bulk-sqlite3
+               #:clails-test/model/bulk/bulk-mysql
+               #:clails-test/model/bulk/bulk-postgresql
+               #:clails-test/model/bulk/insert-sqlite3
+               #:clails-test/model/bulk/insert-mysql
+               #:clails-test/model/bulk/insert-postgresql
+               #:clails-test/model/bulk/update-sqlite3
+               #:clails-test/model/bulk/update-mysql
+               #:clails-test/model/bulk/update-postgresql
+               #:clails-test/model/bulk/delete-sqlite3
+               #:clails-test/model/bulk/delete-mysql
+               #:clails-test/model/bulk/delete-postgresql
                #:clails-test/logger/registry
                #:clails-test/logger/purpose-specific
                #:clails-test/logger/file-appender
