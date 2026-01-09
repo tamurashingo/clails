@@ -43,7 +43,9 @@
            #:save
            #:get-last-id-impl
            #:make-record
-           #:destroy))
+           #:destroy
+           #:insert1
+           #:generate-values))
 (in-package #:clails/model/query)
 
 ;;;; ----------------------------------------

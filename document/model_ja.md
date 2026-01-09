@@ -85,6 +85,14 @@ YYYYmmdd-HHMMSS-description.lisp
 - `:time` - 時刻
 - `:boolean` - 真偽値
 
+### データベースからの戻り値
+
+カラムの型によって、データベースから取得される値の形式が異なります。
+
+- `:datetime` - Universal Time（整数）として返されます
+- `:date` - Universal Time（整数）として返されます。時刻部分は 00:00:00 です
+- `:time` - 00:00:00 からの経過秒数（整数）として返されます
+
 ### カラムオプション
 
 - `:not-null` - NULL を許可しない場合は `T`、許可する場合は `NIL`
@@ -1504,6 +1512,517 @@ Model インスタンスは自動的に JSON に変換できます。
 
 ---
 
+## 14. バルク操作
+
+バルク操作は大量データを効率的に処理するための機能です。オンライン処理ではなく、バッチ処理やバックグラウンドジョブでの使用を想定しています。
+
+### 14.1. SELECT: `with-query-cursor`
+
+大量のSELECT結果をバッチ単位で効率的に処理します。全レコードをメモリに載せずにストリーミング処理を行います。
+
+#### 特徴
+
+- **データベース固有の最適化**
+  - PostgreSQL: サーバーサイドカーソル（トランザクション自動管理）
+  - MySQL: ストリーミング結果セット
+  - SQLite3: LIMIT/OFFSET ページネーション
+- バッチサイズの指定が可能（デフォルト: 1000）
+- `query` マクロと cl-batis の両方に対応
+
+#### 基本的な使い方
+
+```common-lisp
+;; query マクロを使用
+(with-query-cursor (user-rows
+                    (query <user> :as :u :order-by ((:u :id)))
+                    nil
+                    :batch-size 500)
+  (dolist (row user-rows)
+    (format t "User: ~A, Email: ~A~%"
+            (getf row :name)
+            (getf row :email))))
+```
+
+#### パラメータ付きクエリ
+
+```common-lisp
+(with-query-cursor (user-rows
+                    (query <user>
+                           :as :u
+                           :where (:> (:u :age) :age)
+                           :order-by ((:u :id)))
+                    '(:age 20)
+                    :batch-size 1000)
+  (dolist (row user-rows)
+    (process-user-row row)))
+```
+
+#### JOIN を含むクエリ
+
+```common-lisp
+(with-query-cursor (blog-rows
+                    (query <blog>
+                           :as :blog
+                           :joins ((:left-join :account))
+                           :order-by ((:blog :id)))
+                    nil
+                    :batch-size 500)
+  (dolist (row blog-rows)
+    (format t "Blog: ~A, Author: ~A~%"
+            (getf row :|BLOG.TITLE|)
+            (getf row :|ACCOUNT.NAME|))))
+```
+
+#### cl-batis を使用
+
+```common-lisp
+(select ("SELECT * FROM users WHERE age > :age ORDER BY id")
+  (defsql find-users-by-age-greater-than (age)))
+
+(with-query-cursor (user-rows
+                    find-users-by-age-greater-than
+                    '(:age 20)
+                    :batch-size 500)
+  (dolist (row user-rows)
+    (format t "User: ~A, Age: ~A~%"
+            (getf row :name)
+            (getf row :age))))
+```
+
+#### トランザクション内での使用
+
+```common-lisp
+;; PostgreSQL: トランザクションを明示的に開始（推奨）
+(with-transaction
+  (with-query-cursor (user-rows
+                      (query <user> :as :u :order-by ((:u :id)))
+                      nil
+                      :batch-size 500)
+    (dolist (row user-rows)
+      (process-user-row row)))
+  
+  ;; 他の処理も同じトランザクション内で実行可能
+  (save summary-data))
+
+;; 外部コネクションを使用
+(with-db-connection (conn)
+  (with-transaction-using-connection conn
+    (with-query-cursor (user-rows
+                        (query <user> :as :u :order-by ((:u :id)))
+                        nil
+                        :batch-size 500
+                        :connection conn)
+      (dolist (row user-rows)
+        (process-user-row row)))))
+```
+
+#### SQLの確認（デバッグ用）
+
+```common-lisp
+(show-query-sql (query <user>
+                       :as :u
+                       :where (:and (:= (:u :status) :status)
+                                   (:> (:u :age) :age))
+                       :order-by ((:u :id)))
+                '(:status "active" :age 20))
+;; => "SELECT U.ID as \"U.ID\", U.NAME as \"U.NAME\", ...
+;;     WHERE U.STATUS = 'active' AND U.AGE > 20 ORDER BY U.ID"
+```
+
+#### 注意事項
+
+1. **ORDER BY の指定は必須**: すべてのデータベースで ORDER BY を指定することを強く推奨します。ORDER BY がない場合、バッチ間で結果の順序が保証されず、重複や欠落が発生する可能性があります。
+
+2. **データベース別の注意点**:
+   - **PostgreSQL**: カーソルを使用するため、自動的にトランザクションが開始されます
+   - **MySQL**: ストリーミング結果セット使用中は接続が占有されます
+   - **SQLite3**: OFFSET が大きくなると性能が劣化します
+
+3. **バッチサイズの選択**: デフォルトは 1000 行です。メモリ使用量とデータベース往復回数のトレードオフを考慮して調整してください（推奨範囲: 100〜5000 行）
+
+### 14.2. INSERT: `insert-all` と `insert-bulk`
+
+大量データの挿入を効率的に行う2つの関数を提供します。
+
+#### `insert-all`: 1件ずつINSERT（ID書き戻しあり）
+
+各モデルインスタンスに対して `insert1` を実行し、INSERT後の id, created_at, updated_at が各インスタンスに設定されます。
+
+```common-lisp
+(let* ((users (list (make-record '<user> :name "Alice" :age 30 :email "alice@example.com")
+                    (make-record '<user> :name "Bob" :age 25 :email "bob@example.com")
+                    (make-record '<user> :name "Charlie" :age 35 :email "charlie@example.com")))
+       (inserted-users (insert-all users)))
+  
+  ;; 各インスタンスの id が設定される
+  (dolist (user inserted-users)
+    (format t "Inserted ID: ~A, Name: ~A~%"
+            (slot-value user 'id)
+            (ref user :name))))
+;; 出力:
+;; Inserted ID: 1, Name: Alice
+;; Inserted ID: 2, Name: Bob
+;; Inserted ID: 3, Name: Charlie
+```
+
+**トランザクション内で実行:**
+
+```common-lisp
+(with-transaction (conn)
+  (let ((users (list (make-record '<user> :name "Alice" :age 30)
+                     (make-record '<user> :name "Bob" :age 25))))
+    (insert-all users :connection conn)))
+```
+
+#### `insert-bulk`: バルクINSERT（高速、ID書き戻しなし）
+
+バルク INSERT を実行し、挿入件数のみを返します。plist または model のリストを受け取ります。
+
+**plist を使用:**
+
+```common-lisp
+(insert-bulk '<user>
+             '(:name :age :email)
+             '((:name "Alice" :age 30 :email "alice@example.com")
+               (:name "Bob" :age 25 :email "bob@example.com")
+               (:name "Charlie" :age 35 :email "charlie@example.com"))
+             :batch-size 100)
+;; => 3
+```
+
+**model インスタンスを使用:**
+
+```common-lisp
+(let ((users (list (make-record '<user> :name "Alice" :age 30 :email "alice@example.com")
+                   (make-record '<user> :name "Bob" :age 25 :email "bob@example.com")
+                   (make-record '<user> :name "Charlie" :age 35 :email "charlie@example.com"))))
+  (insert-bulk '<user>
+               '(:name :age :email)
+               users
+               :batch-size 100))
+;; => 3
+```
+
+**タイムスタンプの自動設定:**
+
+```common-lisp
+;; created_at, updated_at は未指定でも自動的に設定される
+(insert-bulk '<user>
+             '(:name :age)  ; created_at, updated_at は自動追加
+             '((:name "Alice" :age 30)
+               (:name "Bob" :age 25))
+             :batch-size 100)
+```
+
+**トランザクション内で実行:**
+
+```common-lisp
+(with-transaction (conn)
+  (insert-bulk '<user>
+               '(:name :age :email)
+               large-data-list
+               :connection conn
+               :use-transaction nil))  ; 外部でトランザクション管理
+```
+
+#### 使い分け
+
+| 関数 | 用途 | 戻り値 | ID書き戻し | 速度 |
+|-----|------|--------|-----------|------|
+| `insert-all` | INSERT後のモデルを使用 | モデルのリスト | ✅ | 遅い |
+| `insert-bulk` | CSVインポート等の高速挿入 | 挿入数（整数） | ❌ | 速い |
+
+### 14.3. UPDATE: `update-all` と `update-bulk`
+
+大量データの更新を効率的に行う2つの関数を提供します。
+
+#### `update-all`: 1件ずつUPDATE
+
+各モデルインスタンスに対して `update1` を実行します。dirty-flag が設定されたカラムのみが更新されます。
+
+```common-lisp
+(let* ((users (list user1 user2 user3)))
+  ;; 各ユーザーの情報を変更
+  (setf (ref user1 :name) "Alice Updated")
+  (setf (ref user2 :age) 26)
+  (setf (ref user3 :email) "charlie-new@example.com")
+  
+  ;; 一括更新
+  (let ((updated-users (update-all users)))
+    (dolist (user updated-users)
+      (format t "Updated ID: ~A, updated-at: ~A~%"
+              (slot-value user 'id)
+              (ref user :updated-at)))))
+```
+
+**異なるmodelクラスの混在:**
+
+```common-lisp
+(let* ((user (make-record '<user> :name "Alice" :age 30))
+       (post (make-record '<post> :title "Hello" :content "World"))
+       (inserted-user (first (insert-all (list user))))
+       (inserted-post (first (insert-all (list post)))))
+  
+  ;; 両方のインスタンスを変更
+  (setf (ref inserted-user :age) 31)
+  (setf (ref inserted-post :title) "Hello World")
+  
+  ;; 一括更新（user は users テーブル、post は posts テーブルに UPDATE される）
+  (let ((updated (update-all (list inserted-user inserted-post))))
+    (format t "Updated ~A records~%" (length updated))))
+;; => Updated 2 records
+```
+
+**トランザクション内で実行:**
+
+```common-lisp
+(with-transaction (conn)
+  (let ((users (list user1 user2)))
+    (update-all users :connection conn)))
+```
+
+#### `update-bulk`: バッチUPDATE
+
+バルク UPDATE を実行し、更新件数を返します。更新するカラムを明示的に指定します。
+
+```common-lisp
+(let ((users (list user1 user2 user3)))
+  ;; 各ユーザーの情報を変更
+  (setf (ref user1 :name) "Alice Updated")
+  (setf (ref user2 :age) 26)
+  (setf (ref user3 :email) "charlie-new@example.com")
+  
+  ;; バルク更新（カラムを指定）
+  (let ((count (update-bulk '<user> '(:name :age :email) users)))
+    (format t "Updated ~A records~%" count)))
+;; => Updated 3 records
+```
+
+**updated_at は自動更新:**
+
+```common-lisp
+;; updated_at は未指定でも自動的に更新される
+(update-bulk '<user> '(:name :age) users)
+;; => name, age, updated_at が更新される
+```
+
+**id と created_at は除外:**
+
+```common-lisp
+;; id と created_at は指定しても無視される
+(update-bulk '<user> '(:id :name :created-at :age) users)
+;; => name, age, updated_at が更新される（id と created_at は除外）
+```
+
+**型不一致時の動作指定:**
+
+```common-lisp
+;; デフォルトは :error - 異なる型があればエラー
+(update-bulk '<user>
+             '(:name :age)
+             (list user1 post1 user2))  ; post1 は <post> インスタンス
+;; => type-mismatch-error が発生
+
+;; :skip - 異なる型はスキップ
+(update-bulk '<user>
+             '(:name :age)
+             (list user1 post1 user2)
+             :on-type-mismatch :skip)
+;; => 2 (user1 と user2 のみ更新、post1 はスキップ)
+```
+
+#### 使い分け
+
+| 関数 | 用途 | 戻り値 | カラム指定 | 速度 |
+|-----|------|--------|-----------|------|
+| `update-all` | dirty-flagに基づく更新 | モデルのリスト | dirty-flag | 遅い |
+| `update-bulk` | カラムを明示的に指定して更新 | 更新数（整数） | 明示的 | 中速 |
+
+### 14.4. DELETE: `delete-all` と `delete-bulk`
+
+大量データの削除を効率的に行う2つの関数を提供します。
+
+#### `delete-all`: 1件ずつDELETE
+
+各モデルインスタンスに対して `destroy` を実行します。カスケード削除に対応しています。
+
+```common-lisp
+;; 基本的な削除
+(let ((users (list user1 user2 user3)))
+  (let ((deleted-users (delete-all users)))
+    (format t "Deleted ~A users~%" (length deleted-users))))
+;; => Deleted 3 users
+```
+
+**カスケード削除:**
+
+```common-lisp
+;; カスケード削除を有効にする
+(let ((users (list user1 user2)))
+  (delete-all users :cascade t))
+;; => user1, user2 とそれらに関連するレコードを削除
+```
+
+**トランザクション内で実行:**
+
+```common-lisp
+(with-transaction (conn)
+  (let ((users (list user1 user2)))
+    (delete-all users :connection conn)))
+```
+
+#### `delete-bulk`: バッチDELETE
+
+バルク DELETE を実行し、削除件数を返します。IN 句を使用した最適化版で実装されています。
+
+```common-lisp
+;; 基本的な使い方
+(let ((users (list user1 user2 user3)))
+  (let ((count (delete-bulk '<user> users)))
+    (format t "Deleted ~A records~%" count)))
+;; => Deleted 3 records
+```
+
+**カスタムバッチサイズ:**
+
+```common-lisp
+(delete-bulk '<user> large-user-list :batch-size 50)
+```
+
+**型不一致時の動作指定:**
+
+```common-lisp
+;; デフォルトは :error - 異なる型があればエラー
+(delete-bulk '<user> (list user1 product1 user2))
+;; => type-mismatch-error が発生
+
+;; :skip - 異なる型はスキップ
+(delete-bulk '<user> (list user1 product1 user2) :on-type-mismatch :skip)
+;; => 2 (user1 と user2 のみ削除、product1 はスキップ)
+```
+
+**トランザクション内で実行:**
+
+```common-lisp
+(with-transaction (conn)
+  (delete-bulk '<user> users
+               :connection conn
+               :use-transaction nil))  ; 外部でトランザクション管理
+```
+
+#### 使い分け
+
+| 関数 | 用途 | 戻り値 | カスケード | 速度 |
+|-----|------|--------|-----------|------|
+| `delete-all` | カスケード削除が必要 | モデルのリスト | ✅ | 遅い |
+| `delete-bulk` | 高速に削除 | 削除数（整数） | ❌ | 速い |
+
+### 14.5. エラーハンドリング
+
+#### `type-mismatch-error`
+
+型不一致が発生した場合のエラーです。
+
+```common-lisp
+(handler-case
+    (update-bulk '<user>
+                 '(:name :age)
+                 (list user1 post1 user2))
+  (type-mismatch-error (e)
+    (format t "Type mismatch: ~A~%" e)))
+```
+
+#### `:on-type-mismatch` オプション
+
+- `:error`: エラーを発生させる（デフォルト）
+- `:skip`: スキップして続行
+
+```common-lisp
+;; エラーを発生させずにスキップ
+(let ((count (update-bulk '<user>
+                          '(:name :age)
+                          (list user1 post1 user2)
+                          :on-type-mismatch :skip)))
+  (format t "Updated ~A records~%" count))
+;; => Updated 2 records
+```
+
+### 14.6. バルク操作のベストプラクティス
+
+#### 1. ORDER BY の指定
+
+すべてのデータベースで ORDER BY を指定することを強く推奨します。
+
+```common-lisp
+;; 推奨
+(with-query-cursor (rows
+                    (query <user> :as :u :order-by ((:u :id)))
+                    nil)
+  (dolist (row rows)
+    (process-row row)))
+
+;; 非推奨: ORDER BY なし（結果の順序が保証されない）
+(with-query-cursor (rows
+                    (query <user> :as :u)
+                    nil)
+  (dolist (row rows)
+    (process-row row)))
+```
+
+#### 2. バッチサイズの選択
+
+メモリ使用量とデータベース往復回数のトレードオフを考慮します。
+
+```common-lisp
+;; 推奨範囲: 100〜5000 行
+(with-query-cursor (rows
+                    (query <user> :as :u :order-by ((:u :id)))
+                    nil
+                    :batch-size 1000)  ; デフォルト
+  ...)
+```
+
+#### 3. トランザクション管理
+
+一貫性が必要な場合は `with-transaction` で囲みます。
+
+```common-lisp
+(with-transaction
+  (with-query-cursor (rows
+                      (query <user> :as :u :order-by ((:u :id)))
+                      nil)
+    (dolist (row rows)
+      (process-row row)))
+  
+  ;; 他の処理も同じトランザクション内で
+  (save summary-data))
+```
+
+#### 4. オンライン処理での使用は非推奨
+
+バルク操作は長時間接続を占有したり、トランザクションを維持したりするため、オンライン処理での使用は非推奨です。バッチ処理やバックグラウンドジョブでの使用を想定しています。
+
+```common-lisp
+;; 非推奨: オンライン処理での使用
+(defun show-all-users ()
+  (with-query-cursor (rows
+                      (query <user> :as :u :order-by ((:u :id)))
+                      nil
+                      :batch-size 10000)  ; バッチサイズが大きすぎる
+    (render-html rows)))  ; すべての結果を画面に表示
+
+;; 推奨: バッチ処理での使用
+(defun batch-process-users ()
+  (with-query-cursor (rows
+                      (query <user> :as :u :order-by ((:u :id)))
+                      nil
+                      :batch-size 1000)
+    (dolist (row rows)
+      (process-user-row row))))
+```
+
+---
+
 ## まとめ
 
 clails の Model は以下の特徴を持ちます。
@@ -1515,5 +2034,6 @@ clails の Model は以下の特徴を持ちます。
 5. **安全性**: バリデーション、楽観的ロック・悲観的ロック、トランザクションのサポート
 6. **トランザクション管理**: `with-transaction` による簡単なトランザクション制御とネストしたトランザクション（セーブポイント）のサポート
 7. **ネイティブクエリ**: cl-batis を使用した柔軟な SQL クエリの実行
+8. **バルク操作**: 大量データを効率的に処理するためのストリーミング処理とバッチ操作のサポート
 
 詳細な API リファレンスについては、各関数の docstring を参照してください。

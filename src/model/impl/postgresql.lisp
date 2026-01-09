@@ -83,14 +83,23 @@
                                                          :null))))
     ("date" . (:type :date
                :db-cl-fn ,#'keyword-null
-               :cl-db-fn ,#'identity-null))
+                :cl-db-fn ,#'(lambda (ut)
+                                (if ut
+                                    (multiple-value-bind (sec min hour date month year day daylight-p zone)
+                                        (decode-universal-time ut)
+                                      (format nil "~4,\'0d-~2,\'0d-~2,\'0d" year month date))
+                                    :null))))
     ("time without time zone" . (:type :time
                                  :db-cl-fn ,#'(lambda (v)
                                                 (when (not (eq v :null))
                                                   (+ (* 60 60 (cadr (assoc :HOURS v)))
                                                      (* 60 (cadr (assoc :MINUTES v)))
                                                      (cadr (assoc :SECONDS v)))))
-                                 :cl-db-fn ,#'identity-null))
+                                 :cl-db-fn ,#'(lambda (ut)
+                                                 (when ut
+                                                   (multiple-value-bind (sec min hour date month year day daylight-p zone)
+                                                       (decode-universal-time ut)
+                                                     (format nil "~2,\'0d:~2,\'0d:~2,\'0d" hour min sec))))))
     ("boolean" . (:type :boolean
                   :db-cl-fn ,#'(lambda (v)
                                  (cond ((and (numberp v)
@@ -355,13 +364,38 @@
          (host (getf config :host))
          (port (parse-integer (getf config :port)))
          (username (getf config :username))
-         (password (getf config :password)))
-    (dbi-cp:make-dbi-connection-pool :postgres
-                                     :database-name database-name
-                                     :host host
-                                     :port port
-                                     :username username
-                                     :password password)))
+         (password (getf config :password))
+         (not-found (gensym))
+         (args (list :database-name database-name
+                     :host host
+                     :port port
+                     :username username
+                     :password password)))
+    (let ((initial-size (getf config :initial-size not-found)))
+      (unless (eq initial-size not-found)
+        (setf args (append args (list :initial-size initial-size)))))
+    (let ((max-size (getf config :max-size not-found)))
+      (unless (eq max-size not-found)
+        (setf args (append args (list :max-size max-size)))))
+    (let ((checkout-timeout (getf config :checkout-timeout not-found)))
+      (unless (eq checkout-timeout not-found)
+        (setf args (append args (list :checkout-timeout checkout-timeout)))))
+    (let ((idle-timeout (getf config :idle-timeout not-found)))
+      (unless (eq idle-timeout not-found)
+        (setf args (append args (list :idle-timeout idle-timeout)))))
+    (let ((max-lifetime (getf config :max-lifetime not-found)))
+      (unless (eq max-lifetime not-found)
+        (setf args (append args (list :max-lifetime max-lifetime)))))
+    (let ((keepalive-interval (getf config :keepalive-interval not-found)))
+      (unless (eq keepalive-interval not-found)
+        (setf args (append args (list :keepalive-interval keepalive-interval)))))
+    (let ((validation-query (getf config :validation-query not-found)))
+      (unless (eq validation-query not-found)
+        (setf args (append args (list :validation-query validation-query)))))
+    (let ((reaper-interval (getf config :reaper-interval not-found)))
+      (unless (eq reaper-interval not-found)
+        (setf args (append args (list :reaper-interval reaper-interval)))))
+    (apply #'dbi-cp:make-dbi-connection-pool :postgres args)))
 
 
 (defparameter CREATE-DATABASE

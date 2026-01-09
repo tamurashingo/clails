@@ -196,7 +196,7 @@ Open `app/models/todo.lisp` and add the necessary functionality for the TODO app
   (:import-from #:clails/datetime
                 #:from-universal-time
                 #:format-datetime)
-  (:import-from #:clails/datetime
+  (:import-from #:local-time
                 #:now)
   (:export #:<todo>
            #:find-all

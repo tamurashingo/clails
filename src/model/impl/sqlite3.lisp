@@ -91,7 +91,15 @@
                                  (parse-integer (subseq v 8 10))
                                  (parse-integer (subseq v 5 7))
                                  (parse-integer (subseq v 0 4)))))
-               :cl-db-fn ,#'identity))
+               :cl-db-fn ,#'(lambda (ut)
+                              (when ut
+                                    (let ((universal-time 
+                                           (if (typep ut 'local-time:timestamp)
+                                               (local-time:timestamp-to-universal ut)
+                                               ut)))
+                                      (multiple-value-bind (sec min hour date month year day daylight-p zone)
+                                          (decode-universal-time universal-time)
+                                        (format nil "~4,\'0d-~2,\'0d-~2,\'0d" year month date)))))))
     ("time" . (:type :time
                :db-cl-fn ,#'(lambda (v)
                               (when v
@@ -100,7 +108,12 @@
                                 (+ (* 60 60 (parse-integer (subseq v 0 2)))
                                    (* 60 (parse-integer (subseq v 3 5)))
                                    (parse-integer (subseq v 6 8)))))
-               :cl-db-fn ,#'identity))
+               :cl-db-fn ,#'(lambda (n)
+                              (when n
+                                (let* ((hours (floor n 3600))
+                                       (minutes (floor (mod n 3600) 60))
+                                       (seconds (mod n 60)))
+                                  (format nil "~2,\'0d:~2,\'0d:~2,\'0d" hours minutes seconds))))))
     ("boolean" . (:type :boolean
                   :db-cl-fn ,#'(lambda (v)
                                  (if (or (null v)
@@ -345,10 +358,32 @@
 
 (defmethod create-connection-pool-impl ((database-type <database-type-sqlite3>))
   (declare (ignore database-type))
-  (let ((database-name (getf (getf *database-config* *project-environment*)
-                             :database-name)))
-    (dbi-cp:make-dbi-connection-pool :sqlite3
-                                     :database-name database-name)))
+  (let* ((config (getf *database-config* *project-environment*))
+         (database-name (getf config :database-name))
+         (not-found (gensym))
+         (args (list :database-name database-name)))
+    (let ((initial-size (getf config :initial-size not-found)))
+      (unless (eq initial-size not-found)
+        (setf args (append args (list :initial-size initial-size)))))
+    (let ((max-size (getf config :max-size not-found)))
+      (unless (eq max-size not-found)
+        (setf args (append args (list :max-size max-size)))))
+    (let ((checkout-timeout (getf config :checkout-timeout not-found)))
+      (unless (eq checkout-timeout not-found)
+        (setf args (append args (list :checkout-timeout checkout-timeout)))))
+    (let ((idle-timeout (getf config :idle-timeout not-found)))
+      (unless (eq idle-timeout not-found)
+        (setf args (append args (list :idle-timeout idle-timeout)))))
+    (let ((max-lifetime (getf config :max-lifetime not-found)))
+      (unless (eq max-lifetime not-found)
+        (setf args (append args (list :max-lifetime max-lifetime)))))
+    (let ((keepalive-interval (getf config :keepalive-interval not-found)))
+      (unless (eq keepalive-interval not-found)
+        (setf args (append args (list :keepalive-interval keepalive-interval)))))
+    (let ((reaper-interval (getf config :reaper-interval not-found)))
+      (unless (eq reaper-interval not-found)
+        (setf args (append args (list :reaper-interval reaper-interval)))))
+    (apply #'dbi-cp:make-dbi-connection-pool :sqlite3 args)))
 
 
 (defparameter CREATE-MIGRATION-TABLE

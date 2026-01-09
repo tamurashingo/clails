@@ -24,7 +24,7 @@
   (:import-from #:clails/util
                 #:env-or-default))
 
-(defpackage #:clails-test/model/ransaction/db/transaction-mysql
+(defpackage #:clails-test/model/db/transaction
   (:use #:cl)
   (:import-from #:clails/model/migration
                 #:defmigration
