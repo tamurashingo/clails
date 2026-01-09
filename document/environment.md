@@ -53,6 +53,48 @@ These environment variables are referenced in `app/config/database.lisp`.
     :production (:database-name ,(env "CLAILS_DB_NAME"))))
 ```
 
+**Connection Pool Configuration (Optional)**:
+
+For SQLite3, you can specify additional parameters to fine-tune connection pool behavior.
+
+| Parameter | Description | Type | Default Value |
+|-----------|-------------|------|---------------|
+| `:initial-size` | Initial pool size (number of connections created at startup) | integer | 10 |
+| `:max-size` | Maximum pool size (connection limit) | integer | 10 |
+| `:checkout-timeout` | Connection checkout timeout (seconds) | integer | 30 |
+| `:idle-timeout` | Idle connection disposal time (seconds) | integer | 600 |
+| `:max-lifetime` | Maximum connection lifetime (seconds) | integer | 1800 |
+| `:keepalive-interval` | Keepalive execution interval (seconds) | integer | 0 (disabled) |
+| `:reaper-interval` | Unused connection reaping interval (seconds) | integer | 60 |
+
+**Note**: SQLite3 does not support the `:validation-query` parameter.
+
+**Configuration Example (Connection Pool Customization)**:
+```lisp
+;; app/config/database.lisp
+(setf clails/environment:*database-config*
+  (list
+    :develop (:database-name ,(env-or-default "CLAILS_DB_NAME" 
+                                            "./tmp/myapp-develop.sqlite3")
+              ;; Connection pool configuration
+              :initial-size 10         ; Create 10 connections at startup
+              :max-size 10             ; Allow up to 10 connections
+              :checkout-timeout 30     ; Error if connection not available after 30 seconds
+              :idle-timeout 600        ; Dispose idle connections after 10 minutes
+              :max-lifetime 1800       ; Maximum connection lifetime is 30 minutes
+              :keepalive-interval 0    ; Keepalive disabled
+              :reaper-interval 60)     ; Reap unused connections every 60 seconds
+    :production (:database-name ,(env "CLAILS_DB_NAME")
+                 ;; Connection pool configuration for production
+                 :initial-size 10
+                 :max-size 10
+                 :checkout-timeout 30
+                 :idle-timeout 600
+                 :max-lifetime 1800
+                 :keepalive-interval 0
+                 :reaper-interval 60)))
+```
+
 #### For MySQL
 
 | Environment Variable | Description | Default Value (Development) | Default Value (Test) | Production Handling |
@@ -85,6 +127,55 @@ These environment variables are referenced in `app/config/database.lisp`.
                  :password ,(env "CLAILS_DB_PASSWORD"))))
 ```
 
+**Connection Pool Configuration (Optional)**:
+
+For MySQL, you can specify additional parameters to fine-tune connection pool behavior.
+
+| Parameter | Description | Type | Default Value |
+|-----------|-------------|------|---------------|
+| `:initial-size` | Initial pool size (number of connections created at startup) | integer | 3 |
+| `:max-size` | Maximum pool size (connection limit) | integer | 10 |
+| `:checkout-timeout` | Connection checkout timeout (seconds) | integer | 5 |
+| `:idle-timeout` | Idle connection disposal time (seconds) | integer | 600 |
+| `:max-lifetime` | Maximum connection lifetime (seconds) | integer | 1800 |
+| `:keepalive-interval` | Keepalive execution interval (seconds) | integer | 0 (disabled) |
+| `:validation-query` | Connection validation query | string | "SELECT 1" |
+| `:reaper-interval` | Unused connection reaping interval (seconds) | integer | 60 |
+
+**Configuration Example (Connection Pool Customization)**:
+```lisp
+;; app/config/database.lisp
+(setf clails/environment:*database-config*
+  (list
+    :develop (:database-name ,(env-or-default "CLAILS_DB_NAME" "myapp_develop")
+              :host ,(env-or-default "CLAILS_DB_HOST" "localhost")
+              :port ,(env-or-default "CLAILS_DB_PORT" "3306")
+              :username ,(env-or-default "CLAILS_DB_USERNAME" "root")
+              :password ,(env-or-default "CLAILS_DB_PASSWORD" "password")
+              ;; Connection pool configuration
+              :initial-size 5          ; Create 5 connections at startup
+              :max-size 20             ; Allow up to 20 connections
+              :checkout-timeout 10     ; Error if connection not available after 10 seconds
+              :idle-timeout 300        ; Dispose idle connections after 5 minutes
+              :max-lifetime 3600       ; Maximum connection lifetime is 1 hour
+              :keepalive-interval 30   ; Execute keepalive every 30 seconds
+              :validation-query "SELECT 1" ; Connection validation query
+              :reaper-interval 30)     ; Reap unused connections every 30 seconds
+    :production (:database-name ,(env "CLAILS_DB_NAME")
+                 :host ,(env "CLAILS_DB_HOST")
+                 :port ,(env "CLAILS_DB_PORT")
+                 :username ,(env "CLAILS_DB_USERNAME")
+                 :password ,(env "CLAILS_DB_PASSWORD")
+                 ;; Larger values for production
+                 :initial-size 10
+                 :max-size 50
+                 :checkout-timeout 5
+                 :idle-timeout 600
+                 :max-lifetime 3600
+                 :keepalive-interval 60
+                 :reaper-interval 60)))
+```
+
 #### For PostgreSQL
 
 | Environment Variable | Description | Default Value (Development) | Default Value (Test) | Production Handling |
@@ -115,6 +206,55 @@ These environment variables are referenced in `app/config/database.lisp`.
                  :port ,(env "CLAILS_DB_PORT")
                  :username ,(env "CLAILS_DB_USERNAME")
                  :password ,(env "CLAILS_DB_PASSWORD"))))
+```
+
+**Connection Pool Configuration (Optional)**:
+
+For PostgreSQL, you can specify additional parameters to fine-tune connection pool behavior.
+
+| Parameter | Description | Type | Default Value |
+|-----------|-------------|------|---------------|
+| `:initial-size` | Initial pool size (number of connections created at startup) | integer | 3 |
+| `:max-size` | Maximum pool size (connection limit) | integer | 10 |
+| `:checkout-timeout` | Connection checkout timeout (seconds) | integer | 5 |
+| `:idle-timeout` | Idle connection disposal time (seconds) | integer | 600 |
+| `:max-lifetime` | Maximum connection lifetime (seconds) | integer | 1800 |
+| `:keepalive-interval` | Keepalive execution interval (seconds) | integer | 0 (disabled) |
+| `:validation-query` | Connection validation query | string | "SELECT 1" |
+| `:reaper-interval` | Unused connection reaping interval (seconds) | integer | 60 |
+
+**Configuration Example (Connection Pool Customization)**:
+```lisp
+;; app/config/database.lisp
+(setf clails/environment:*database-config*
+  (list
+    :develop (:database-name ,(env-or-default "CLAILS_DB_NAME" "myapp_develop")
+              :host ,(env-or-default "CLAILS_DB_HOST" "localhost")
+              :port ,(env-or-default "CLAILS_DB_PORT" "5432")
+              :username ,(env-or-default "CLAILS_DB_USERNAME" "postgres")
+              :password ,(env-or-default "CLAILS_DB_PASSWORD" "password")
+              ;; Connection pool configuration
+              :initial-size 5          ; Create 5 connections at startup
+              :max-size 20             ; Allow up to 20 connections
+              :checkout-timeout 10     ; Error if connection not available after 10 seconds
+              :idle-timeout 300        ; Dispose idle connections after 5 minutes
+              :max-lifetime 3600       ; Maximum connection lifetime is 1 hour
+              :keepalive-interval 30   ; Execute keepalive every 30 seconds
+              :validation-query "SELECT 1" ; Connection validation query
+              :reaper-interval 30)     ; Reap unused connections every 30 seconds
+    :production (:database-name ,(env "CLAILS_DB_NAME")
+                 :host ,(env "CLAILS_DB_HOST")
+                 :port ,(env "CLAILS_DB_PORT")
+                 :username ,(env "CLAILS_DB_USERNAME")
+                 :password ,(env "CLAILS_DB_PASSWORD")
+                 ;; Larger values for production
+                 :initial-size 10
+                 :max-size 50
+                 :checkout-timeout 5
+                 :idle-timeout 600
+                 :max-lifetime 3600
+                 :keepalive-interval 60
+                 :reaper-interval 60)))
 ```
 
 ### Environment Variable Utility Functions
