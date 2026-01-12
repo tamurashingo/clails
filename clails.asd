@@ -11,7 +11,7 @@
 
 (defsystem clails
   :class :package-inferred-system
-  :version "0.0.3-alpha"
+  :version "0.0.3"
   :author "tamura shingo"
   :license "MIT"
   :pathname "src"
