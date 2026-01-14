@@ -406,21 +406,89 @@ clails/environment:*routing-tables*
 
 **Type**: `list`
 
-**Structure**:
-```lisp
-'((:path "/path"
-   :controller "package::<controller-class>")
-  ...)
-```
+**Default value**: `'((:path "/" :controller "clails/controller/base-controller:<default-controller>"))`
 
-**Usage**:
+**Configuration location**: `app/config/environment.lisp`
+
+**Route Entry Properties**:
+
+Each route entry is a plist with the following properties:
+
+**Required properties**:
+- `:path` [string] - URI path pattern. Supports parameter placeholders like `/users/:id`
+- `:controller` [string] - Fully qualified controller class name in format `"package::<class-name>"`
+
+**Optional properties** (for custom routing patterns):
+- `:scanner` [string] - Custom regex pattern string for matching request paths. Takes highest priority.
+- `:keys` [list of strings] - List of URL parameter names to extract. Used with `:scanner`.
+- `:generate-scanner` [function designator] - Function to generate `:scanner` and `:keys` dynamically. Must return a plist with `:scanner` (string) and `:keys` (list).
+
+**Priority order for scanner generation**:
+1. `:scanner` (highest priority)
+2. `:generate-scanner` (only if `:scanner` not present)
+3. Default behavior using `create-scanner-from-uri-path`
+
+**Basic Usage**:
 ```lisp
-;; app/config/routes.lisp
+;; app/config/environment.lisp
 (setf clails/environment:*routing-tables*
   '((:path "/"
      :controller "myapp/controller::<top-controller>")
     (:path "/users/:id"
      :controller "myapp/controller::<user-controller>")))
+
+;; Initialize routing tables
+(clails/controller/base-controller:initialize-routing-tables)
+```
+
+**Advanced Usage - Custom Routing Patterns**:
+
+```lisp
+;; Catch-all route for SPA (Single Page Application)
+(setf clails/environment:*routing-tables*
+  '((:path "/spa/*"
+     :controller "myapp/controller::<spa-controller>"
+     :scanner "^/spa/.*$")))
+
+;; Static file serving with parameter extraction
+(setf clails/environment:*routing-tables*
+  '((:path "/static/*"
+     :controller "myapp/controller::<static-controller>"
+     :scanner "^/static/(.*)$"
+     :keys ("filepath"))))
+
+;; Numeric ID only constraint
+(setf clails/environment:*routing-tables*
+  '((:path "/users/:id"
+     :controller "myapp/controller::<user-controller>"
+     :scanner "^/users/([0-9]+)$"
+     :keys ("id"))))
+
+;; Custom scanner generator function
+(setf clails/environment:*routing-tables*
+  '((:path "/api/*"
+     :controller "myapp/controller::<api-controller>"
+     :generate-scanner (lambda (route-entry)
+                         (let ((path (getf route-entry :path)))
+                           (list :scanner "^/api/.*$"
+                                 :keys nil))))))
+
+;; Mixed patterns
+(setf clails/environment:*routing-tables*
+  '(;; Default pattern with parameters
+    (:path "/posts/:post-id/comments/:comment-id"
+     :controller "myapp/controller::<comments-controller>")
+    
+    ;; Catch-all for SPA
+    (:path "/app/*"
+     :controller "myapp/controller::<spa-controller>"
+     :scanner "^/app/.*$")
+    
+    ;; Custom pattern with parameter
+    (:path "/files/*"
+     :controller "myapp/controller::<file-controller>"
+     :scanner "^/files/(.*)$"
+     :keys ("path"))))
 
 ;; Initialize routing tables
 (clails/controller/base-controller:initialize-routing-tables)

@@ -74,7 +74,72 @@
 
 (defparameter *routing-tables*
   '((:path "/"
-     :controller "clails/controller/base-controller:<default-controller>")))
+     :controller "clails/controller/base-controller:<default-controller>"))
+  "Application routing table configuration.
+
+   Each route entry is a plist with the following properties:
+
+   Required properties:
+   - :path [string]
+     URI path pattern. Supports parameter placeholders like /users/:id
+     Examples: \"/\", \"/users/:id\", \"/blog/:blog-id/comment/:comment-id\"
+
+   - :controller [string]
+     Fully qualified controller class name in format \"package::<class-name>\"
+     Example: \"myapp/controllers/users:<user-controller>\"
+
+   Optional properties (for custom routing patterns):
+   - :scanner [string]
+     Custom regex pattern string for matching request paths.
+     When specified, this takes highest priority over automatic pattern generation.
+     Examples: \"^/spa/.*$\" (catch-all), \"^/users/([0-9]+)$\" (numeric ID only)
+
+   - :keys [list of strings]
+     List of URL parameter names to extract from the matched path.
+     Used with :scanner to specify which capture groups correspond to parameters.
+     If :scanner is specified without :keys, keys defaults to NIL.
+     Example: '(\"id\" \"post-id\")
+
+   - :generate-scanner [function designator]
+     Function to generate :scanner and :keys dynamically.
+     Called with the entire route entry as argument.
+     Must return a plist with :scanner (string) and :keys (list).
+     Only used if :scanner is not specified.
+     Example: (lambda (route-entry)
+                (let ((path (getf route-entry :path)))
+                  (list :scanner (format nil \"^~A.*$\" path)
+                        :keys nil)))
+
+   Priority order for scanner generation:
+   1. :scanner (highest priority)
+   2. :generate-scanner (only if :scanner not present)
+   3. Default behavior using create-scanner-from-uri-path
+
+   Example configurations:
+
+   ;; Default behavior - automatic pattern generation
+   (:path \"/users/:id\" :controller \"myapp/controllers/users:<user-controller>\")
+
+   ;; Custom scanner for catch-all routes (SPA)
+   (:path \"/spa/*\"
+    :controller \"myapp/controllers/spa:<spa-controller>\"
+    :scanner \"^/spa/.*$\")
+
+   ;; Custom scanner with parameter extraction
+   (:path \"/static/*\"
+    :controller \"myapp/controllers/static:<static-controller>\"
+    :scanner \"^/static/(.*)$\"
+    :keys (\"filepath\"))
+
+   ;; Custom scanner generator function
+   (:path \"/api/*\"
+    :controller \"myapp/controllers/api:<api-controller>\"
+    :generate-scanner (lambda (route-entry)
+                        (let ((path (getf route-entry :path)))
+                          (list :scanner \"^/api/.*$\"
+                                :keys nil))))
+
+   Set in app/config/environment.lisp.")
 
 (defparameter *startup-hooks*
   '("clails/model/connection:startup-connection-pool"))
