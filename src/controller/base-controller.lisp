@@ -289,11 +289,51 @@
 
    Converts *routing-tables* entries into *router* by adding regex scanners
    for each route path pattern.
+
+   Route entries can specify custom scanners using:
+   - :scanner - Custom regex pattern string (highest priority)
+   - :generate-scanner - Function to generate scanner (called if :scanner not present)
+   - Default behavior - Uses create-scanner-from-uri-path
+
+   @condition error When :scanner is specified but not a string
+   @condition error When :generate-scanner specifies a non-existent function
+   @condition error When :generate-scanner returns invalid format
    "
   (setf *router*
         (loop for tbl in *routing-tables*
-              collect(append tbl
-                             (create-scanner-from-uri-path (getf tbl :path))))))
+              collect (let ((path (getf tbl :path))
+                            (scanner (getf tbl :scanner))
+                            (keys (getf tbl :keys))
+                            (generate-scanner (getf tbl :generate-scanner)))
+                        (cond
+                          ;; Priority 1: :scanner specified
+                          (scanner
+                           (when generate-scanner
+                             (format *error-output*
+                                     "Warning: Both :scanner and :generate-scanner are specified for path '~A'. Using :scanner and ignoring :generate-scanner.~%"
+                                     path))
+                           (unless (stringp scanner)
+                             (error "Invalid :scanner value for path '~A': must be a string" path))
+                           (append tbl `(:scanner ,scanner :keys ,(or keys nil))))
+                          
+                          ;; Priority 2: :generate-scanner specified
+                          (generate-scanner
+                           (unless (or (functionp generate-scanner)
+                                       (and (symbolp generate-scanner)
+                                            (fboundp generate-scanner)))
+                             (error "Invalid :generate-scanner for path '~A': function not found" path))
+                           (let ((result (funcall generate-scanner tbl)))
+                             (unless (and (listp result)
+                                          (getf result :scanner)
+                                          (stringp (getf result :scanner)))
+                               (error "Invalid return value from :generate-scanner for path '~A': must return plist with :scanner (string) and :keys (list)"
+                                      path))
+                             (append tbl result)))
+                          
+                          ;; Priority 3: Default behavior
+                          (t
+                           (append tbl
+                                   (create-scanner-from-uri-path path))))))))
 
 
 (defun create-scanner-from-uri-path (path)
