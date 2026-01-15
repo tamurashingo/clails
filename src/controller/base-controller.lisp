@@ -116,7 +116,7 @@
     (when (log-level-enabled-p :trace)
       (log-package.trace "do-get called"))
     (error '404/not-found
-           :path (getf (getf controller :request)
+           :path (getf (request controller)
                        :path-info))))
 
 (defgeneric do-post (controller)
@@ -132,7 +132,7 @@
     (when (log-level-enabled-p :trace)
       (log-package.trace "do-post called"))
     (error '404/not-found
-           :path (getf (getf controller :request)
+           :path (getf (request controller)
                        :path-info))))
 
 (defgeneric do-put (controller)
@@ -148,7 +148,7 @@
     (when (log-level-enabled-p :trace)
       (log-package.trace "do-put called"))
     (error '404/not-found
-           :path (getf (getf controller :request)
+           :path (getf (request controller)
                        :path-info))))
 
 (defgeneric do-delete (controller)
@@ -164,7 +164,7 @@
     (when (log-level-enabled-p :trace)
       (log-package.trace "do-delete called"))
     (error '404/not-found
-           :path (getf (getf controller :request)
+           :path (getf (request controller)
                        :path-info))))
 
 
