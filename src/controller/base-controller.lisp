@@ -3,6 +3,8 @@
   (:use #:cl)
   (:import-from #:alexandria
                 #:appendf)
+  (:import-from #:lack/request
+                #:request-path-info)
   (:import-from #:clails/condition
                 #:404/not-found)
   (:import-from #:clails/environment
@@ -116,8 +118,7 @@
     (when (log-level-enabled-p :trace)
       (log-package.trace "do-get called"))
     (error '404/not-found
-           :path (getf (request controller)
-                       :path-info))))
+           :path (request-path-info (request controller)))))
 
 (defgeneric do-post (controller)
   (:documentation "Handle HTTP POST request.
@@ -132,8 +133,7 @@
     (when (log-level-enabled-p :trace)
       (log-package.trace "do-post called"))
     (error '404/not-found
-           :path (getf (request controller)
-                       :path-info))))
+           :path (request-path-info (request controller)))))
 
 (defgeneric do-put (controller)
   (:documentation "Handle HTTP PUT request.
@@ -148,8 +148,7 @@
     (when (log-level-enabled-p :trace)
       (log-package.trace "do-put called"))
     (error '404/not-found
-           :path (getf (request controller)
-                       :path-info))))
+           :path (request-path-info (request controller)))))
 
 (defgeneric do-delete (controller)
   (:documentation "Handle HTTP DELETE request.
@@ -164,8 +163,7 @@
     (when (log-level-enabled-p :trace)
       (log-package.trace "do-delete called"))
     (error '404/not-found
-           :path (getf (request controller)
-                       :path-info))))
+           :path (request-path-info (request controller)))))
 
 
 (defmethod set-view ((controller <web-controller>) viewname &optional data)
