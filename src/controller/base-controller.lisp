@@ -95,6 +95,16 @@
              :documentation "Response data for REST API"))
   (:documentation "Controller class for REST API endpoints that return structured data."))
 
+(defmethod initialize-instance :after ((c <rest-controller>) &rest initargs)
+  "Set default content-type header to application/json after initialization.
+
+   @param c [<rest-controller>] Controller instance being initialized
+   @param initargs [list] Initialization arguments (ignored)
+   "
+  (declare (ignore initargs))
+  (let ((header (header c)))
+    (setf (slot-value c 'header) (append header '(:content-type "application/json")))))
+
 
 (defmethod param ((controller <base-controller>) key)
   "Get a parameter value from the controller's params hash table.
