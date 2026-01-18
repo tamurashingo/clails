@@ -48,8 +48,11 @@
                   :db-cl-fn ,#'identity
                   :cl-db-fn ,#'identity))
     ("text" . (:type :text
-               :db-cl-fn ,#'(lambda (txt) (when txt
-                                            (babel:octets-to-string txt)))
+               :db-cl-fn ,#'(lambda (txt)
+                              (typecase txt
+                                ((vector (unsigned-byte 8))
+                                 (babel:octets-to-string txt))
+                                (t txt)))
                :cl-db-fn ,#'identity))
     ("int" . (:type :integer
               :db-cl-fn ,#'identity
