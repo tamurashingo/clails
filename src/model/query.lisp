@@ -39,7 +39,15 @@
                 #:prepare)
   (:export #:<query>
            #:query
+           #:query-builder
+           #:set-columns
+           #:set-joins
+           #:set-where
+           #:set-order-by
+           #:set-limit
+           #:set-offset
            #:execute-query
+           #:generate-query
            #:save
            #:get-last-id-impl
            #:make-record
@@ -106,10 +114,10 @@
 
 (defmethod execute-query ((query <query>) named-values &key connection)
   "Execute the query and return model instances.
-   
+
    Generates SQL from the query specification, executes it against the database,
    and builds model instances from the results, including nested relations.
-   
+
    @param query [<query>] Query specification
    @param named-values [plist] Named parameter values for the query
    @param connection [dbi:<dbi-connection>] Optional database connection to use
@@ -130,10 +138,10 @@
 
 (defmethod save ((inst <base-model>) &key connection)
   "Save model instance to the database.
-   
+
    Validates the instance, then either updates (if ID exists and dirty)
    or inserts (if no ID). Clears dirty flags on success.
-   
+
    @param inst [<base-model>] Model instance to save
    @param connection [dbi:<dbi-connection>] Optional database connection to use
    @return [<base-model>] The saved model instance
@@ -158,9 +166,9 @@
 
 (defgeneric get-last-id-impl (database-type connection)
   (:documentation "Get the last inserted ID for the specified database type.
-   
+
    Implementation must be provided for each database type.
-   
+
    @param database-type [<database-type>] Database type instance
    @param connection [dbi:<dbi-connection>] Database connection
    @return [integer] Last inserted ID
@@ -169,11 +177,11 @@
 
 (defun make-record (model-name &rest values)
   "Create a new model instance with the given attribute values.
-   
+
    @param model-name [symbol] Model class name (e.g., <todo>)
    @param values [plist] Property list of attribute key-value pairs
    @return [<base-model>] New model instance
-   
+
    Example:
    (let ((inst (make-record '<todo> :title \"create new project\" :done nil)))
      (save inst))
@@ -186,7 +194,7 @@
 
 (defgeneric destroy (instance &key cascade)
   (:documentation "Delete record from the database.
-   
+
    @param instance [<base-model>] Model instance to delete
    @param cascade [boolean] Whether to cascade delete to related records
    @return [integer] Number of rows deleted
@@ -194,10 +202,10 @@
 
 (defmethod destroy ((inst <base-model>) &key cascade)
   "Delete a single model instance from the database.
-   
+
    If cascade is true, also deletes related :has-many records.
    Sets the instance to frozen after deletion.
-   
+
    @param inst [<base-model>] Model instance to delete
    @param cascade [boolean] If T, cascade delete to :has-many relations
    @return [integer] Number of rows deleted (0 if frozen, 1 otherwise)
@@ -231,10 +239,10 @@
 
 (defmethod destroy ((insts list) &key cascade)
   "Delete multiple model instances from the database.
-   
+
    If cascade is true, also deletes related :has-many records for each instance.
    Sets all instances to frozen after deletion.
-   
+
    @param insts [list] List of <base-model> instances to delete
    @param cascade [boolean] If T, cascade delete to :has-many relations
    @return [integer] Number of rows deleted
@@ -281,10 +289,10 @@
 
 (defmacro query (model &key as columns joins where order-by limit offset)
   "Create a query builder instance for the specified model.
-   
+
    Provides a DSL for constructing SQL queries with support for joins,
    where clauses, ordering, and pagination.
-   
+
    @param model [symbol] Model class name (e.g., <blog>)
    @param as [keyword] Required alias for the model (e.g., :blog)
    @param columns [list] List of column specifications (e.g., ((blog :id :title) (user :name)))
@@ -295,7 +303,7 @@
    @param offset [integer] OFFSET value
    @return [<query>] Query builder instance
    @condition error Signaled when :as is missing or not a keyword
-   
+
    Example:
    (query <blog>
      :as :blog
@@ -339,6 +347,153 @@
                     :offset ',offset)))
 
 
+(defun query-builder (model &key as)
+  "Create a query builder instance for dynamic query construction.
+
+   Unlike the query macro, this function allows runtime specification of
+   query parameters, enabling dynamic query construction.
+
+   @param model [symbol] Model class name (e.g., <blog>)
+   @param as [keyword] Alias for the model (e.g., :blog)
+   @return [<query>] Query builder instance
+   @condition error Signaled when :as is not provided or not a keyword
+
+   Example:
+   (let ((q (query-builder '<blog> :as :blog)))
+     (set-columns q '((blog :id :title)))
+     (set-where q '(:= (:blog :status) :status))
+     (execute-query q '(:status \"published\")))
+   "
+  (unless as
+    (error ":as keyword is required for query-builder."))
+  (unless (keywordp as)
+    (error "The value for :as must be a keyword (e.g., :blog)."))
+
+  (make-instance '<query>
+                 :model model
+                 :alias as))
+
+
+(defun set-columns (query columns)
+  "Set the columns to select in the query.
+
+   Replaces any previously set columns.
+
+   @param query [<query>] Query builder instance
+   @param columns [list] List of column specifications in grouped format
+                         (e.g., ((blog :id :title) (account :name)))
+   @return [<query>] The query instance (for method chaining)
+
+   Example:
+   (set-columns q '((blog :id :title :content)))
+   "
+  (labels ((expand-columns (grouped-columns)
+             (mapcan #'(lambda (group)
+                         (let ((alias (car group))
+                               (column-names (cdr group)))
+                           (mapcar #'(lambda (column-name)
+                                       (list alias column-name))
+                                   column-names)))
+                     grouped-columns)))
+    (setf (slot-value query 'columns) (expand-columns columns))
+    query))
+
+
+(defun set-joins (query joins)
+  "Set the JOIN clauses in the query.
+
+   Replaces any previously set joins.
+
+   @param query [<query>] Query builder instance
+   @param joins [list] List of join specifications
+                       (e.g., ((:inner-join :account) (:left-join :comments :through :account)))
+   @return [<query>] The query instance (for method chaining)
+
+   Example:
+   (set-joins q '((:inner-join :account)))
+   "
+  (labels ((expand-joins (joins-list)
+             (mapcar #'(lambda (join-spec)
+                         (destructuring-bind (join-type relation &key through) join-spec
+                           (make-instance '<join-query>
+                                          :join-type join-type
+                                          :relation relation
+                                          :through through)))
+                     joins-list)))
+    (setf (slot-value query 'joins) (expand-joins joins))
+    ;; Rebuild alias map after changing joins
+    (build-alias-map query)
+    query))
+
+
+(defun set-where (query where-clause)
+  "Set the WHERE clause in the query.
+
+   Replaces any previously set WHERE clause.
+
+   @param query [<query>] Query builder instance
+   @param where-clause [list] WHERE clause expression (nil to remove WHERE clause)
+   @return [<query>] The query instance (for method chaining)
+
+   Example:
+   (set-where q '(:and (:= (:blog :status) :status)
+                       (:> (:blog :star) :min-star)))
+   "
+  (setf (slot-value query 'where) where-clause)
+  query)
+
+
+(defun set-order-by (query order-by)
+  "Set the ORDER BY clause in the query.
+
+   Replaces any previously set ORDER BY clause.
+
+   @param query [<query>] Query builder instance
+   @param order-by [list] Order specifications
+                          (e.g., (((:blog :created-at :desc) (:blog :id :asc))))
+   @return [<query>] The query instance (for method chaining)
+
+   Example:
+   (set-order-by q '(((:blog :star :desc) (:blog :id :asc))))
+   "
+  (setf (slot-value query 'order-by) order-by)
+  query)
+
+
+(defun set-limit (query limit)
+  "Set the LIMIT clause in the query.
+
+   Replaces any previously set LIMIT.
+
+   @param query [<query>] Query builder instance
+   @param limit [integer|keyword|nil] LIMIT value, parameter keyword, or nil to remove
+   @return [<query>] The query instance (for method chaining)
+
+   Example:
+   (set-limit q 10)
+   (set-limit q :limit-param)
+   "
+  (setf (slot-value query 'limit) limit)
+  query)
+
+
+(defun set-offset (query offset)
+  "Set the OFFSET clause in the query.
+
+   Replaces any previously set OFFSET.
+
+   @param query [<query>] Query builder instance
+   @param offset [integer|keyword|nil] OFFSET value, parameter keyword, or nil to remove
+   @return [<query>] The query instance (for method chaining)
+
+   Example:
+   (set-offset q 20)
+   (set-offset q :offset-param)
+   "
+  (setf (slot-value query 'offset) offset)
+  query)
+
+
 ;;;; ========================================
 ;;;; internals
 
@@ -347,10 +502,10 @@
 
 (defmethod initialize-instance :after ((q <query>) &rest initargs)
   "Initialize query instance after creation.
-   
+
    Sets up base model instance, assigns default alias if not provided,
    and builds the alias-to-model mapping.
-   
+
    @param q [<query>] Query instance being initialized
    @param initargs [list] Initialization arguments (ignored)
    "
@@ -373,10 +528,10 @@
 
 (defmethod build-alias-map ((query <query>))
   "Build mapping from aliases to model classes.
-   
+
    Resolves model classes for all aliases (base and joined) by looking up
    relation information in the model metadata.
-   
+
    @param query [<query>] Query instance
    @condition error Signaled when source alias or relation cannot be resolved
    "
@@ -404,10 +559,10 @@
 
 (defmethod generate-query ((query <query>) &optional named-values)
   "Generate SQL query and parameters from query specification.
-   
+
    Constructs SELECT statement with joins, where clause, order by, limit, and offset.
    Handles dynamic IN clause expansion for parameterized queries.
-   
+
    @param query [<query>] Query specification
    @param named-values [plist] Named parameter values
    @return [string] SQL query string
@@ -473,7 +628,7 @@
 
 (defmethod resolve-joins ((query <query>))
   "Generate JOIN clauses for the query.
-   
+
    @param query [<query>] Query instance
    @return [list] List of JOIN SQL strings
    "
@@ -488,10 +643,10 @@
 
 (defmethod generate-query-columns ((query <query>) alias->model)
   "Generate list of columns to select.
-   
+
    If columns are explicitly specified, returns them. Otherwise, returns
    all columns from all models in the query.
-   
+
    @param query [<query>] Query instance
    @param alias->model [hash-table] Mapping from aliases to model classes
    @return [list] List of column pairs (alias column-name)
@@ -507,9 +662,9 @@
 
 (defmethod generate-join-sql ((join-obj <join-query>) base-model-alias alias->model)
   "Generate SQL JOIN clause for a single join specification.
-   
+
    Constructs INNER JOIN or LEFT JOIN with ON clause based on relation metadata.
-   
+
    @param join-obj [<join-query>] Join specification
    @param base-model-alias [keyword] Base model alias
    @param alias->model [hash-table] Mapping from aliases to model classes
@@ -582,10 +737,10 @@
 
 (defun parse-where-claude (where)
   "Parse WHERE clause expression tree into SQL.
-   
+
    Supports operators: :=, :<, :<=, :>, :>=, :<>, :!=, :like, :not-like,
    :between, :not-between, :in, :not-in, :null, :not-null, :and, :or.
-   
+
    @param where [list] WHERE clause expression (nil for no where clause)
    @return [string] SQL WHERE clause string
    @return [list] List of parameter keywords
@@ -633,7 +788,7 @@
 
 (defun parse-in-clause (op exp)
   "Parse IN clause with static list of values.
-   
+
    @param op [string] Operator (\"IN\" or \"NOT IN\")
    @param exp [list] Expression (column-spec values-list)
    @return [string] SQL clause string
@@ -665,9 +820,9 @@
 
 (defun parse-in-dynamic (op exp)
   "Parse IN clause with dynamic parameterized values.
-   
+
    Creates placeholder for later expansion with actual parameter values.
-   
+
    @param op [string] Operator (\"IN\" or \"NOT IN\")
    @param exp [list] Expression (column-spec param-keyword)
    @return [string] Placeholder string for later replacement
@@ -684,7 +839,7 @@
 
 (defun parse-between-clause (op exp)
   "Parse BETWEEN clause.
-   
+
    @param op [string] Operator (\"BETWEEN\" or \"NOT BETWEEN\")
    @param exp [list] Expression (column-spec value1 value2)
    @return [string] SQL BETWEEN clause
@@ -710,7 +865,7 @@
 ;; TODO: rename
 (defun parse-exp2 (op exp)
   "Parse binary comparison expression.
-   
+
    @param op [keyword|string] Operator (:=, :<, :>, etc. or \"LIKE\", \"NOT LIKE\")
    @param exp [list] Expression (left-operand right-operand)
    @return [string] SQL comparison expression
@@ -734,7 +889,7 @@
 ;; TODO: rename
 (defun parse-null2 (op exp)
   "Parse NULL check expression.
-   
+
    @param op [keyword] Operator (:null or :not-null)
    @param exp [list] Expression (column-spec)
    @return [string] SQL NULL check (\"IS NULL\" or \"IS NOT NULL\")
@@ -755,7 +910,7 @@
 ;; TODO: rename
 (defun lexer2 (param)
   "Convert parameter to SQL representation.
-   
+
    @param param [list] Column pair (alias column-name)
    @param param [keyword] Parameter keyword (becomes \"?\")
    @param param [string] String literal (quoted)
@@ -784,7 +939,7 @@
 
 (defun column-pair-to-name (pair &optional as)
   "Convert column pair to SQL column name.
-   
+
    @param pair [list] Column pair (alias column-name)
    @param as [boolean] If true, includes AS clause for aliasing
    @return [string] SQL column reference (e.g., \"BLOG.TITLE\" or \"BLOG.TITLE as \\\"BLOG.TITLE\\\"\")
@@ -795,12 +950,12 @@
 
 (defun generate-order-by (params &optional order)
   "Generate ORDER BY clause from parameters.
-   
+
    @param params [list] List of order specs ((:alias :column [:ASC|:DESC]) ...)
    @param order [list] Accumulator for recursion (internal use)
    @return [list] List of ORDER BY clause strings
    @condition error Signaled for invalid order spec format or sort direction
-   
+
    Example input: ((:blog :star :desc) (:blog :id))
    Example output: (\"BLOG.STAR DESC\" \"BLOG.ID\")
    "
@@ -825,7 +980,7 @@
 ;; TODO: In the future, refactor this to use OFFSET/FETCH depending on the database implementation.
 (defun generate-offset (offset)
   "Generate OFFSET clause specification.
-   
+
    @param offset [nil] No offset
    @param offset [keyword] Parameter keyword for offset value
    @param offset [integer] Literal offset value
@@ -843,7 +998,7 @@
 
 (defun generate-limit (limit)
   "Generate LIMIT clause specification.
-   
+
    @param limit [nil] No limit
    @param limit [keyword] Parameter keyword for limit value
    @param limit [integer] Literal limit value
@@ -862,7 +1017,7 @@
 
 (defun generate-values (named-params named-values)
   "Extract parameter values in order from named values plist.
-   
+
    @param named-params [list] List of parameter keywords in order (e.g., (:start-date :end-date :start-date))
    @param named-values [plist] Property list of parameter values (e.g., (:start-date \"2025-01-01\" :end-date \"2025-12-31\"))
    @return [list] List of values in parameter order (e.g., (\"2025-01-01\" \"2025-12-31\" \"2025-01-01\"))
@@ -950,7 +1105,7 @@
 
 (defun get-last-id (connection)
   "Get the last inserted ID from the database.
-   
+
    @param connection [dbi:<dbi-connection>] Database connection
    @return [integer] Last inserted ID
    "
@@ -959,11 +1114,11 @@
 
 (defun update1 (inst &key connection)
   "Update a model instance in the database.
-   
+
    Only updates columns marked as dirty. Automatically updates :updated-at
    and version column (if configured). Uses optimistic locking when version
    column is specified.
-   
+
    @param inst [<base-model>] Model instance to update
    @param connection [connection] Optional database connection
    @return [integer] Number of rows updated (0 if version mismatch, 1 otherwise)
@@ -1028,9 +1183,9 @@
 
 (defun convert-cl-db-values (params inst)
   "Convert Common Lisp values to database values.
-   
+
    Applies cl-db-fn conversion function for each column.
-   
+
    @param params [plist] Parameter values by column name
    @param inst [<base-model>] Model instance
    @return [list] List of converted values
@@ -1047,9 +1202,9 @@
 
 (defun make-record-from (model-name &rest db-values)
   "Create model instance from database row values.
-   
+
    Applies db-cl-fn conversion for each column and clears dirty flags.
-   
+
    @param model-name [symbol] Model class name
    @param db-values [plist] Database values by column keyword
    @return [<base-model>] Model instance with values set and dirty flags cleared
@@ -1066,10 +1221,10 @@
 
 (defun split-db-column-name (keyword-name)
   "Split database column keyword into alias and column name.
-   
+
    Splits a keyword like :|TABLE.COLUMN| into two keywords, :TABLE and :COLUMN.
    The keyword comes from the database driver.
-   
+
    @param keyword-name [keyword] Database column keyword in format :|ALIAS.COLUMN|
    @return [keyword] Table alias keyword
    @return [keyword] Column name keyword
@@ -1084,10 +1239,10 @@
 
 (defun group-row-data-by-alias (row-plist)
   "Group flat database result row by table alias.
-   
+
    Groups a flat plist of results from the DB into a hash table where keys are
    table aliases and values are plists of column data for that alias.
-   
+
    @param row-plist [plist] Flat result row from database
    @return [hash-table] Hash table with aliases as keys and column data plists as values
    "
@@ -1104,10 +1259,10 @@
 
 (defun hydrate-instance (model-class data-plist record-cache)
   "Create or retrieve cached model instance from data.
-   
+
    Creates a model instance from a plist of data, or retrieves it from cache if it
    has already been created for the same ID.
-   
+
    @param model-class [symbol] Model class name
    @param data-plist [plist] Column data for the instance
    @param record-cache [hash-table] Cache of instances by model class and ID
@@ -1126,10 +1281,10 @@
 
 (defun hydrate-instances-for-row (grouped-data alias->model record-cache)
   "Create or retrieve model instances for all aliases in a result row.
-   
+
    For a single result row (grouped by alias), creates or retrieves all
    corresponding model instances.
-   
+
    @param grouped-data [hash-table] Row data grouped by alias
    @param alias->model [hash-table] Mapping from aliases to model classes
    @param record-cache [hash-table] Cache of instances
@@ -1176,10 +1331,10 @@
 
 (defun finalize-has-many-relations (instances)
   "Initialize unbound :has-many relation slots to NIL.
-   
+
    Ensures that for a list of instances, any :has-many relation slots that were not
    populated during result processing are initialized to NIL instead of being unbound.
-   
+
    @param instances [list] List of model instances
    @return [list] The same list of instances
    "
@@ -1199,10 +1354,10 @@
 
 (defun build-model-instances (query result)
   "Process database result set into graph of nested model instances.
-   
+
    Processes a raw database result set for a given <query> object and constructs
    a graph of nested model instances with relations properly linked.
-   
+
    @param query [<query>] Query specification
    @param result [list] Raw database result set (list of plists)
    @return [list] List of unique main model instances with relations populated

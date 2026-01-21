@@ -397,6 +397,145 @@ YYYYmmdd-HHMMSS-description.lisp
                   (:user :name)))
 ```
 
+### 動的なクエリ構築（query-builder）
+
+`query` マクロは静的なクエリ定義に適していますが、実行時にクエリを動的に構築したい場合は `query-builder` 関数を使用します。
+
+#### 基本的な使い方
+
+```common-lisp
+;; query-builder でクエリインスタンスを作成
+(defvar *q* (query-builder '<user> :as :user))
+
+;; set-* 関数でクエリを構築
+(set-columns *q* '((user :id :name :email)))
+(set-where *q* '(:= (:user :status) :status))
+(set-order-by *q* '((:user :created-at :desc)))
+(set-limit *q* 10)
+
+;; execute-query で実行
+(execute-query *q* '(:status "active"))
+```
+
+#### setter 関数
+
+すべての setter 関数は、設定されている内容を**置き換え**ます。また、メソッドチェーンのためにクエリインスタンス自身を返します。
+
+- `set-columns` - SELECT するカラムを設定
+- `set-joins` - JOIN 句を設定
+- `set-where` - WHERE 句を設定（nil で削除）
+- `set-order-by` - ORDER BY 句を設定
+- `set-limit` - LIMIT 句を設定
+- `set-offset` - OFFSET 句を設定
+
+```common-lisp
+;; メソッドチェーンの例
+(execute-query
+  (set-limit
+    (set-offset
+      (set-columns (query-builder '<user> :as :user)
+                   '((user :id :name)))
+      10)
+    20)
+  '())
+```
+
+#### 動的なカラム選択
+
+```common-lisp
+(defun search-users (search-column keyword)
+  "指定されたカラムでユーザーを検索"
+  (let ((q (query-builder '<user> :as :user)))
+    ;; 実行時に決まるカラムを指定
+    (set-columns q `((user :id ,search-column)))
+    (set-where q `(:like (:user ,search-column) :keyword))
+    (execute-query q (list :keyword (format nil "%~A%" keyword)))))
+
+;; 使用例
+(search-users :name "John")    ; name カラムで検索
+(search-users :email "example") ; email カラムで検索
+```
+
+#### 動的な WHERE 句の構築
+
+```common-lisp
+(defun find-users (params)
+  "パラメータに応じて動的に検索条件を追加"
+  (let ((q (query-builder '<user> :as :user))
+        (conditions nil))
+    (set-columns q '((user :id :name :email :status)))
+    
+    ;; 条件を動的に追加
+    (when (getf params :status)
+      (push '(:= (:user :status) :status) conditions))
+    
+    (when (getf params :min-age)
+      (push '(:>= (:user :age) :min-age) conditions))
+    
+    (when (getf params :keyword)
+      (push '(:or
+              (:like (:user :name) :keyword)
+              (:like (:user :email) :keyword))
+            conditions))
+    
+    ;; 条件を AND で結合
+    (when conditions
+      (set-where q `(:and ,@(nreverse conditions))))
+    
+    (execute-query q params)))
+
+;; 使用例
+(find-users '(:status "active" :min-age 20))
+(find-users '(:keyword "%test%"))
+(find-users '(:status "active" :keyword "%admin%"))
+```
+
+#### 動的なソート順
+
+```common-lisp
+(defun list-users (sort-by sort-order)
+  "ソート順を動的に変更"
+  (let ((q (query-builder '<user> :as :user)))
+    (set-columns q '((user :id :name :created-at)))
+    ;; 実行時にソート順を決定
+    (set-order-by q `((:user ,sort-by ,sort-order)))
+    (execute-query q '())))
+
+;; 使用例
+(list-users :name :asc)        ; 名前の昇順
+(list-users :created-at :desc) ; 作成日時の降順
+```
+
+#### 生成される SQL の確認
+
+```common-lisp
+;; ログで確認（LOG_LEVEL=sql:debug を設定）
+(execute-query q params)
+
+;; generate-query で直接確認
+(let ((q (query-builder '<user> :as :user)))
+  (set-columns q '((user :id :name)))
+  (set-where q '(:= (:user :status) :status))
+  (multiple-value-bind (sql params)
+      (generate-query q '(:status "active"))
+    (format t "SQL: ~A~%" sql)
+    (format t "Params: ~S~%" params)))
+;; => SQL: SELECT USER.ID as "USER.ID", USER.NAME as "USER.NAME" FROM users as USER WHERE USER.STATUS = ?
+;; => Params: ("active")
+```
+
+#### query マクロと query-builder の使い分け
+
+- **query マクロ**: 静的で型安全なクエリが必要な場合（推奨）
+  - クエリの構造がコンパイル時に確定している
+  - IDE のサポート（補完、エラー検出）を受けたい
+  - 最もパフォーマンスが良い
+
+- **query-builder**: 動的なクエリ構築が必要な場合
+  - 検索条件をユーザー入力に応じて変更
+  - カラムやソート順を実行時に決定
+  - 複雑な条件分岐でクエリを組み立てる
+
 ---
 
 ## 6. JOIN を含むクエリの書き方
