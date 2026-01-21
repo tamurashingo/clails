@@ -368,6 +368,145 @@ Use the `query` function to build queries.
      (:= (:user :status) "pending"))
 ```
 
+### Dynamic Query Construction (query-builder)
+
+While the `query` macro is suitable for static query definitions, use the `query-builder` function when you need to construct queries dynamically at runtime.
+
+#### Basic Usage
+
+```common-lisp
+;; Create a query instance with query-builder
+(defvar *q* (query-builder '<user> :as :user))
+
+;; Build the query with set-* functions
+(set-columns *q* '((user :id :name :email)))
+(set-where *q* '(:= (:user :status) :status))
+(set-order-by *q* '((:user :created-at :desc)))
+(set-limit *q* 10)
+
+;; Execute with execute-query
+(execute-query *q* '(:status "active"))
+```
+
+#### Setter Functions
+
+All setter functions **replace** the existing content and return the query instance itself for method chaining.
+
+- `set-columns` - Set columns to SELECT
+- `set-joins` - Set JOIN clauses
+- `set-where` - Set WHERE clause (nil to remove)
+- `set-order-by` - Set ORDER BY clause
+- `set-limit` - Set LIMIT clause
+- `set-offset` - Set OFFSET clause
+
+```common-lisp
+;; Method chaining example
+(execute-query
+  (set-limit
+    (set-offset
+      (set-columns (query-builder '<user> :as :user)
+                   '((user :id :name)))
+      10)
+    20)
+  '())
+```
+
+#### Dynamic Column Selection
+
+```common-lisp
+(defun search-users (search-column keyword)
+  "Search users in the specified column"
+  (let ((q (query-builder '<user> :as :user)))
+    ;; Specify column determined at runtime
+    (set-columns q `((user :id ,search-column)))
+    (set-where q `(:like (:user ,search-column) :keyword))
+    (execute-query q (list :keyword (format nil "%~A%" keyword)))))
+
+;; Usage examples
+(search-users :name "John")    ; Search in name column
+(search-users :email "example") ; Search in email column
+```
+
+#### Dynamic WHERE Clause Construction
+
+```common-lisp
+(defun find-users (params)
+  "Dynamically add search conditions based on parameters"
+  (let ((q (query-builder '<user> :as :user))
+        (conditions nil))
+    (set-columns q '((user :id :name :email :status)))
+    
+    ;; Dynamically add conditions
+    (when (getf params :status)
+      (push '(:= (:user :status) :status) conditions))
+    
+    (when (getf params :min-age)
+      (push '(:>= (:user :age) :min-age) conditions))
+    
+    (when (getf params :keyword)
+      (push '(:or
+              (:like (:user :name) :keyword)
+              (:like (:user :email) :keyword))
+            conditions))
+    
+    ;; Combine conditions with AND
+    (when conditions
+      (set-where q `(:and ,@(nreverse conditions))))
+    
+    (execute-query q params)))
+
+;; Usage examples
+(find-users '(:status "active" :min-age 20))
+(find-users '(:keyword "%test%"))
+(find-users '(:status "active" :keyword "%admin%"))
+```
+
+#### Dynamic Sort Order
+
+```common-lisp
+(defun list-users (sort-by sort-order)
+  "Change sort order dynamically"
+  (let ((q (query-builder '<user> :as :user)))
+    (set-columns q '((user :id :name :created-at)))
+    ;; Determine sort order at runtime
+    (set-order-by q `((:user ,sort-by ,sort-order)))
+    (execute-query q '())))
+
+;; Usage examples
+(list-users :name :asc)        ; Ascending by name
+(list-users :created-at :desc) ; Descending by created_at
+```
+
+#### Inspecting Generated SQL
+
+```common-lisp
+;; Check via logs (set LOG_LEVEL=sql:debug)
+(execute-query q params)
+
+;; Check directly with generate-query
+(let ((q (query-builder '<user> :as :user)))
+  (set-columns q '((user :id :name)))
+  (set-where q '(:= (:user :status) :status))
+  (multiple-value-bind (sql params)
+      (generate-query q '(:status "active"))
+    (format t "SQL: ~A~%" sql)
+    (format t "Params: ~S~%" params)))
+;; => SQL: SELECT USER.ID as "USER.ID", USER.NAME as "USER.NAME" FROM users as USER WHERE USER.STATUS = ?
+;; => Params: ("active")
+```
+
+#### When to Use query Macro vs query-builder
+
+- **query macro**: When you need static, type-safe queries (recommended)
+  - Query structure is determined at compile time
+  - Want IDE support (completion, error detection)
+  - Best performance
+
+- **query-builder**: When you need dynamic query construction
+  - Change search conditions based on user input
+  - Determine columns or sort order at runtime
+  - Build queries with complex conditional logic
+
 ---
 
 ## 6. JOIN Queries
