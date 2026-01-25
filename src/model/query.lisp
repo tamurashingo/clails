@@ -53,7 +53,25 @@
            #:make-record
            #:destroy
            #:insert1
-           #:generate-values))
+           #:generate-values
+           #:to-string-impl
+           #:to-text-impl
+           #:to-integer-impl
+           #:to-float-impl
+           #:to-decimal-impl
+           #:to-datetime-impl
+           #:to-date-impl
+           #:to-time-impl
+           #:to-boolean-impl
+           #:to-string
+           #:to-text
+           #:to-integer
+           #:to-float
+           #:to-decimal
+           #:to-datetime
+           #:to-date
+           #:to-time
+           #:to-boolean))
 (in-package #:clails/model/query)
 
 ;;;; ----------------------------------------
@@ -112,7 +130,7 @@
 ;;;; ========================================
 ;;;; export method
 
-(defmethod execute-query ((query <query>) named-values &key connection)
+(defmethod execute-query ((query <query>) named-values &key connection (convert-types t))
   "Execute the query and return model instances.
 
    Generates SQL from the query specification, executes it against the database,
@@ -121,10 +139,11 @@
    @param query [<query>] Query specification
    @param named-values [plist] Named parameter values for the query
    @param connection [dbi:<dbi-connection>] Optional database connection to use
+   @param convert-types [boolean] Whether to perform automatic type conversion (default: t)
    @return [list] List of model instances with populated relations
    "
   (multiple-value-bind (sql params)
-      (generate-query query named-values)
+      (generate-query query named-values :convert-types convert-types)
     (when (log-level-enabled-p :sql :debug)
       (log.sql (format nil "sql: ~S" query))
       (log.sql (format nil "params: ~S" params)))
@@ -557,7 +576,7 @@
 ;;; ----------------------------------------
 ;;; query
 
-(defmethod generate-query ((query <query>) &optional named-values)
+(defmethod generate-query ((query <query>) &optional named-values &key (convert-types t))
   "Generate SQL query and parameters from query specification.
 
    Constructs SELECT statement with joins, where clause, order by, limit, and offset.
@@ -565,6 +584,7 @@
 
    @param query [<query>] Query specification
    @param named-values [plist] Named parameter values
+   @param convert-types [boolean] Whether to perform automatic type conversion (default: t)
    @return [string] SQL query string
    @return [list] List of parameter values
    "
@@ -593,13 +613,17 @@
                                  lock-clause))
            (named-params (append (second where-parts)
                                           (ensure-list (getf limit :keyword))
-                                          (ensure-list (getf offset :keyword)))))
+                                          (ensure-list (getf offset :keyword))))
+           (column-specs (third where-parts)))
 
       (let ((final-sql sql-template)
             (final-params '())
-            (regular-named-params '()))
+            (regular-named-params '())
+            (regular-column-specs '())
+            (where-param-count (length (second where-parts))))
 
         (loop for param in named-params
+              for param-index from 0
               do (if (and (listp param) (eq (car param) :in-expansion))
                      (destructuring-bind (op column-sql keyword) (cdr param)
                        (let* ((values (getf named-values keyword))
@@ -614,9 +638,37 @@
                                     (replacement (format nil "~A ~A ~A" column-sql op question-marks)))
                                (setf final-sql (cl-ppcre:regex-replace-all (cl-ppcre:quote-meta-chars placeholder) final-sql replacement))
                                (appendf final-params values)))))
-                     (push param regular-named-params)))
+                     (progn
+                       (push param regular-named-params)
+                       ;; Only add column spec if this parameter is from WHERE clause
+                       (when (< param-index where-param-count)
+                         (push (nth param-index column-specs) regular-column-specs)))))
 
-        (appendf final-params (generate-values (nreverse regular-named-params) named-values))
+        ;; Convert parameter values based on column types
+        (let* ((reversed-params (nreverse regular-named-params))
+               (reversed-specs (nreverse regular-column-specs))
+               ;; Pad column-specs with nil to match params length
+               (padded-specs (append reversed-specs 
+                                    (make-list (- (length reversed-params) 
+                                                 (length reversed-specs)))))
+               (converted-values
+                (if convert-types
+                    (loop for param-key in reversed-params
+                          for column-spec in padded-specs
+                          as value = (getf named-values param-key)
+                          collect
+                          (if column-spec
+                              (let* ((model-symbol (gethash (first column-spec) alias->model))
+                                     (column-keyword (second column-spec))
+                                     (column-type (when model-symbol
+                                                   (get-column-type-from-model model-symbol column-keyword))))
+                                (if column-type
+                                    (convert-value-by-type value column-type)
+                                    value))
+                              value))
+                    (loop for param-key in reversed-params
+                          collect (getf named-values param-key)))))
+          (appendf final-params converted-values))
 
         ;; for debug
         (when (log-level-enabled-p :sql :debug)
@@ -744,6 +796,7 @@
    @param where [list] WHERE clause expression (nil for no where clause)
    @return [string] SQL WHERE clause string
    @return [list] List of parameter keywords
+   @return [list] List of column specs corresponding to parameters
    @condition error Signaled for unsupported operators
    "
   (if (not where)
@@ -769,20 +822,24 @@
                (parse-null2 :not-null (cdr where)))
               ((eq elm :and)
                (loop for expression in (cdr where)
-                     with exp and keywords
-                     do (multiple-value-setq (exp keywords) (parse-where-claude expression))
+                     with exp and keywords and columns
+                     do (multiple-value-setq (exp keywords columns) (parse-where-claude expression))
                      collect exp into exp-list
                      append keywords into all-keywords
+                     append columns into all-columns
                      finally (return (values (format nil "(~{~A~^ AND ~})" exp-list)
-                                             all-keywords))))
+                                             all-keywords
+                                             all-columns))))
               ((eq elm :or)
                (loop for expression in (cdr where)
-                     with exp and keywords
-                     do (multiple-value-setq (exp keywords) (parse-where-claude expression))
+                     with exp and keywords and columns
+                     do (multiple-value-setq (exp keywords columns) (parse-where-claude expression))
                      collect exp into exp-list
                      append keywords into all-keywords
+                     append columns into all-columns
                      finally (return (values (format nil "(~{~A~^ OR ~})" exp-list)
-                                             all-keywords))))
+                                             all-keywords
+                                             all-columns))))
               (t
                (error "where claude: parse error `~A`" elm))))))
 
@@ -793,12 +850,14 @@
    @param exp [list] Expression (column-spec values-list)
    @return [string] SQL clause string
    @return [list] List of parameters
+   @return [list] List of column specs corresponding to parameters
    @condition error Signaled when values are not a list
    "
-  (let (column-sql)
+  (let (column-sql column-spec)
     (multiple-value-bind (sql param)
         (lexer2 (car exp))
       (setf column-sql sql)
+      (setf column-spec (car exp))
       (when param
         (error "Unexpected parameter in column part of IN clause.")))
     (let ((in-values (cadr exp)))
@@ -806,17 +865,21 @@
         (setf in-values (cadr in-values)))
       (unless (listp in-values)
         (error "IN clause expects a list of values (e.g., '(1 2 3) or (:id1 :id2)). Got: ~S" in-values))
-      (let (placeholders params)
+      (let (placeholders params columns)
         (dolist (val in-values)
           (multiple-value-bind (ph p) (lexer2 val)
             (push ph placeholders)
-            (when p (appendf params (ensure-list p)))))
+            (when p
+              (appendf params (ensure-list p))
+              (when (and (listp column-spec) (= (length column-spec) 2))
+                (push column-spec columns)))))
         (if (null placeholders)
             (if (string= op "IN")
-                (values "1=0" nil)
-                (values "1=1" nil))
+                (values "1=0" nil nil)
+                (values "1=1" nil nil))
             (values (format nil "~A ~A (~{~A~^, ~})" column-sql op (nreverse placeholders))
-                    (flatten params)))))))
+                    (flatten params)
+                    (nreverse columns)))))))
 
 (defun parse-in-dynamic (op exp)
   "Parse IN clause with dynamic parameterized values.
@@ -827,6 +890,7 @@
    @param exp [list] Expression (column-spec param-keyword)
    @return [string] Placeholder string for later replacement
    @return [list] List containing :in-expansion spec
+   @return [list] Empty list (no column mapping for dynamic IN)
    "
   (let* ((column-spec (first exp))
          (param-keyword (second exp))
@@ -835,7 +899,8 @@
                               (cl-ppcre:regex-replace-all "[.:]" column-sql "_")
                               param-keyword)))
     (values placeholder
-            (list (list :in-expansion op column-sql param-keyword)))))
+            (list (list :in-expansion op column-sql param-keyword))
+            nil)))
 
 (defun parse-between-clause (op exp)
   "Parse BETWEEN clause.
@@ -844,23 +909,32 @@
    @param exp [list] Expression (column-spec value1 value2)
    @return [string] SQL BETWEEN clause
    @return [list] List of parameter keywords
+   @return [list] List of column specs corresponding to parameters
    @condition error Signaled when column part contains parameters
    "
-  (let (column-sql val1-sql val2-sql keywords)
+  (let (column-sql column-spec val1-sql val2-sql keywords columns)
     ;; Column
     (multiple-value-bind (sql param) (lexer2 (first exp))
       (setf column-sql sql)
+      (setf column-spec (first exp))
       (when param (error "Unexpected parameter in column part of BETWEEN clause.")))
     ;; Value 1
     (multiple-value-bind (sql param) (lexer2 (second exp))
       (setf val1-sql sql)
-      (when param (appendf keywords (ensure-list param))))
+      (when param
+        (appendf keywords (ensure-list param))
+        (when (and (listp column-spec) (= (length column-spec) 2))
+          (push column-spec columns))))
     ;; Value 2
     (multiple-value-bind (sql param) (lexer2 (third exp))
       (setf val2-sql sql)
-      (when param (appendf keywords (ensure-list param))))
+      (when param
+        (appendf keywords (ensure-list param))
+        (when (and (listp column-spec) (= (length column-spec) 2))
+          (push column-spec columns))))
     (values (format nil "~A ~A ~A AND ~A" column-sql op val1-sql val2-sql)
-            keywords)))
+            keywords
+            (nreverse columns))))
 
 ;; TODO: rename
 (defun parse-exp2 (op exp)
@@ -870,20 +944,26 @@
    @param exp [list] Expression (left-operand right-operand)
    @return [string] SQL comparison expression
    @return [list] List of parameter keywords
+   @return [list] List of column specs corresponding to parameters
    "
-  (let (x y keywords)
+  (let (x y keywords columns)
     (multiple-value-bind (col1 param1)
         (lexer2 (car exp))
       (setf x col1)
       (when param1
-        (appendf keywords (ensure-list param1))))
+        (appendf keywords (ensure-list param1))
+        (when (and (listp (cadr exp)) (= (length (cadr exp)) 2))
+          (push (cadr exp) columns))))
     (multiple-value-bind (col2 param2)
         (lexer2 (cadr exp))
       (setf y col2)
       (when param2
-        (appendf keywords (ensure-list param2))))
-    (values(format nil "~A ~A ~A" x op y)
-           keywords)))
+        (appendf keywords (ensure-list param2))
+        (when (and (listp (car exp)) (= (length (car exp)) 2))
+          (push (car exp) columns))))
+    (values (format nil "~A ~A ~A" x op y)
+            keywords
+            (nreverse columns))))
 
 
 ;; TODO: rename
@@ -894,6 +974,7 @@
    @param exp [list] Expression (column-spec)
    @return [string] SQL NULL check (\"IS NULL\" or \"IS NOT NULL\")
    @return [list] List of parameter keywords
+   @return [list] Empty list (NULL checks don't have parameters)
    "
   (let (x keywords)
     (multiple-value-bind (col1 param1)
@@ -904,7 +985,8 @@
     (values (format nil "~A ~A" x (if (eq op :null)
                                       "IS NULL"
                                       "IS NOT NULL"))
-            keywords)))
+            keywords
+            nil)))
 
 
 ;; TODO: rename
@@ -1014,6 +1096,155 @@
          (list :limit limit
                :keyword nil))))
 
+
+;;; ----------------------------------------
+;;; type conversion functions
+
+(defgeneric to-string-impl (database value)
+  (:documentation "Convert value to string type for the specified database."))
+
+(defgeneric to-text-impl (database value)
+  (:documentation "Convert value to text type for the specified database."))
+
+(defgeneric to-integer-impl (database value)
+  (:documentation "Convert value to integer type for the specified database."))
+
+(defgeneric to-float-impl (database value)
+  (:documentation "Convert value to floating-point type for the specified database."))
+
+(defgeneric to-decimal-impl (database value)
+  (:documentation "Convert value to decimal type for the specified database."))
+
+(defgeneric to-datetime-impl (database value)
+  (:documentation "Convert value to datetime type for the specified database."))
+
+(defgeneric to-date-impl (database value)
+  (:documentation "Convert value to date type for the specified database."))
+
+(defgeneric to-time-impl (database value)
+  (:documentation "Convert value to time type for the specified database."))
+
+(defgeneric to-boolean-impl (database value)
+  (:documentation "Convert value to boolean type for the specified database."))
+
+
+(defun to-string (v &optional (database *database-type*))
+  "Convert value to string type for the specified database.
+   
+   @param v [t] Value to convert
+   @param database [t] Database type instance (optional, defaults to *database-type*)
+   @return [t] Converted value
+   "
+  (to-string-impl database v))
+
+(defun to-text (v &optional (database *database-type*))
+  "Convert value to text type for the specified database.
+   
+   @param v [t] Value to convert
+   @param database [t] Database type instance (optional, defaults to *database-type*)
+   @return [t] Converted value
+   "
+  (to-text-impl database v))
+
+(defun to-integer (v &optional (database *database-type*))
+  "Convert value to integer type for the specified database.
+   
+   @param v [t] Value to convert
+   @param database [t] Database type instance (optional, defaults to *database-type*)
+   @return [t] Converted value
+   "
+  (to-integer-impl database v))
+
+(defun to-float (v &optional (database *database-type*))
+  "Convert value to floating-point type for the specified database.
+   
+   @param v [t] Value to convert
+   @param database [t] Database type instance (optional, defaults to *database-type*)
+   @return [t] Converted value
+   "
+  (to-float-impl database v))
+
+(defun to-decimal (v &optional (database *database-type*))
+  "Convert value to decimal type for the specified database.
+   
+   @param v [t] Value to convert
+   @param database [t] Database type instance (optional, defaults to *database-type*)
+   @return [t] Converted value
+   "
+  (to-decimal-impl database v))
+
+(defun to-datetime (v &optional (database *database-type*))
+  "Convert value to datetime type for the specified database.
+   
+   @param v [t] Value to convert
+   @param database [t] Database type instance (optional, defaults to *database-type*)
+   @return [t] Converted value
+   "
+  (to-datetime-impl database v))
+
+(defun to-date (v &optional (database *database-type*))
+  "Convert value to date type for the specified database.
+   
+   @param v [t] Value to convert
+   @param database [t] Database type instance (optional, defaults to *database-type*)
+   @return [t] Converted value
+   "
+  (to-date-impl database v))
+
+(defun to-time (v &optional (database *database-type*))
+  "Convert value to time type for the specified database.
+   
+   @param v [t] Value to convert
+   @param database [t] Database type instance (optional, defaults to *database-type*)
+   @return [t] Converted value
+   "
+  (to-time-impl database v))
+
+(defun to-boolean (v &optional (database *database-type*))
+  "Convert value to boolean type for the specified database.
+   
+   @param v [t] Value to convert
+   @param database [t] Database type instance (optional, defaults to *database-type*)
+   @return [t] Converted value
+   "
+  (to-boolean-impl database v))
+
+
+(defun get-column-type-from-model (model-symbol column-keyword)
+  "Get column type from model's column information.
+   
+   @param model-symbol [symbol] Model class symbol
+   @param column-keyword [keyword] Column name keyword
+   @return [keyword] Column type keyword (e.g., :string, :integer, :boolean)
+   @return [nil] If column not found
+   "
+  (let ((model-inst (make-instance model-symbol)))
+    (loop for col in (slot-value model-inst 'clails/model/base-model::columns)
+          when (eq (getf col :name) column-keyword)
+          return (getf col :type))))
+
+(defun convert-value-by-type (value type-keyword)
+  "Convert value based on type keyword.
+   
+   @param value [t] Value to convert
+   @param type-keyword [keyword] Type keyword (e.g., :string, :integer, :boolean)
+   @return [t] Converted value
+   "
+  (case type-keyword
+    (:string (to-string value))
+    (:text (to-text value))
+    (:integer (to-integer value))
+    (:float (to-float value))
+    (:decimal (to-decimal value))
+    (:datetime (to-datetime value))
+    (:date (to-date value))
+    (:time (to-time value))
+    (:boolean (to-boolean value))
+    (t value)))
+
+
+;;; ----------------------------------------
+;;; generate values
 
 (defun generate-values (named-params named-values)
   "Extract parameter values in order from named values plist.

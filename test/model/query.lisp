@@ -280,7 +280,7 @@
                             :as :todo
                             :where (:between (:todo :created-at) :start :end)
                             :order-by ((:todo :id))))
-              (result (execute-query query '(:start "2024-01-01 00:00:01" :end "2024-01-01 00:00:02"))))
+              (result (execute-query query '(:start "2024-01-01 00:00:01" :end "2024-01-01 00:00:02") :convert-types nil)))
         (ok (= 2 (length result)))
         (ok (= 2 (ref (first result) :id)))
         (ok (= 3 (ref (second result) :id)))))
@@ -330,3 +330,39 @@
 
     ;; debug output
     (clails/model/base-model::show-model-data record)))
+
+
+(deftest where-clause-type-conversion-test
+  (testing "WHERE clause with boolean type conversion"
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:= (:todo :done) :done)))
+           (result (execute-query query '(:done t))))
+      (ok (= 1 (length result)))
+      (ok (string= "create program" (ref (first result) :title)))
+      (ok (ref (first result) :done))))
+
+  (testing "WHERE clause without type conversion"
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:= (:todo :done) :done)))
+           (result (execute-query query '(:done 1) :convert-types nil)))
+      (ok (= 1 (length result)))
+      (ok (string= "create program" (ref (first result) :title)))))
+
+  (testing "WHERE clause with multiple conditions and type conversion"
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:and (:= (:todo :done) :done)
+                                      (:like (:todo :title) :title-pattern))))
+           (result (execute-query query '(:done nil :title-pattern "create%"))))
+      (ok (= 1 (length result)))
+      (ok (string= "create pull request" (ref (first result) :title)))
+      (ok (not (ref (first result) :done)))))
+
+  (testing "WHERE clause with BETWEEN and type conversion"
+    (let* ((query (query <todo>
+                         :as :todo
+                         :where (:between (:todo :id) :min-id :max-id)))
+           (result (execute-query query '(:min-id 1 :max-id 2))))
+      (ok (= 2 (length result))))))
