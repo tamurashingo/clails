@@ -619,10 +619,11 @@
       (let ((final-sql sql-template)
             (final-params '())
             (regular-named-params '())
-            (regular-column-specs '()))
+            (regular-column-specs '())
+            (where-param-count (length (second where-parts))))
 
         (loop for param in named-params
-              for i from 0
+              for param-index from 0
               do (if (and (listp param) (eq (car param) :in-expansion))
                      (destructuring-bind (op column-sql keyword) (cdr param)
                        (let* ((values (getf named-values keyword))
@@ -639,27 +640,34 @@
                                (appendf final-params values)))))
                      (progn
                        (push param regular-named-params)
-                       (when (< i (length column-specs))
-                         (push (nth i column-specs) regular-column-specs)))))
+                       ;; Only add column spec if this parameter is from WHERE clause
+                       (when (< param-index where-param-count)
+                         (push (nth param-index column-specs) regular-column-specs)))))
 
         ;; Convert parameter values based on column types
-        (let ((converted-values
-               (if convert-types
-                   (loop for param-key in (nreverse regular-named-params)
-                         for column-spec in (nreverse regular-column-specs)
-                         as value = (getf named-values param-key)
-                         collect
-                         (if column-spec
-                             (let* ((model-symbol (gethash (first column-spec) alias->model))
-                                    (column-keyword (second column-spec))
-                                    (column-type (when model-symbol
-                                                  (get-column-type-from-model model-symbol column-keyword))))
-                               (if column-type
-                                   (convert-value-by-type value column-type)
-                                   value))
-                             value))
-                   (loop for param-key in (nreverse regular-named-params)
-                         collect (getf named-values param-key)))))
+        (let* ((reversed-params (nreverse regular-named-params))
+               (reversed-specs (nreverse regular-column-specs))
+               ;; Pad column-specs with nil to match params length
+               (padded-specs (append reversed-specs 
+                                    (make-list (- (length reversed-params) 
+                                                 (length reversed-specs)))))
+               (converted-values
+                (if convert-types
+                    (loop for param-key in reversed-params
+                          for column-spec in padded-specs
+                          as value = (getf named-values param-key)
+                          collect
+                          (if column-spec
+                              (let* ((model-symbol (gethash (first column-spec) alias->model))
+                                     (column-keyword (second column-spec))
+                                     (column-type (when model-symbol
+                                                   (get-column-type-from-model model-symbol column-keyword))))
+                                (if column-type
+                                    (convert-value-by-type value column-type)
+                                    value))
+                              value))
+                    (loop for param-key in reversed-params
+                          collect (getf named-values param-key)))))
           (appendf final-params converted-values))
 
         ;; for debug
