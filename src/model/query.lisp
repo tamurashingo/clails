@@ -130,7 +130,7 @@
 ;;;; ========================================
 ;;;; export method
 
-(defmethod execute-query ((query <query>) named-values &key connection)
+(defmethod execute-query ((query <query>) named-values &key connection (convert-types t))
   "Execute the query and return model instances.
 
    Generates SQL from the query specification, executes it against the database,
@@ -139,10 +139,11 @@
    @param query [<query>] Query specification
    @param named-values [plist] Named parameter values for the query
    @param connection [dbi:<dbi-connection>] Optional database connection to use
+   @param convert-types [boolean] Whether to perform automatic type conversion (default: t)
    @return [list] List of model instances with populated relations
    "
   (multiple-value-bind (sql params)
-      (generate-query query named-values)
+      (generate-query query named-values :convert-types convert-types)
     (when (log-level-enabled-p :sql :debug)
       (log.sql (format nil "sql: ~S" query))
       (log.sql (format nil "params: ~S" params)))
@@ -575,7 +576,7 @@
 ;;; ----------------------------------------
 ;;; query
 
-(defmethod generate-query ((query <query>) &optional named-values)
+(defmethod generate-query ((query <query>) &optional named-values &key (convert-types t))
   "Generate SQL query and parameters from query specification.
 
    Constructs SELECT statement with joins, where clause, order by, limit, and offset.
@@ -583,6 +584,7 @@
 
    @param query [<query>] Query specification
    @param named-values [plist] Named parameter values
+   @param convert-types [boolean] Whether to perform automatic type conversion (default: t)
    @return [string] SQL query string
    @return [list] List of parameter values
    "
@@ -642,19 +644,22 @@
 
         ;; Convert parameter values based on column types
         (let ((converted-values
-               (loop for param-key in (nreverse regular-named-params)
-                     for column-spec in (nreverse regular-column-specs)
-                     as value = (getf named-values param-key)
-                     collect
-                     (if column-spec
-                         (let* ((model-symbol (gethash (first column-spec) alias->model))
-                                (column-keyword (second column-spec))
-                                (column-type (when model-symbol
-                                              (get-column-type-from-model model-symbol column-keyword))))
-                           (if column-type
-                               (convert-value-by-type value column-type)
-                               value))
-                         value))))
+               (if convert-types
+                   (loop for param-key in (nreverse regular-named-params)
+                         for column-spec in (nreverse regular-column-specs)
+                         as value = (getf named-values param-key)
+                         collect
+                         (if column-spec
+                             (let* ((model-symbol (gethash (first column-spec) alias->model))
+                                    (column-keyword (second column-spec))
+                                    (column-type (when model-symbol
+                                                  (get-column-type-from-model model-symbol column-keyword))))
+                               (if column-type
+                                   (convert-value-by-type value column-type)
+                                   value))
+                             value))
+                   (loop for param-key in (nreverse regular-named-params)
+                         collect (getf named-values param-key)))))
           (appendf final-params converted-values))
 
         ;; for debug
