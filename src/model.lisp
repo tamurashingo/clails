@@ -16,7 +16,16 @@
                 #:execute-query
                 #:save
                 #:make-record
-                #:destroy)
+                #:destroy
+                #:to-string
+                #:to-text
+                #:to-integer
+                #:to-float
+                #:to-decimal
+                #:to-datetime
+                #:to-date
+                #:to-time
+                #:to-boolean)
   (:import-from #:clails/model/transaction
                 #:with-transaction
                 #:with-transaction-using-connection)
@@ -49,7 +58,17 @@
            #:with-locked-transaction
 
            #:with-query-cursor
-           #:show-query-sql))
+           #:show-query-sql
+           
+           #:to-string
+           #:to-text
+           #:to-integer
+           #:to-float
+           #:to-decimal
+           #:to-datetime
+           #:to-date
+           #:to-time
+           #:to-boolean))
 
 
 

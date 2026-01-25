@@ -23,6 +23,8 @@
                 #:create-connection-pool-impl)
   (:import-from #:clails/model/query
                 #:get-last-id-impl)
+  (:import-from #:clails/model/util
+                #:get-cl-db-fn-by-type)
   (:import-from #:clails/logger
                 #:log.sql)
   (:import-from #:clails/util
@@ -411,5 +413,45 @@
                  (dbi-cp:prepare connection "select last_insert_id()")
                  '())))
     (getf (dbi-cp:fetch result) :|last_insert_id()|)))
+
+
+;;; ----------------------------------------
+;;; type conversion implementations
+
+(defmethod clails/model/query:to-string-impl ((database-type <database-type-mysql>) value)
+  (declare (ignore database-type))
+  (funcall (get-cl-db-fn-by-type *mysql-type-convert-functions* :string) value))
+
+(defmethod clails/model/query:to-text-impl ((database-type <database-type-mysql>) value)
+  (declare (ignore database-type))
+  (funcall (get-cl-db-fn-by-type *mysql-type-convert-functions* :text) value))
+
+(defmethod clails/model/query:to-integer-impl ((database-type <database-type-mysql>) value)
+  (declare (ignore database-type))
+  (funcall (get-cl-db-fn-by-type *mysql-type-convert-functions* :integer) value))
+
+(defmethod clails/model/query:to-float-impl ((database-type <database-type-mysql>) value)
+  (declare (ignore database-type))
+  (funcall (get-cl-db-fn-by-type *mysql-type-convert-functions* :float) value))
+
+(defmethod clails/model/query:to-decimal-impl ((database-type <database-type-mysql>) value)
+  (declare (ignore database-type))
+  (funcall (get-cl-db-fn-by-type *mysql-type-convert-functions* :decimal) value))
+
+(defmethod clails/model/query:to-datetime-impl ((database-type <database-type-mysql>) value)
+  (declare (ignore database-type))
+  (funcall (get-cl-db-fn-by-type *mysql-type-convert-functions* :datetime) value))
+
+(defmethod clails/model/query:to-date-impl ((database-type <database-type-mysql>) value)
+  (declare (ignore database-type))
+  (funcall (get-cl-db-fn-by-type *mysql-type-convert-functions* :date) value))
+
+(defmethod clails/model/query:to-time-impl ((database-type <database-type-mysql>) value)
+  (declare (ignore database-type))
+  (funcall (get-cl-db-fn-by-type *mysql-type-convert-functions* :time) value))
+
+(defmethod clails/model/query:to-boolean-impl ((database-type <database-type-mysql>) value)
+  (declare (ignore database-type))
+  (funcall (get-cl-db-fn-by-type *mysql-type-convert-functions* :boolean) value))
 
 
