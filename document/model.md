@@ -2155,6 +2155,183 @@ Bulk operations occupy connections for long periods and maintain transactions, s
 
 ---
 
+## 15. Query Cache Feature
+
+clails improves performance when executing the same query repeatedly by caching query parsing results.
+
+### Overview
+
+The `<query>` class internally caches the parsing results of the entire query (SELECT, JOIN, WHERE, ORDER BY, LIMIT, OFFSET). This ensures that when executing queries with `execute-query`, parsing is performed only on the first execution, with cached results used for subsequent executions.
+
+### How Caching Works
+
+#### Automatic Caching
+
+Queries are automatically cached on their first execution. Users do not need to explicitly manage the cache.
+
+```common-lisp
+;; Define a query
+(defvar *user-query* 
+  (query <user>
+         :as :user
+         :where (:= (:user :is-active) :active)
+         :order-by ((:user :created-at :desc))))
+
+;; First execution: Parsing is performed and results are cached
+(execute-query *user-query* '(:active t))
+
+;; Subsequent executions: Cached results are used (parsing is skipped)
+(execute-query *user-query* '(:active t))
+(execute-query *user-query* '(:active nil))
+```
+
+#### Cache Invalidation
+
+When the query definition is modified, the cache is automatically invalidated, and parsing is performed again on the next execution.
+
+```common-lisp
+;; Dynamically construct query with query-builder
+(defvar *q* (query-builder '<user> :as :user))
+(set-columns *q* '((user :id :name)))
+(set-where *q* '(:= (:user :status) :status))
+
+;; First execution: Cache generation
+(execute-query *q* '(:status "active"))
+
+;; Modify query definition: Cache is automatically invalidated
+(set-where *q* '(:> (:user :age) :min-age))
+
+;; Next execution: Parsing is performed with new query and cached
+(execute-query *q* '(:min-age 20))
+```
+
+### Cached Components
+
+Parsing results of the following query components are cached:
+
+- **SELECT clause**: Parsing results of column selection
+- **JOIN clause**: Parsing results of JOIN conditions
+- **WHERE clause**: Parsing results of conditional expressions (including dynamic IN clause templates)
+- **ORDER BY clause**: Parsing results of sort conditions
+- **LIMIT/OFFSET clause**: Parsing results of pagination
+
+### Handling Dynamic IN Clauses
+
+For dynamic IN clauses (when passing lists as parameters), the IN clause template is cached, and actual expansion is performed at execution time.
+
+```common-lisp
+(defvar *blog-query*
+  (query <blog>
+         :as :blog
+         :where (:in (:blog :id) :blog-ids)))
+
+;; First execution: IN clause template is cached
+(execute-query *blog-query* '(:blog-ids (1 2 3)))
+
+;; Second execution: Dynamically expanded from cached template
+(execute-query *blog-query* '(:blog-ids (4 5 6 7 8)))
+
+;; Correctly expanded even with different numbers of values
+(execute-query *blog-query* '(:blog-ids (10)))
+```
+
+### Performance Impact
+
+The caching feature improves performance in the following situations:
+
+#### 1. Pagination
+
+```common-lisp
+(defvar *page-query*
+  (query <user>
+         :as :user
+         :where (:= (:user :status) :status)
+         :order-by ((:user :created-at :desc))
+         :limit 20
+         :offset :offset))
+
+;; Parsing is skipped for each page retrieval
+(execute-query *page-query* '(:status "active" :offset 0))   ; Page 1
+(execute-query *page-query* '(:status "active" :offset 20))  ; Page 2
+(execute-query *page-query* '(:status "active" :offset 40))  ; Page 3
+```
+
+#### 2. Batch Processing
+
+```common-lisp
+(defvar *batch-query*
+  (query <task>
+         :as :task
+         :where (:= (:task :status) :status)))
+
+;; Effective for large volumes of query execution
+(loop for i from 1 to 1000
+      do (execute-query *batch-query* '(:status "pending")))
+```
+
+#### 3. Complex Queries
+
+For queries with complex JOINs and WHERE clauses, the cost of parsing is high, making the caching effect more pronounced.
+
+```common-lisp
+(defvar *complex-query*
+  (query <employee>
+         :as :emp
+         :joins ((:inner-join :department)
+                 (:inner-join :company :through :department))
+         :where (:and (:= (:dept :name) :dept-name)
+                      (:>= (:emp :salary) :min-salary)
+                      (:in (:company :industry) :industries))
+         :order-by ((:emp :salary :desc))))
+
+;; Even for complex queries, parsing is skipped from the second execution onward
+(execute-query *complex-query* 
+               '(:dept-name "Sales" 
+                 :min-salary 50000 
+                 :industries ("Tech" "Finance")))
+```
+
+### Notes
+
+1. **Query Reuse**: When executing the same query multiple times, save the query object in a variable and reuse it
+2. **Memory Usage**: Cache is managed in sync with the query object lifecycle. Properly dispose of query objects that are no longer needed
+3. **Thread Safety**: The current implementation does not anticipate simultaneous use of `<query>` instances from multiple threads
+
+### Best Practices
+
+#### Recommended: Query Reuse
+
+```common-lisp
+;; Recommended: Reuse query objects
+(defvar *user-search-query*
+  (query <user>
+         :as :user
+         :where (:like (:user :name) :keyword)))
+
+(defun search-users (keyword)
+  (execute-query *user-search-query* 
+                 (list :keyword (format nil "%~A%" keyword))))
+
+;; Efficient no matter how many times it's called
+(search-users "Alice")
+(search-users "Bob")
+(search-users "Charlie")
+```
+
+#### Not Recommended: Query Regeneration
+
+```common-lisp
+;; Not recommended: Generate query each time (cannot benefit from cache)
+(defun search-users-bad (keyword)
+  (execute-query
+    (query <user>
+           :as :user
+           :where (:like (:user :name) :keyword))
+    (list :keyword (format nil "%~A%" keyword))))
+```
+
+---
+
 ## Summary
 
 clails Models have the following features:
@@ -2167,5 +2344,6 @@ clails Models have the following features:
 6. **Transaction Management**: Easy transaction control with `with-transaction` and nested transaction (savepoint) support
 7. **Native Queries**: Flexible SQL query execution using cl-batis
 8. **Bulk Operations**: Support for streaming processing and batch operations for efficient handling of large data
+9. **Query Cache**: Automatically cache query parsing results to improve performance when executing the same query repeatedly
 
 For detailed API reference, please refer to the docstring of each function.

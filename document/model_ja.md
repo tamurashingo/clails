@@ -2275,6 +2275,183 @@ Model インスタンスは自動的に JSON に変換できます。
 
 ---
 
+## 15. クエリキャッシュ機能
+
+clails では、クエリのパース結果をキャッシュすることで、同じクエリを繰り返し実行する際のパフォーマンスを向上させています。
+
+### 概要
+
+`<query>` クラスは、クエリ全体（SELECT、JOIN、WHERE、ORDER BY、LIMIT、OFFSET）のパース結果を内部的にキャッシュします。これにより、`execute-query` でのクエリ実行時に、初回のみパース処理が行われ、2回目以降はキャッシュされた結果が使用されます。
+
+### キャッシュの仕組み
+
+#### 自動キャッシュ
+
+クエリは初回実行時に自動的にキャッシュされます。ユーザーが明示的にキャッシュを管理する必要はありません。
+
+```common-lisp
+;; クエリを定義
+(defvar *user-query* 
+  (query <user>
+         :as :user
+         :where (:= (:user :is-active) :active)
+         :order-by ((:user :created-at :desc))))
+
+;; 初回実行: パース処理が実行され、結果がキャッシュされる
+(execute-query *user-query* '(:active t))
+
+;; 2回目以降: キャッシュされた結果が使用される（パース処理はスキップ）
+(execute-query *user-query* '(:active t))
+(execute-query *user-query* '(:active nil))
+```
+
+#### キャッシュの無効化
+
+クエリ定義を変更すると、キャッシュは自動的に無効化され、次回実行時に再度パース処理が行われます。
+
+```common-lisp
+;; query-builder で動的にクエリを構築
+(defvar *q* (query-builder '<user> :as :user))
+(set-columns *q* '((user :id :name)))
+(set-where *q* '(:= (:user :status) :status))
+
+;; 初回実行: キャッシュ生成
+(execute-query *q* '(:status "active"))
+
+;; クエリ定義を変更: キャッシュが自動的に無効化される
+(set-where *q* '(:> (:user :age) :min-age))
+
+;; 次回実行: 新しいクエリでパース処理が実行され、キャッシュされる
+(execute-query *q* '(:min-age 20))
+```
+
+### キャッシュの対象
+
+以下のクエリコンポーネントのパース結果がキャッシュされます:
+
+- **SELECT句**: カラム選択のパース結果
+- **JOIN句**: JOIN条件のパース結果
+- **WHERE句**: 条件式のパース結果（動的IN句のテンプレートを含む）
+- **ORDER BY句**: ソート条件のパース結果
+- **LIMIT/OFFSET句**: ページネーションのパース結果
+
+### 動的IN句の扱い
+
+動的IN句（パラメータでリストを渡す場合）では、IN句のテンプレートがキャッシュされ、実際の展開は実行時に行われます。
+
+```common-lisp
+(defvar *blog-query*
+  (query <blog>
+         :as :blog
+         :where (:in (:blog :id) :blog-ids)))
+
+;; 初回実行: IN句のテンプレートがキャッシュされる
+(execute-query *blog-query* '(:blog-ids (1 2 3)))
+
+;; 2回目実行: キャッシュされたテンプレートから動的に展開される
+(execute-query *blog-query* '(:blog-ids (4 5 6 7 8)))
+
+;; 異なる数の値でも正しく展開される
+(execute-query *blog-query* '(:blog-ids (10)))
+```
+
+### パフォーマンスへの影響
+
+キャッシュ機能により、以下のような状況でパフォーマンスが向上します:
+
+#### 1. ページネーション
+
+```common-lisp
+(defvar *page-query*
+  (query <user>
+         :as :user
+         :where (:= (:user :status) :status)
+         :order-by ((:user :created-at :desc))
+         :limit 20
+         :offset :offset))
+
+;; 各ページの取得でパース処理がスキップされる
+(execute-query *page-query* '(:status "active" :offset 0))   ; ページ1
+(execute-query *page-query* '(:status "active" :offset 20))  ; ページ2
+(execute-query *page-query* '(:status "active" :offset 40))  ; ページ3
+```
+
+#### 2. バッチ処理
+
+```common-lisp
+(defvar *batch-query*
+  (query <task>
+         :as :task
+         :where (:= (:task :status) :status)))
+
+;; 大量のクエリ実行で効果を発揮
+(loop for i from 1 to 1000
+      do (execute-query *batch-query* '(:status "pending")))
+```
+
+#### 3. 複雑なクエリ
+
+複雑なJOINやWHERE句を持つクエリでは、パース処理のコストが大きいため、キャッシュの効果が顕著になります。
+
+```common-lisp
+(defvar *complex-query*
+  (query <employee>
+         :as :emp
+         :joins ((:inner-join :department)
+                 (:inner-join :company :through :department))
+         :where (:and (:= (:dept :name) :dept-name)
+                      (:>= (:emp :salary) :min-salary)
+                      (:in (:company :industry) :industries))
+         :order-by ((:emp :salary :desc))))
+
+;; 複雑なクエリでも2回目以降はパース処理がスキップされる
+(execute-query *complex-query* 
+               '(:dept-name "Sales" 
+                 :min-salary 50000 
+                 :industries ("Tech" "Finance")))
+```
+
+### 注意事項
+
+1. **クエリの再利用**: 同じクエリを複数回実行する場合は、クエリオブジェクトを変数に保存して再利用してください
+2. **メモリ使用量**: キャッシュはクエリオブジェクトのライフサイクルと同期して管理されます。不要になったクエリオブジェクトは適切に破棄してください
+3. **スレッドセーフティ**: 現在の実装では、`<query>` インスタンスを複数のスレッドから同時に使用することは想定していません
+
+### ベストプラクティス
+
+#### 推奨: クエリの再利用
+
+```common-lisp
+;; 推奨: クエリオブジェクトを再利用
+(defvar *user-search-query*
+  (query <user>
+         :as :user
+         :where (:like (:user :name) :keyword)))
+
+(defun search-users (keyword)
+  (execute-query *user-search-query* 
+                 (list :keyword (format nil "%~A%" keyword))))
+
+;; 何度呼び出しても効率的
+(search-users "Alice")
+(search-users "Bob")
+(search-users "Charlie")
+```
+
+#### 非推奨: クエリの再生成
+
+```common-lisp
+;; 非推奨: 毎回クエリを生成（キャッシュの恩恵を受けられない）
+(defun search-users-bad (keyword)
+  (execute-query
+    (query <user>
+           :as :user
+           :where (:like (:user :name) :keyword))
+    (list :keyword (format nil "%~A%" keyword))))
+```
+
+---
+
 ## まとめ
 
 clails の Model は以下の特徴を持ちます。
@@ -2287,5 +2464,6 @@ clails の Model は以下の特徴を持ちます。
 6. **トランザクション管理**: `with-transaction` による簡単なトランザクション制御とネストしたトランザクション（セーブポイント）のサポート
 7. **ネイティブクエリ**: cl-batis を使用した柔軟な SQL クエリの実行
 8. **バルク操作**: 大量データを効率的に処理するためのストリーミング処理とバッチ操作のサポート
+9. **クエリキャッシュ**: クエリのパース結果を自動的にキャッシュし、同じクエリの繰り返し実行時のパフォーマンスを向上
 
 詳細な API リファレンスについては、各関数の docstring を参照してください。
