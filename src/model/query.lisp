@@ -11,7 +11,9 @@
   (:import-from #:clails/condition
                 #:optimistic-lock-error)
   (:import-from #:clails/environment
-                #:*database-type*)
+                #:*database-type*
+                #:*table-information-initialized*
+                #:*query-initialization-callbacks*)
   (:import-from #:clails/model/base-model
                 #:<base-model>
                 #:validate
@@ -153,6 +155,50 @@
              :documentation "Previous join in the chain"))
   (:documentation "Join specification for query builder."))
 
+(defclass <query-placeholder> ()
+  ((model :initarg :model
+          :documentation "Model class symbol")
+   (alias :initarg :alias
+          :documentation "Alias name for the model in query")
+   (columns :initarg :columns
+            :initform nil
+            :documentation "List of columns to select")
+   (joins :initarg :joins
+          :initform nil
+          :documentation "List of join specifications")
+   (where :initarg :where
+          :initform nil
+          :documentation "WHERE clause specification")
+   (order-by :initarg :order-by
+             :initform nil
+             :documentation "ORDER BY clause specification")
+   (limit :initarg :limit
+          :initform nil
+          :documentation "LIMIT value")
+   (offset :initarg :offset
+           :initform nil
+           :documentation "OFFSET value")
+   (actual-query :initform nil
+                 :accessor actual-query
+                 :documentation "Actual <query> instance after initialization"))
+  (:documentation "Placeholder for query instances created before table information initialization."))
+
+
+;;;; ----------------------------------------
+;;;; placeholder methods
+
+(defun ensure-initialized (placeholder)
+  "Ensure the query placeholder has been initialized.
+
+   @param placeholder [<query-placeholder>] Query placeholder instance
+   @return [<query>] Actual query instance
+   @condition error Signaled when placeholder has not been initialized
+   "
+  (let ((actual (actual-query placeholder)))
+    (if actual
+        actual
+        (error "Query not initialized. Call initialize-table-information first."))))
+
 
 ;;;; ========================================
 ;;;; export method
@@ -180,6 +226,20 @@
                      (dbi-cp:prepare connection sql)
                      params))))
       (build-model-instances query result))))
+
+(defmethod execute-query ((placeholder <query-placeholder>) named-values &key connection (convert-types t))
+  "Execute the query via placeholder delegation.
+
+   @param placeholder [<query-placeholder>] Query placeholder instance
+   @param named-values [plist] Named parameter values for the query
+   @param connection [dbi:<dbi-connection>] Optional database connection to use
+   @param convert-types [boolean] Whether to perform automatic type conversion (default: t)
+   @return [list] List of model instances with populated relations
+   @condition error Signaled when placeholder has not been initialized
+   "
+  (execute-query (ensure-initialized placeholder) named-values
+                 :connection connection
+                 :convert-types convert-types))
 
 
 (defmethod save ((inst <base-model>) &key connection)
@@ -348,6 +408,7 @@
    @param limit [integer] LIMIT value
    @param offset [integer] OFFSET value
    @return [<query>] Query builder instance
+   @return [<query-placeholder>] Query placeholder instance (if table information not initialized)
    @condition error Signaled when :as is missing or not a keyword
 
    Example:
@@ -382,15 +443,40 @@
                                            :relation ',relation
                                            :through ',through)))
                      joins-list)))
-    `(make-instance '<query>
-                    :model ',model
-                    :alias ',as
-                    :columns ',(expand-columns columns)
-                    :joins (list ,@(expand-joins joins))
-                    :where ',where
-                    :order-by ',order-by
-                    :limit ',limit
-                    :offset ',offset)))
+    `(if clails/environment:*table-information-initialized*
+         ;; Table information initialized: create actual query instance
+         (make-instance '<query>
+                        :model ',model
+                        :alias ',as
+                        :columns ',(expand-columns columns)
+                        :joins (list ,@(expand-joins joins))
+                        :where ',where
+                        :order-by ',order-by
+                        :limit ',limit
+                        :offset ',offset)
+         ;; Not initialized: create placeholder and register callback
+         (let ((placeholder (make-instance '<query-placeholder>
+                                           :model ',model
+                                           :alias ',as
+                                           :columns ',(expand-columns columns)
+                                           :joins (list ,@(expand-joins joins))
+                                           :where ',where
+                                           :order-by ',order-by
+                                           :limit ',limit
+                                           :offset ',offset)))
+           (push (lambda ()
+                   (setf (actual-query placeholder)
+                         (make-instance '<query>
+                                        :model ',model
+                                        :alias ',as
+                                        :columns ',(expand-columns columns)
+                                        :joins (list ,@(expand-joins joins))
+                                        :where ',where
+                                        :order-by ',order-by
+                                        :limit ',limit
+                                        :offset ',offset)))
+                 clails/environment:*query-initialization-callbacks*)
+           placeholder))))
 
 
 (defun query-builder (model &key as)
@@ -420,7 +506,10 @@
                  :alias as))
 
 
-(defun set-columns (query columns)
+(defgeneric set-columns (query columns)
+  (:documentation "Set the columns to select in the query."))
+
+(defmethod set-columns ((query <query>) columns)
   "Set the columns to select in the query.
 
    Replaces any previously set columns.
@@ -445,8 +534,21 @@
     (invalidate-query-cache query)
     query))
 
+(defmethod set-columns ((placeholder <query-placeholder>) columns)
+  "Set the columns via placeholder delegation.
 
-(defun set-joins (query joins)
+   @param placeholder [<query-placeholder>] Query placeholder instance
+   @param columns [list] List of column specifications in grouped format
+   @return [<query>] The actual query instance (for method chaining)
+   @condition error Signaled when placeholder has not been initialized
+   "
+  (set-columns (ensure-initialized placeholder) columns))
+
+
+(defgeneric set-joins (query joins)
+  (:documentation "Set the JOIN clauses in the query."))
+
+(defmethod set-joins ((query <query>) joins)
   "Set the JOIN clauses in the query.
 
    Replaces any previously set joins.
@@ -474,7 +576,7 @@
     query))
 
 
-(defun set-where (query where-clause)
+(defmethod set-where ((query <query>) where-clause)
   "Set the WHERE clause in the query.
 
    Replaces any previously set WHERE clause.
@@ -491,8 +593,21 @@
   (invalidate-query-cache query)
   query)
 
+(defmethod set-where ((placeholder <query-placeholder>) where-clause)
+  "Set the WHERE clause via placeholder delegation.
 
-(defun set-order-by (query order-by)
+   @param placeholder [<query-placeholder>] Query placeholder instance
+   @param where-clause [list] WHERE clause expression
+   @return [<query>] The actual query instance (for method chaining)
+   @condition error Signaled when placeholder has not been initialized
+   "
+  (set-where (ensure-initialized placeholder) where-clause))
+
+
+(defgeneric set-order-by (query order-by)
+  (:documentation "Set the ORDER BY clause in the query."))
+
+(defmethod set-order-by ((query <query>) order-by)
   "Set the ORDER BY clause in the query.
 
    Replaces any previously set ORDER BY clause.
@@ -510,7 +625,7 @@
   query)
 
 
-(defun set-limit (query limit)
+(defmethod set-limit ((query <query>) limit)
   "Set the LIMIT clause in the query.
 
    Replaces any previously set LIMIT.
@@ -527,8 +642,21 @@
   (invalidate-query-cache query)
   query)
 
+(defmethod set-limit ((placeholder <query-placeholder>) limit)
+  "Set the LIMIT clause via placeholder delegation.
 
-(defun set-offset (query offset)
+   @param placeholder [<query-placeholder>] Query placeholder instance
+   @param limit [integer|keyword|nil] LIMIT value, parameter keyword, or nil to remove
+   @return [<query>] The actual query instance (for method chaining)
+   @condition error Signaled when placeholder has not been initialized
+   "
+  (set-limit (ensure-initialized placeholder) limit))
+
+
+(defgeneric set-offset (query offset)
+  (:documentation "Set the OFFSET clause in the query."))
+
+(defmethod set-offset ((query <query>) offset)
   "Set the OFFSET clause in the query.
 
    Replaces any previously set OFFSET.
@@ -544,6 +672,16 @@
   (setf (slot-value query 'offset) offset)
   (invalidate-query-cache query)
   query)
+
+(defmethod set-offset ((placeholder <query-placeholder>) offset)
+  "Set the OFFSET clause via placeholder delegation.
+
+   @param placeholder [<query-placeholder>] Query placeholder instance
+   @param offset [integer|keyword|nil] OFFSET value, parameter keyword, or nil to remove
+   @return [<query>] The actual query instance (for method chaining)
+   @condition error Signaled when placeholder has not been initialized
+   "
+  (set-offset (ensure-initialized placeholder) offset))
 
 
 ;;;; ========================================
@@ -769,6 +907,19 @@
         (log.sql (format nil "params: ~S" final-params)))
       
       (values final-sql final-params))))
+
+
+(defmethod generate-query ((placeholder <query-placeholder>) &optional named-values &key (convert-types t))
+  "Generate SQL query via placeholder delegation.
+
+   @param placeholder [<query-placeholder>] Query placeholder instance
+   @param named-values [plist] Named parameter values
+   @param convert-types [boolean] Whether to perform automatic type conversion (default: t)
+   @return [string] SQL query string
+   @return [list] List of parameter values
+   @condition error Signaled when placeholder has not been initialized
+   "
+  (generate-query (ensure-initialized placeholder) named-values :convert-types convert-types))
 
 
 (defmethod resolve-joins ((query <query>))
