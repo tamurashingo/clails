@@ -72,6 +72,9 @@
   
   ;; Insert test data
   (let ((connection (get-connection)))
+    ;; Clear existing data first
+    (dbi-cp:execute (dbi-cp:prepare connection "DELETE FROM todo") '())
+    
     (dbi-cp:execute (dbi-cp:prepare connection "INSERT INTO todo (title, done, done_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
                     (list "First Task" 1 "2024-01-01 00:00:00" "2024-01-01 00:00:00" "2024-01-01 00:00:00"))
     (dbi-cp:execute (dbi-cp:prepare connection "INSERT INTO todo (title, done, done_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
@@ -227,7 +230,7 @@
           
           ;; Verify first result
           (ok (string= (ref (first results1) :title) (ref (first results2) :title)))
-          (ok (= (ref (first results1) :done) (ref (first results2) :done))))))))
+          (ok (eq (ref (first results1) :done) (ref (first results2) :done))))))))
 
 (deftest query-cache-integration-different-parameters
   (testing "Different parameters return different results with cache"
@@ -247,8 +250,8 @@
           (ok (= (length results1) 2))
           (ok (= (length results2) 1))
           
-          (ok (= (ref (first results1) :done) 1))
-          (ok (= (ref (first results2) :done) 0)))))))
+          (ok (eq (ref (first results1) :done) T))
+          (ok (eq (ref (first results2) :done) NIL)))))))
 
 (deftest query-cache-integration-query-builder
   (testing "Query builder with cache works correctly"
@@ -267,6 +270,6 @@
           (ok (= (length results1) (length results2)))
           (ok (= (length results1) 2))
           
-          ;; All results should have done=1
-          (ok (every #'(lambda (r) (= (ref r :done) 1)) results1))
-          (ok (every #'(lambda (r) (= (ref r :done) 1)) results2)))))))
+          ;; All results should have done=T
+          (ok (every #'(lambda (r) (eq (ref r :done) T)) results1))
+          (ok (every #'(lambda (r) (eq (ref r :done) T)) results2)))))))
