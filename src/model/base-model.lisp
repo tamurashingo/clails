@@ -2,7 +2,9 @@
 (defpackage #:clails/model/base-model
   (:use #:cl)
   (:import-from #:clails/environment
-                #:*database-type*)
+                #:*database-type*
+                #:*table-information-initialized*
+                #:*query-initialization-callbacks*)
   (:import-from #:clails/model/connection
                 #:with-db-connection-direct)
   (:import-from #:clails/util
@@ -62,7 +64,7 @@ Example: ((:name :id
 
 (defmethod print-object ((obj <base-model>) stream)
   "Print model instance showing column names and values.
-   
+
    @param obj [<base-model>] Model instance
    @param stream [stream] Output stream
    "
@@ -76,12 +78,12 @@ Example: ((:name :id
 
 (defmethod jonathan:%to-json ((obj <base-model>))
   "Convert model instance to JSON format.
-   
+
    Serializes all columns according to their types:
    - datetime: formatted using view/datetime
    - boolean: converted to true/false
    - null values: represented as :null
-   
+
    @param obj [<base-model>] Model instance
    @return [string] JSON representation
    "
@@ -109,10 +111,10 @@ Example: ((:name :id
 
 (defgeneric validate (inst)
   (:documentation "Validate model instance before saving.
-   
+
    Override this method to implement custom validation logic.
    Return T if valid, NIL or signal error if invalid.
-   
+
    @param inst [<base-model>] Model instance to validate
    @return [boolean] T if valid
    ")
@@ -121,10 +123,10 @@ Example: ((:name :id
 
 (defmethod ref ((inst <base-model>) key)
   "Get the value of a model column or relation.
-   
+
    Retrieves values for database columns (:id, :created-at, :updated-at, or columns
    defined in the model) or relation aliases. Signals an error if key is invalid.
-   
+
    @param inst [<base-model>] Model instance
    @param key [keyword] Column or relation key
    @return [t] Column value, or NIL if not set
@@ -149,7 +151,7 @@ Example: ((:name :id
 
 (defmethod ref-error ((inst <base-model>) key)
   "Get the validation error for a specific column.
-   
+
    @param inst [<base-model>] Model instance
    @param key [keyword] Column key
    @return [t] Error value, or NIL if no error
@@ -196,7 +198,7 @@ Example: ((:name :id
 
 (defmethod (setf ref-error) (error-value (inst <base-model>) key)
   "Set validation error for a specific column.
-   
+
    @param error-value [t] Error value or message to set
    @param inst [<base-model>] Model instance
    @param key [keyword] Column key
@@ -208,7 +210,7 @@ Example: ((:name :id
 
 (defmethod clear-error ((inst <base-model>))
   "Clear all validation errors from the model instance.
-   
+
    @param inst [<base-model>] Model instance
    "
   (clrhash (slot-value inst 'errors))
@@ -216,9 +218,9 @@ Example: ((:name :id
 
 (defmethod clear-dirty-flag ((inst <base-model>))
   "Clear all dirty flags from the model instance.
-   
+
    Resets the tracking of modified columns.
-   
+
    @param inst [<base-model>] Model instance
    "
   (clrhash (slot-value inst 'dirty-flag))
@@ -227,9 +229,9 @@ Example: ((:name :id
 
 (defun value= (old new)
   "Compare two values for equality.
-   
+
    Handles comparison for various types: boolean, null, number, string, and symbol.
-   
+
    @param old [t] Old value
    @param new [t] New value
    @return [boolean] T if values are equal, NIL otherwise
@@ -251,17 +253,17 @@ Example: ((:name :id
 
 (defmacro ref-in (instance &rest path)
   "Deeply access nested model relations.
-   
+
    Path segments can be:
    - A keyword for a relation (e.g., :comments)
    - A number for an index (e.g., 0)
    - A symbol bound to an index
    - A list for a function call (e.g., (nth 0))
-   
+
    @param instance [<base-model>] Model instance to start from
    @param path [list] Path segments to traverse
    @return [t] Value at the end of the path
-   
+
    Example:
    (ref-in blog :comments 0 :approved-account)
    Expands to: (ref (nth 0 (ref blog :comments)) :approved-account)
@@ -281,9 +283,9 @@ Example: ((:name :id
 
 (defun show-model-data (model)
   "Display all column data from the model instance.
-   
+
    Prints each column key and value to standard output.
-   
+
    @param model [<base-model>] Model instance
    "
   (maphash #'(lambda (key value)
@@ -292,9 +294,9 @@ Example: ((:name :id
 
 (defun show-model-columns (model)
   "Display all column definitions from the model instance.
-   
+
    Prints each column specification to standard output.
-   
+
    @param model [<base-model>] Model instance
    "
   (format t "show-model-columns: model: ~A~%" model)
@@ -304,13 +306,13 @@ Example: ((:name :id
 
 (defun model->tbl (sym)
   "Convert model name to table name.
-   
+
    Converts model class name symbols to database table names by removing
    angle brackets and converting kebab-case to snake_case.
-   
+
    @param sym [symbol] Model class name (e.g., <todo> or <todo-history>)
    @return [string] Table name (e.g., \"TODO\" or \"TODO_HISTORY\")
-   
+
    Examples:
    <todo> -> \"TODO\"
    <todo-history> -> \"TODO_HISTORY\"
@@ -327,7 +329,7 @@ Example: ((:name :id
 
 (defparameter *table-information* (make-hash-table)
   "Hash table storing metadata for all model classes.
-   
+
    Key: model class name (symbol)
    Value: plist containing:
      :table-name [string] - Database table name
@@ -341,13 +343,16 @@ Example: ((:name :id
 
 (defun initialize-table-information ()
   "Initialize table metadata for all registered models.
-   
+
    Fetches column information from the database for each registered model
    and validates configuration (e.g., version column type). Also converts
    string model references in relations to symbols.
-   
+
+   After initialization, executes all registered query initialization callbacks
+   to convert query placeholders to actual query instances.
+
    Must be called after all models are defined and database connection is available.
-   
+
    @condition error Signaled when version column is not of type :integer
    "
   (with-db-connection-direct (conn)
@@ -382,11 +387,21 @@ Example: ((:name :id
                                   (setf (getf rel-info :model)
                                         (symbol-from-string model)))))
                             relations)))
-               (format t "done~%")))))
+               (format t "done~%"))))
+
+  ;; Mark table information as initialized
+  (setf *table-information-initialized* t)
+
+  ;; Execute all query initialization callbacks
+  (dolist (callback *query-initialization-callbacks*)
+    (funcall callback))
+
+  ;; Clear callbacks list
+  (setf *query-initialization-callbacks* nil))
 
 (defun debug-table-information ()
   "Display all table metadata for debugging purposes.
-   
+
    Prints key-value pairs from *table-information* to standard output.
    "
   (loop for key being each hash-key of *table-information*
@@ -395,7 +410,7 @@ Example: ((:name :id
 
 (defun get-columns (model-name)
   "Get column specifications for a model.
-   
+
    @param model-name [symbol] Model class name
    @return [list] List of column specifications
    "
@@ -404,7 +419,7 @@ Example: ((:name :id
 
 (defun get-columns-plist (model-name)
   "Get column specifications as plist for a model.
-   
+
    @param model-name [symbol] Model class name
    @return [plist] Property list of column specifications by name
    "
@@ -414,13 +429,13 @@ Example: ((:name :id
 
 (defun validate-relation (val)
   "Validate relation specification and return missing mandatory keys.
-   
+
    Checks that the relation specification is properly formatted and contains
    all required keys for the relation type.
-   
+
    @param val [list] Relation specification (type model-name &rest options)
    @return [list] List of missing or invalid keys, or empty list if valid
-   
+
    Required keys for :has-many: :as, :foreign-key
    Required keys for :belongs-to: :column, :key
    "
@@ -443,25 +458,25 @@ Example: ((:name :id
 
 (defmacro defmodel (class-name superclass options)
   "Define a model class representing a database table.
-   
+
    Creates a model class with automatic column introspection from the database
    and support for relations (has-many, belongs-to) and optimistic locking.
-   
+
    @param class-name [symbol] Name for the model class (e.g., <todo>)
    @param superclass [list] List of superclasses (typically (<base-model>))
    @param options [plist] Model options
-   
+
    Options:
    - :table [string] - Database table name (default: derived from class-name)
    - :relations [list] - List of relation specifications
    - :version [keyword] - Column name for optimistic locking version
-   
+
    Relation specifications:
    - (:has-many \"<model-name>\" :as :alias :foreign-key :key-name)
    - (:belongs-to \"<model-name>\" :column :alias :key :key-name)
-   
+
    @condition error Signaled when relation specifications are invalid
-   
+
    Example:
    (defmodel <blog> (<base-model>)
      (:table \"blog\"
@@ -519,10 +534,10 @@ Example: ((:name :id
 
 (defgeneric fetch-columns-and-types-impl (database-type connection table)
   (:documentation "Fetch column definitions and types from database.
-   
+
    Implementation must be provided for each database type.
    Returns list of column specifications.
-   
+
    @param database-type [<database-type>] Database type instance
    @param connection [dbi:<dbi-connection>] Database connection
    @param table [string] Table name
@@ -531,15 +546,15 @@ Example: ((:name :id
 
 (defgeneric fetch-columns-and-types-plist-impl (database-type connection table)
   (:documentation "Fetch column definitions and types as plist from database.
-   
+
    Implementation must be provided for each database type.
    Returns property list of column specifications indexed by column name.
-   
+
    @param database-type [<database-type>] Database type instance
    @param connection [dbi:<dbi-connection>] Database connection
    @param table [string] Table name
    @return [plist] Property list of column specifications
-   
+
    Example format:
    (:id (:name :id
          :access \"ID\"

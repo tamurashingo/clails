@@ -17,6 +17,8 @@
            #:*sqlite3-lock-retry-count*
            #:*sqlite3-transaction-mode*
            #:*sqlite3-lock-module-loaded*
+           #:*table-information-initialized*
+           #:*query-initialization-callbacks*
            #:<database-type>
            #:<database-type-mysql>
            #:<database-type-postgresql>
@@ -197,6 +199,22 @@
 
    Set to T after src/model/impl/sqlite3-lock.lisp is successfully loaded.
    Used to ensure the module is loaded only once.")
+
+(defparameter *table-information-initialized* nil
+  "Flag indicating whether initialize-table-information has been executed.
+
+   Set to T after initialize-table-information completes successfully.
+   Used by query macro to determine whether to create actual query instances
+   or placeholder instances for lazy initialization.")
+
+(defparameter *query-initialization-callbacks* nil
+  "List of callback functions to initialize query placeholders.
+
+   When query macro is expanded before initialize-table-information is called,
+   callback functions are registered here to initialize query placeholders later.
+   Each callback takes no arguments and sets the actual query instance to the
+   corresponding placeholder's actual-query slot.
+   Cleared after initialize-table-information executes all callbacks.")
 
 (defparameter +ENVIRONMENT-NAMES+ '("DEVELOP" "TEST" "PRODUCTION")
   "List of valid environment names.")
