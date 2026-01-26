@@ -283,7 +283,7 @@
 
 (defun gen-add-column (table columns)
   (format NIL "ALTER TABLE ~A ~{ ADD COLUMN ~A ~^, ~}"
-              table
+              (kebab->snake table)
               (loop for col in columns
                     collect (parse-column col))))
 
