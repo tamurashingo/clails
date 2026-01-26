@@ -16,6 +16,7 @@
                #:clails-test/model/connection
                #:clails-test/model/query
                #:clails-test/model/query-builder
+               #:clails-test/model/query-cache
                #:clails-test/model/query/sqlite3
                #:clails-test/model/query/mysql
                #:clails-test/model/query/postgresql
