@@ -107,7 +107,34 @@
    (inst :type 'clails/model/base-model::<base-model>
          :documentation "Model instance")
    (alias->model :initform (make-hash-table)
-                 :documentation "Hash table mapping alias names to model symbols"))
+                 :documentation "Hash table mapping alias names to model symbols")
+   (query-cache :initform nil
+                :documentation "Cached result of query parsing.
+                                Format: (:sql-template <string>
+                                        :where-params <list>
+                                        :where-columns <list>
+                                        :column-types <list>
+                                        :limit-param <keyword|nil>
+                                        :offset-param <keyword|nil>)
+                                NIL when cache is invalid.
+                                
+                                Example:
+                                (:sql-template \"SELECT BLOG.ID as \\\"BLOG.ID\\\", BLOG.TITLE as \\\"BLOG.TITLE\\\" FROM BLOGS as BLOG WHERE BLOG.STATUS = ? AND BLOG.STAR > ? LIMIT ? OFFSET ?\"
+                                 :where-params (:status :min-star)
+                                 :where-columns ((:blog :status) (:blog :star))
+                                 :column-types (:string :integer)
+                                 :limit-param :limit
+                                 :offset-param :offset)
+                                
+                                With dynamic IN clause:
+                                (:sql-template \"SELECT BLOG.ID as \\\"BLOG.ID\\\" FROM BLOGS as BLOG WHERE __IN_CLAUSE_BLOG_ID_:BLOG-IDS__\"
+                                 :where-params ((:in-expansion \"IN\" \"BLOG.ID\" :blog-ids))
+                                 :where-columns nil
+                                 :column-types nil
+                                 :limit-param nil
+                                 :offset-param nil)")
+   (query-cache-valid-p :initform nil
+                        :documentation "Flag indicating if query-cache is valid."))
   (:documentation "Query builder class for constructing and executing database queries."))
 
 (defclass <join-query> ()
@@ -415,6 +442,7 @@
                                    column-names)))
                      grouped-columns)))
     (setf (slot-value query 'columns) (expand-columns columns))
+    (invalidate-query-cache query)
     query))
 
 
@@ -442,6 +470,7 @@
     (setf (slot-value query 'joins) (expand-joins joins))
     ;; Rebuild alias map after changing joins
     (build-alias-map query)
+    (invalidate-query-cache query)
     query))
 
 
@@ -459,6 +488,7 @@
                        (:> (:blog :star) :min-star)))
    "
   (setf (slot-value query 'where) where-clause)
+  (invalidate-query-cache query)
   query)
 
 
@@ -476,6 +506,7 @@
    (set-order-by q '(((:blog :star :desc) (:blog :id :asc))))
    "
   (setf (slot-value query 'order-by) order-by)
+  (invalidate-query-cache query)
   query)
 
 
@@ -493,6 +524,7 @@
    (set-limit q :limit-param)
    "
   (setf (slot-value query 'limit) limit)
+  (invalidate-query-cache query)
   query)
 
 
@@ -510,11 +542,25 @@
    (set-offset q :offset-param)
    "
   (setf (slot-value query 'offset) offset)
+  (invalidate-query-cache query)
   query)
 
 
 ;;;; ========================================
 ;;;; internals
+
+;;; ----------------------------------------
+;;; cache management
+
+(defun invalidate-query-cache (query)
+  "Invalidate the query cache.
+
+   Called when any part of the query definition is modified.
+
+   @param query [<query>] Query instance
+   "
+  (setf (slot-value query 'query-cache) nil)
+  (setf (slot-value query 'query-cache-valid-p) nil))
 
 ;;; ----------------------------------------
 ;;; instance
@@ -576,11 +622,82 @@
 ;;; ----------------------------------------
 ;;; query
 
+(defun get-or-parse-query (query)
+  "Get cached query parse result or parse and cache it.
+
+   @param query [<query>] Query instance
+   @return [string] SQL template string
+   @return [list] WHERE clause parameter keywords
+   @return [list] WHERE clause column specs
+   @return [list] Column types for parameters
+   @return [keyword|nil] LIMIT parameter keyword
+   @return [keyword|nil] OFFSET parameter keyword
+   "
+  (if (slot-value query 'query-cache-valid-p)
+      ;; Return from cache
+      (let ((cache (slot-value query 'query-cache)))
+        (values (getf cache :sql-template)
+                (getf cache :where-params)
+                (getf cache :where-columns)
+                (getf cache :column-types)
+                (getf cache :limit-param)
+                (getf cache :offset-param)))
+      ;; Parse and cache
+      (let* ((alias->model (slot-value query 'alias->model))
+             (base-alias (slot-value query 'alias))
+             (base-model (slot-value query 'model))
+             (base-table-name (getf (gethash base-model clails/model/base-model::*table-information*) 
+                                    :table-name))
+             (joins (resolve-joins query))
+             (columns (mapcar #'(lambda (c) (column-pair-to-name c T))
+                              (generate-query-columns query alias->model)))
+             (where-parts (multiple-value-list (parse-where-claude (slot-value query 'where))))
+             (order-by (generate-order-by (slot-value query 'order-by)))
+             (offset-spec (generate-offset (slot-value query 'offset)))
+             (limit-spec (generate-limit (slot-value query 'limit)))
+             (lock-clause (slot-value query 'lock-clause))
+             (sql-template (format nil "SELECT ~{~A~^, ~} FROM ~A as ~A~@[ ~A~]~@[ WHERE ~A~]~@[ ORDER BY ~{~A~^, ~}~]~@[ LIMIT ~A~]~@[ OFFSET ~A~]~@[ ~A~]"
+                                   columns
+                                   base-table-name
+                                   (kebab->snake base-alias)
+                                   (format nil "~{~A~^ ~}" joins)
+                                   (first where-parts)
+                                   order-by
+                                   (getf limit-spec :limit)
+                                   (getf offset-spec :offset)
+                                   lock-clause))
+             ;; Build column types list for WHERE clause parameters
+             (column-types (loop for column-spec in (third where-parts)
+                                 collect (when column-spec
+                                          (let* ((model-symbol (gethash (first column-spec) alias->model))
+                                                 (column-keyword (second column-spec)))
+                                            (when model-symbol
+                                              (get-column-type-from-model model-symbol column-keyword)))))))
+        
+        ;; Save to cache
+        (setf (slot-value query 'query-cache)
+              (list :sql-template sql-template
+                    :where-params (second where-parts)
+                    :where-columns (third where-parts)
+                    :column-types column-types
+                    :limit-param (getf limit-spec :keyword)
+                    :offset-param (getf offset-spec :keyword)))
+        (setf (slot-value query 'query-cache-valid-p) t)
+        
+        ;; Return results
+        (values sql-template
+                (second where-parts)
+                (third where-parts)
+                column-types
+                (getf limit-spec :keyword)
+                (getf offset-spec :keyword)))))
+
 (defmethod generate-query ((query <query>) &optional named-values &key (convert-types t))
   "Generate SQL query and parameters from query specification.
 
    Constructs SELECT statement with joins, where clause, order by, limit, and offset.
    Handles dynamic IN clause expansion for parameterized queries.
+   Uses cached parsing results if available.
 
    @param query [<query>] Query specification
    @param named-values [plist] Named parameter values
@@ -588,94 +705,70 @@
    @return [string] SQL query string
    @return [list] List of parameter values
    "
-  (let* ((alias->model (slot-value query 'alias->model))
-         (base-alias (slot-value query 'alias))
-         (base-model (slot-value query 'model))
-         (base-table-name (getf (gethash base-model clails/model/base-model::*table-information*) :table-name)))
-
-    (let* ((joins (resolve-joins query))
-           (columns (mapcar #'(lambda (c) (column-pair-to-name c T))
-                            (generate-query-columns query alias->model)))
-           (where-parts (multiple-value-list (parse-where-claude (slot-value query 'where))))
-           (order-by (generate-order-by (slot-value query 'order-by)))
-           (offset (generate-offset (slot-value query 'offset)))
-           (limit (generate-limit (slot-value query 'limit)))
-           (lock-clause (slot-value query 'lock-clause))
-           (sql-template (format nil "SELECT ~{~A~^, ~} FROM ~A as ~A~@[ ~A~]~@[ WHERE ~A~]~@[ ORDER BY ~{~A~^, ~}~]~@[ LIMIT ~A~]~@[ OFFSET ~A~]~@[ ~A~]"
-                                 columns
-                                 base-table-name
-                                 (kebab->snake base-alias)
-                                 (format nil "~{~A~^ ~}" joins)
-                                 (first where-parts)
-                                 order-by
-                                 (getf limit :limit)
-                                 (getf offset :offset)
-                                 lock-clause))
-           (named-params (append (second where-parts)
-                                          (ensure-list (getf limit :keyword))
-                                          (ensure-list (getf offset :keyword))))
-           (column-specs (third where-parts)))
-
-      (let ((final-sql sql-template)
-            (final-params '())
-            (regular-named-params '())
-            (regular-column-specs '())
-            (where-param-count (length (second where-parts))))
-
-        (loop for param in named-params
-              for param-index from 0
-              do (if (and (listp param) (eq (car param) :in-expansion))
-                     (destructuring-bind (op column-sql keyword) (cdr param)
-                       (let* ((values (getf named-values keyword))
-                              (placeholder (format nil "__IN_CLAUSE_~A_~A__"
-                                                   (cl-ppcre:regex-replace-all "[.:]" column-sql "_")
-                                                   keyword)))
-
-                         (if (null values)
-                             (let ((replacement (if (string= op "IN") "1=0" "1=1")))
-                               (setf final-sql (cl-ppcre:regex-replace-all (cl-ppcre:quote-meta-chars placeholder) final-sql replacement)))
-                             (let* ((question-marks (format nil "(~{?~*~^, ~})" values))
-                                    (replacement (format nil "~A ~A ~A" column-sql op question-marks)))
-                               (setf final-sql (cl-ppcre:regex-replace-all (cl-ppcre:quote-meta-chars placeholder) final-sql replacement))
-                               (appendf final-params values)))))
-                     (progn
-                       (push param regular-named-params)
-                       ;; Only add column spec if this parameter is from WHERE clause
-                       (when (< param-index where-param-count)
-                         (push (nth param-index column-specs) regular-column-specs)))))
-
-        ;; Convert parameter values based on column types
-        (let* ((reversed-params (nreverse regular-named-params))
-               (reversed-specs (nreverse regular-column-specs))
-               ;; Pad column-specs with nil to match params length
-               (padded-specs (append reversed-specs 
-                                    (make-list (- (length reversed-params) 
-                                                 (length reversed-specs)))))
-               (converted-values
-                (if convert-types
-                    (loop for param-key in reversed-params
-                          for column-spec in padded-specs
-                          as value = (getf named-values param-key)
-                          collect
-                          (if column-spec
-                              (let* ((model-symbol (gethash (first column-spec) alias->model))
-                                     (column-keyword (second column-spec))
-                                     (column-type (when model-symbol
-                                                   (get-column-type-from-model model-symbol column-keyword))))
-                                (if column-type
+  (multiple-value-bind (sql-template where-params where-columns column-types limit-param offset-param)
+      (get-or-parse-query query)
+    
+    (let ((final-sql sql-template)
+          (final-params '())
+          (regular-named-params '())
+          (regular-column-types '())
+          (alias->model (slot-value query 'alias->model)))
+      
+      ;; Process WHERE clause parameters (including dynamic IN clause expansion)
+      (loop for param in where-params
+            for param-index from 0
+            do (if (and (listp param) (eq (car param) :in-expansion))
+                   ;; Dynamic IN clause expansion
+                   (destructuring-bind (op column-sql keyword) (cdr param)
+                     (let* ((values (getf named-values keyword))
+                            (placeholder (format nil "__IN_CLAUSE_~A_~A__"
+                                                 (cl-ppcre:regex-replace-all "[.:]" column-sql "_")
+                                                 keyword)))
+                       (if (null values)
+                           (let ((replacement (if (string= op "IN") "1=0" "1=1")))
+                             (setf final-sql (cl-ppcre:regex-replace-all 
+                                              (cl-ppcre:quote-meta-chars placeholder) 
+                                              final-sql 
+                                              replacement)))
+                           (let* ((question-marks (format nil "(~{?~*~^, ~})" values))
+                                  (replacement (format nil "~A ~A ~A" column-sql op question-marks)))
+                             (setf final-sql (cl-ppcre:regex-replace-all 
+                                              (cl-ppcre:quote-meta-chars placeholder) 
+                                              final-sql 
+                                              replacement))
+                             (appendf final-params values)))))
+                   ;; Regular parameter
+                   (progn
+                     (push param regular-named-params)
+                     (push (nth param-index column-types) regular-column-types))))
+      
+      ;; Convert parameter values based on column types
+      (let* ((reversed-params (nreverse regular-named-params))
+             (reversed-types (nreverse regular-column-types))
+             (converted-values
+              (if convert-types
+                  (loop for param-key in reversed-params
+                        for column-type in reversed-types
+                        as value = (getf named-values param-key)
+                        collect (if column-type
                                     (convert-value-by-type value column-type)
                                     value))
-                              value))
-                    (loop for param-key in reversed-params
-                          collect (getf named-values param-key)))))
-          (appendf final-params converted-values))
-
-        ;; for debug
-        (when (log-level-enabled-p :sql :debug)
-          (log.sql (format nil "sql: ~S" sql))
-          (log.sql (format nil "params: ~S" params)))
-
-        (values final-sql final-params)))))
+                  (loop for param-key in reversed-params
+                        collect (getf named-values param-key)))))
+        (appendf final-params converted-values))
+      
+      ;; Add LIMIT/OFFSET parameters
+      (when limit-param
+        (appendf final-params (list (getf named-values limit-param))))
+      (when offset-param
+        (appendf final-params (list (getf named-values offset-param))))
+      
+      ;; For debug
+      (when (log-level-enabled-p :sql :debug)
+        (log.sql (format nil "sql: ~S" final-sql))
+        (log.sql (format nil "params: ~S" final-params)))
+      
+      (values final-sql final-params))))
 
 
 (defmethod resolve-joins ((query <query>))
