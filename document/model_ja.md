@@ -377,6 +377,119 @@ YYYYmmdd-HHMMSS-description.lisp
        :where (:not-like (:user :email) "%@test.com"))
 ```
 
+### パラメータの自動型変換
+
+`execute-query` では、WHERE句で使用されるパラメータに対して、データベース固有の型に自動的に変換する機能を提供しています。これにより、アプリケーション側では型を意識せずにCommon Lispの値をそのまま使用できます。
+
+#### 対応する演算子
+
+以下の演算子を使用した場合、パラメータ値が自動的に変換されます:
+
+- `:=` (equal)
+- `:>` (greater than)
+- `:<` (less than)
+- `:>=` (greater than or equal)
+- `:<=` (less than or equal)
+- `:!=` (not equal)
+- `:in` (in)
+- `:not-in` (not in)
+- `:between` (between)
+- `:not-between` (not between)
+
+**注意**: LIMIT/OFFSET のパラメータには型変換は適用されません。
+
+#### 対応する型
+
+以下のカラム型に対して自動変換が行われます:
+
+- `:string` - 文字列型
+- `:text` - テキスト型
+- `:integer` - 整数型
+- `:float` - 浮動小数点型
+- `:decimal` - 固定小数点型
+- `:datetime` - 日時型
+- `:date` - 日付型
+- `:time` - 時刻型
+- `:boolean` - 真偽値型
+
+#### Boolean型の自動変換
+
+Boolean型のカラムに対しては、Common Lispの `t`/`nil` を使用でき、データベースごとに適切な値に自動変換されます。
+
+```common-lisp
+;; Boolean型の自動変換
+(let* ((query (query <user> :as :user :where (:= (:user :is-active) :active)))
+       (result (execute-query query '(:active t))))
+  ;; t が自動的にデータベースの boolean 型に変換される
+  ;; MySQL: 1, PostgreSQL: true, SQLite3: 1
+  result)
+
+;; 複数条件での自動変換
+(let* ((query (query <task> 
+                     :as :task 
+                     :where (:and (:= (:task :done) :done)
+                                  (:> (:task :priority) :min-priority))))
+       (result (execute-query query '(:done nil :min-priority 10))))
+  ;; done と priority がそれぞれの型に応じて自動変換される
+  result)
+```
+
+#### Datetime型の自動変換
+
+Datetime型のカラムに対しては、universal-time（整数）を渡すことができ、データベースの日時形式に自動変換されます。
+
+```common-lisp
+;; Datetime型の自動変換
+(let* ((completed-time (encode-universal-time 0 0 10 24 1 2026))
+       (query (query <task>
+                     :as :task
+                     :where (:>= (:task :completed-at) :completed-time)))
+       (result (execute-query query `(:completed-time ,completed-time))))
+  ;; universal-time が "2026-01-24 10:00:00" のような形式に変換される
+  result)
+```
+
+#### IN句での自動変換
+
+IN句やBETWEEN句でも自動型変換が適用されます。
+
+```common-lisp
+;; IN句での自動変換
+(let* ((query (query <product>
+                     :as :product
+                     :where (:in (:product :category-id) :category-ids)))
+       (result (execute-query query '(:category-ids (1 2 3)))))
+  ;; リスト内の各値が適切な型に変換される
+  result)
+
+;; BETWEEN句での自動変換
+(let* ((start-time (encode-universal-time 0 0 0 1 1 2026))
+       (end-time (encode-universal-time 0 0 0 31 12 2026))
+       (query (query <event>
+                     :as :event
+                     :where (:between (:event :event-date) :start-date :end-date)))
+       (result (execute-query query `(:start-date ,start-time :end-date ,end-time))))
+  result)
+```
+
+#### 型変換の無効化
+
+型変換を無効化したい場合は、`:convert-types nil` を指定できます。
+
+```common-lisp
+;; 型変換を無効化（従来の動作）
+(let* ((query (query <user> :as :user :where (:= (:user :is-active) :active)))
+       (result (execute-query query '(:active 1) :convert-types nil)))
+  ;; 値がそのまま渡される
+  result)
+```
+
+#### 注意事項
+
+1. **型情報の取得**: カラムの型情報が取得できない場合は、変換をスキップし、値はそのまま渡されます
+2. **既存コードとの互換性**: デフォルトで型変換が有効ですが、型情報がない場合は従来通り動作するため、既存コードへの影響はありません
+3. **データベース固有の変換**: 各データベースの型変換は `cl-db-fn` を通じて実装されており、一貫性が保たれています
+
 ### ORDER BY 句
 
 ```common-lisp

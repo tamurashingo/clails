@@ -368,6 +368,119 @@ Use the `query` function to build queries.
      (:= (:user :status) "pending"))
 ```
 
+### Automatic Parameter Type Conversion
+
+`execute-query` provides automatic type conversion for parameters used in WHERE clauses, converting them to database-specific types. This allows application code to use Common Lisp values directly without worrying about type conversions.
+
+#### Supported Operators
+
+The following operators trigger automatic parameter type conversion:
+
+- `:=` (equal)
+- `:>` (greater than)
+- `:<` (less than)
+- `:>=` (greater than or equal)
+- `:<=` (less than or equal)
+- `:!=` (not equal)
+- `:in` (in)
+- `:not-in` (not in)
+- `:between` (between)
+- `:not-between` (not between)
+
+**Note**: Type conversion is not applied to LIMIT/OFFSET parameters.
+
+#### Supported Types
+
+Automatic conversion is performed for the following column types:
+
+- `:string` - String type
+- `:text` - Text type
+- `:integer` - Integer type
+- `:float` - Floating-point type
+- `:decimal` - Decimal type
+- `:datetime` - Datetime type
+- `:date` - Date type
+- `:time` - Time type
+- `:boolean` - Boolean type
+
+#### Boolean Type Conversion
+
+For Boolean columns, you can use Common Lisp's `t`/`nil`, which are automatically converted to the appropriate database values.
+
+```common-lisp
+;; Boolean type automatic conversion
+(let* ((query (query <user> :as :user :where (:= (:user :is-active) :active)))
+       (result (execute-query query '(:active t))))
+  ;; t is automatically converted to database boolean type
+  ;; MySQL: 1, PostgreSQL: true, SQLite3: 1
+  result)
+
+;; Multiple conditions with automatic conversion
+(let* ((query (query <task> 
+                     :as :task 
+                     :where (:and (:= (:task :done) :done)
+                                  (:> (:task :priority) :min-priority))))
+       (result (execute-query query '(:done nil :min-priority 10))))
+  ;; done and priority are converted according to their respective types
+  result)
+```
+
+#### Datetime Type Conversion
+
+For Datetime columns, you can pass universal-time (integer), which is automatically converted to the database datetime format.
+
+```common-lisp
+;; Datetime type automatic conversion
+(let* ((completed-time (encode-universal-time 0 0 10 24 1 2026))
+       (query (query <task>
+                     :as :task
+                     :where (:>= (:task :completed-at) :completed-time)))
+       (result (execute-query query `(:completed-time ,completed-time))))
+  ;; universal-time is converted to format like "2026-01-24 10:00:00"
+  result)
+```
+
+#### IN Clause Conversion
+
+Automatic type conversion also applies to IN and BETWEEN clauses.
+
+```common-lisp
+;; IN clause with automatic conversion
+(let* ((query (query <product>
+                     :as :product
+                     :where (:in (:product :category-id) :category-ids)))
+       (result (execute-query query '(:category-ids (1 2 3)))))
+  ;; Each value in the list is converted to the appropriate type
+  result)
+
+;; BETWEEN clause with automatic conversion
+(let* ((start-time (encode-universal-time 0 0 0 1 1 2026))
+       (end-time (encode-universal-time 0 0 0 31 12 2026))
+       (query (query <event>
+                     :as :event
+                     :where (:between (:event :event-date) :start-date :end-date)))
+       (result (execute-query query `(:start-date ,start-time :end-date ,end-time))))
+  result)
+```
+
+#### Disabling Type Conversion
+
+You can disable type conversion by specifying `:convert-types nil`.
+
+```common-lisp
+;; Disable type conversion (traditional behavior)
+(let* ((query (query <user> :as :user :where (:= (:user :is-active) :active)))
+       (result (execute-query query '(:active 1) :convert-types nil)))
+  ;; Values are passed as-is
+  result)
+```
+
+#### Notes
+
+1. **Type Information Retrieval**: If column type information is unavailable, conversion is skipped and values are passed as-is
+2. **Backward Compatibility**: Type conversion is enabled by default, but when type information is unavailable, it operates as before, ensuring no impact on existing code
+3. **Database-Specific Conversion**: Type conversion for each database is implemented via `cl-db-fn`, ensuring consistency
+
 ### Dynamic Query Construction (query-builder)
 
 While the `query` macro is suitable for static query definitions, use the `query-builder` function when you need to construct queries dynamically at runtime.
