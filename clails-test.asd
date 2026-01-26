@@ -65,6 +65,9 @@
                #:clails-test/model/datetime/datetime-sqlite3
                #:clails-test/model/datetime/datetime-mysql
                #:clails-test/model/datetime/datetime-postgresql
+               #:clails-test/model/type-conversion/mysql
+               #:clails-test/model/type-conversion/postgresql
+               #:clails-test/model/type-conversion/sqlite3
                #:clails-test/task/registry
                #:clails-test/task/runner
                #:clails-test/task/core)

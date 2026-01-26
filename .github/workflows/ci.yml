@@ -30,6 +30,7 @@ jobs:
         CLAILS_MIGRATION_DIR_0009: ${{ github.workspace }}/test/data/0009-datetime-test
         CLAILS_MIGRATION_DIR_0010: ${{ github.workspace }}/test/data/0010-bulk-test
         CLAILS_MIGRATION_DIR_0011: ${{ github.workspace }}/test/data/0011-bulk-insert-test
+        CLAILS_MIGRATION_DIR_0012: ${{ github.workspace }}/test/data/0012-type-conversion-test
         CLAILS_SQLITE3_DATABASE: ${{ github.workspace }}
         CLAILS_MYSQL_DATABASE: clails_test
         CLAILS_MYSQL_USERNAME: root
