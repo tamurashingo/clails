@@ -366,8 +366,16 @@
     ;; Run tests
     (t
      ;; Initialize database connection pool
+
+(format t "before ~%")
+(clails/model/base-model::debug-table-information)
+
+
      (startup-connection-pool)
      (initialize-table-information)
+
+(format t "after ~%")
+(clails/model/base-model::debug-table-information)
      (unwind-protect
          (run-suite-tests :tags tags
                           :excluded-tags exclude-tags
