@@ -22,7 +22,7 @@
 (defmodel <todo> (<base-model>) (:table "todo"))
 
 (defparameter *find-all-query*
-  (query <todo> :as todo))
+  (query <todo> :as :todo))
 
 (defun find-all ()
   "Find all todo items.
@@ -43,7 +43,7 @@
 
 (defparameter *find-by-id*
   (query <todo>
-         :as todo
+         :as :todo
          :where (:= (:todo :id) :id-param)))
 
 (defun find-by-id (id)
