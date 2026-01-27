@@ -21,13 +21,15 @@
 
 (defmodel <todo> (<base-model>) (:table "todo"))
 
+(defparameter *find-all-query*
+  (query <todo> :as todo))
+
 (defun find-all ()
   "Find all todo items.
 
    @return [list] List of todo records
    "
-  (let ((q (query <todo> :as :todo)))
-    (execute-query q nil)))
+   (execute-query *find-query-all* nil))
 
 (defun create-todo (title)
   "Create a new todo item with the given title.
@@ -39,6 +41,11 @@
     (save todo)
     todo))
 
+(defparameter *find-by-id*
+  (query <todo>
+         :as todo
+         :where (:= (:todo :id) :id-param)))
+
 (defun find-by-id (id)
   "Find a todo item by ID.
 
@@ -46,8 +53,7 @@
    @return [<todo>] Todo record
    @return [nil] NIL if not found
    "
-  (let* ((q (query <todo> :as :todo :where (:= (:todo :id) :id-param)))
-         (results (execute-query q (list :id-param id))))
+  (let* ((results (execute-query *find-by-id* (list :id-param id))))
     (car results)))
 
 (defun mark-as-done (todo)
