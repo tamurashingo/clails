@@ -21,7 +21,7 @@
 
 (defmodel <todo> (<base-model>) (:table "todo"))
 
-(defparameter *find-all-query*
+(defparameter *find-all*
   (query <todo> :as :todo))
 
 (defun find-all ()
@@ -29,7 +29,7 @@
 
    @return [list] List of todo records
    "
-   (execute-query *find-query-all* nil))
+   (execute-query *find-all* nil))
 
 (defun create-todo (title)
   "Create a new todo item with the given title.
