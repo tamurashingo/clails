@@ -203,7 +203,7 @@
 (defmethod fetch-columns-and-types-impl ((database-type <database-type-mysql>) connection table)
   (declare (ignore database-type))
   ;; select column_name, column_type, data_type, character_maximum_length, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION from information_schema.columns where table_name = 'todo'
-  (let ((sql "select column_name, data_type from information_schema.columns where table_name = ? order by ordinal_position"))
+  (let ((sql "select column_name, data_type from information_schema.columns where table_schema = database() and table_name = ? order by ordinal_position"))
     (log.sql sql :table table)
     (let* ((query (dbi:prepare connection sql))
            (result (dbi:execute query (list table))))
@@ -227,7 +227,7 @@
 (defmethod fetch-columns-and-types-plist-impl ((database-type <database-type-mysql>) connection table)
   (declare (ignore database-type))
   ;; select column_name, column_type, data_type, character_maximum_length, NUMERIC_PRECISION, NUMERIC_SCALE, DATETIME_PRECISION from information_schema.columns where table_name = 'todo'
-  (let ((sql "select column_name, data_type from information_schema.columns where table_name = ? order by ordinal_position"))
+  (let ((sql "select column_name, data_type from information_schema.columns where table_schema = database() and table_name = ? order by ordinal_position"))
     (log.sql sql :table table)
     (let* ((query (dbi:prepare connection sql))
           (result (dbi:execute query (list table))))
