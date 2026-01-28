@@ -13,7 +13,7 @@
            #:show-middleware-stack))
 (in-package #:clails/middleware/core)
 
-(defparameter *clails-middleware-stack* (list
+(defvar *clails-middleware-stack* (list
                                           *lack-middleware-transaction*
                                           *lack-middleware-clails-controller*
                                           #'(lambda (app)
