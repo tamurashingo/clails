@@ -50,31 +50,31 @@
   (:documentation "Dummy database type specification for testing."))
 
 
-(defparameter *project-name* ""
+(defvar *project-name* ""
   "Project name. Set in app/config/environment.lisp.")
 
-(defparameter *project-dir* ""
+(defvar *project-dir* ""
   "Project directory. Set at startup.")
 
-(defparameter *project-environment* :develop
+(defvar *project-environment* :develop
   "Specify one of :develop, :test, or :production. Can be overridden in app/config/environment.lisp.")
 
-(defparameter *database-config* nil
+(defvar *database-config* nil
   "Holds database connection information, etc. Set in app/config/database.lisp.")
 
-(defparameter *database-type* nil
+(defvar *database-type* nil
   "Holds an instance of <database-type> to specify the database in use. Set in app/config/database.lisp.")
 
-(defparameter *migration-base-dir* ""
+(defvar *migration-base-dir* ""
   "The base path for directories where migration files are placed. Usually set to *project-dir*. (May be set to a different directory for testing, etc.)")
 
-(defparameter *task-base-dir* ""
+(defvar *task-base-dir* ""
   "The base path for directories where task files are placed. Usually set to *project-dir*. (May be set to a different directory for testing, etc.)")
 
-(defparameter *connection-pool* nil
+(defvar *connection-pool* nil
   "Database connection pool. Created when the application server statts and destroyed when it shuts down.")
 
-(defparameter *routing-tables*
+(defvar *routing-tables*
   '((:path "/"
      :controller "clails/controller/base-controller:<default-controller>"))
   "Application routing table configuration.
@@ -143,13 +143,13 @@
 
    Set in app/config/environment.lisp.")
 
-(defparameter *startup-hooks*
+(defvar *startup-hooks*
   '("clails/model/connection:startup-connection-pool"))
 
-(defparameter *shutdown-hooks*
+(defvar *shutdown-hooks*
   '("clails/model/connection:shutdown-connection-pool"))
 
-(defparameter *default-lock-mode* :for-update
+(defvar *default-lock-mode* :for-update
   "Default lock mode for with-locked-transaction macro.
 
    Possible values:
@@ -162,7 +162,7 @@
 
    This can be overridden in <project>/app/config/environment.lisp")
 
-(defparameter *sqlite3-busy-timeout* 50
+(defvar *sqlite3-busy-timeout* 50
   "SQLite3 busy timeout in milliseconds.
 
    When SQLite3 encounters a locked database, it will wait up to this
@@ -171,7 +171,7 @@
 
    This can be overridden in <project>/app/config/environment.lisp")
 
-(defparameter *sqlite3-lock-retry-count* 3
+(defvar *sqlite3-lock-retry-count* 3
   "Number of retry attempts for SQLite3 locked database errors.
 
    When BEGIN IMMEDIATE fails due to database lock, the transaction
@@ -180,7 +180,7 @@
 
    This can be overridden in <project>/app/config/environment.lisp")
 
-(defparameter *sqlite3-transaction-mode* nil
+(defvar *sqlite3-transaction-mode* nil
   "SQLite3 transaction mode for the current dynamic context.
 
    This is a special variable used to pass the transaction mode
@@ -194,20 +194,20 @@
    This variable is set by with-locked-transaction macro and should not
    be set directly by user code.")
 
-(defparameter *sqlite3-lock-module-loaded* nil
+(defvar *sqlite3-lock-module-loaded* nil
   "Flag indicating whether sqlite3-lock module has been loaded.
 
    Set to T after src/model/impl/sqlite3-lock.lisp is successfully loaded.
    Used to ensure the module is loaded only once.")
 
-(defparameter *table-information-initialized* nil
+(defvar *table-information-initialized* nil
   "Flag indicating whether initialize-table-information has been executed.
 
    Set to T after initialize-table-information completes successfully.
    Used by query macro to determine whether to create actual query instances
    or placeholder instances for lazy initialization.")
 
-(defparameter *query-initialization-callbacks* nil
+(defvar *query-initialization-callbacks* nil
   "List of callback functions to initialize query placeholders.
 
    When query macro is expanded before initialize-table-information is called,
