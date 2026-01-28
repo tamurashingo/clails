@@ -226,7 +226,7 @@
 
 (defmethod fetch-columns-and-types-impl ((database-type <database-type-postgresql>) connection table)
   (declare (ignore database-type))
-  (let ((sql "select COLUMN_NAME, DATA_TYPE from information_schema.columns where table_name = ? order by ordinal_position"))
+  (let ((sql "select COLUMN_NAME, DATA_TYPE from information_schema.columns where table_schema = current_schema() and table_name = ? order by ordinal_position"))
     (log.sql sql :table table)
     (let* ((query (dbi:prepare connection sql))
           (result (dbi:execute query (list table))))
@@ -249,7 +249,7 @@
 
 (defmethod fetch-columns-and-types-plist-impl ((database-type <database-type-postgresql>) connection table)
   (declare (ignore database-type))
-  (let ((sql "select COLUMN_NAME, DATA_TYPE from information_schema.columns where table_name = ? order by ordinal_position"))
+  (let ((sql "select COLUMN_NAME, DATA_TYPE from information_schema.columns where table_schema = current_schema() and table_name = ? order by ordinal_position"))
     (log.sql sql :table table)
     (let* ((query (dbi:prepare connection sql))
           (result (dbi:execute query (list table))))
