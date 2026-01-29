@@ -71,7 +71,7 @@
        ;; Set busy timeout for SQLite3
        (set-busy-timeout *database-type* ,connection-var)
 
-       (when (log-level-enabled-p :sql :debug)
+       (when (log-level-enabled-p :debug :sql)
          (log.sql (format nil "BEGIN LOCKED TRANSACTION (mode: ~A)" ,mode-var)))
 
        ;; Retry logic for SQLite3 lock errors
@@ -102,7 +102,7 @@
    @return [boolean] T if module was loaded, NIL if already loaded
    "
   (unless clails/environment:*sqlite3-lock-module-loaded*
-    (when (log-level-enabled-p :sql :info)
+    (when (log-level-enabled-p :info :sql)
       (log.sql "Loading SQLite3 lock module"))
     (load (merge-pathnames "src/model/impl/sqlite3-lock.lisp"
                            (asdf:system-source-directory :clails)))
@@ -165,7 +165,7 @@
               (progn
                 (incf retry-count)
                 (let ((wait-ms (* 100 (expt 2 (1- retry-count)))))
-                  (when (log-level-enabled-p :sql :warn)
+                  (when (log-level-enabled-p :warn :sql)
                     (log.sql (format nil "SQLite3 database locked, retry ~A/~A after ~Ams"
                                      retry-count max-retries wait-ms)))
                   (sleep (/ wait-ms 1000.0))))
@@ -223,7 +223,7 @@
    @return [null] Returns NIL
    "
   (let ((timeout-ms clails/environment:*sqlite3-busy-timeout*))
-    (when (log-level-enabled-p :sql :debug)
+    (when (log-level-enabled-p :debug :sql)
       (log.sql (format nil "PRAGMA busy_timeout = ~A" timeout-ms)))
     (dbi-cp:execute
      (dbi-cp:prepare connection (format nil "PRAGMA busy_timeout = ~A" timeout-ms))

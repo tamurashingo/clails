@@ -40,10 +40,10 @@
          (save address))))
    "
   `(progn
-     (when (log-level-enabled-p :sql :debug)
+     (when (log-level-enabled-p :debug :sql)
        (log.sql "BEGIN TRANSACTION"))
      (dbi-cp:with-transaction ,connection
-       (when (log-level-enabled-p :sql :debug)
+       (when (log-level-enabled-p :debug :sql)
          (log.sql "EXECUTING TRANSACTION"))
        ,@body)))
 

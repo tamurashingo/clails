@@ -270,7 +270,7 @@
    @param batch-size [integer] Batch size
    @param callback [function] Function to process each batch
    "
-  (when (log-level-enabled-p :sql :debug)
+  (when (log-level-enabled-p :debug :sql)
     (log.sql (format nil "PostgreSQL CURSOR: ~A" sql))
     (log.sql (format nil "PARAMS: ~A" params)))
 
@@ -339,7 +339,7 @@
    @param batch-size [integer] Batch size
    @param callback [function] Function to process each batch
    "
-  (when (log-level-enabled-p :sql :debug)
+  (when (log-level-enabled-p :debug :sql)
     (log.sql (format nil "MySQL STREAMING: ~A" sql))
     (log.sql (format nil "PARAMS: ~A" params)))
 
@@ -382,7 +382,7 @@
    @param batch-size [integer] Batch size
    @param callback [function] Function to process each batch
    "
-  (when (log-level-enabled-p :sql :debug)
+  (when (log-level-enabled-p :debug :sql)
     (log.sql (format nil "SQLite3 LIMIT/OFFSET: ~A" sql))
     (log.sql (format nil "PARAMS: ~A" params)))
 
@@ -658,7 +658,7 @@
                                    (extract-plist-values plist columns model-class))
                                  batch))))
 
-    (when (log-level-enabled-p :sql :debug)
+    (when (log-level-enabled-p :debug :sql)
       (log.sql (format nil "sql: ~S" sql))
       (log.sql (format nil "params: ~S" params)))
 
@@ -694,7 +694,7 @@
                                    (extract-instance-values inst columns model-class))
                                  batch))))
 
-    (when (log-level-enabled-p :sql :debug)
+    (when (log-level-enabled-p :debug :sql)
       (log.sql (format nil "sql: ~S" sql))
       (log.sql (format nil "params: ~S" params)))
 
@@ -970,7 +970,7 @@
                                   table-name set-clause))
                       (conn (or connection (get-connection))))
 
-                 (when (log-level-enabled-p :sql :debug)
+                 (when (log-level-enabled-p :debug :sql)
                    (log.sql (format nil "sql: ~S" sql)))
 
                  ;; Execute for each instance
@@ -983,7 +983,7 @@
                    (let ((params (append
                                   (extract-instance-values instance columns model-class)
                                   (list (ref instance :id)))))
-                     (when (log-level-enabled-p :sql :debug)
+                     (when (log-level-enabled-p :debug :sql)
                        (log.sql (format nil "params: ~S" params)))
                      (dbi-cp:execute (dbi-cp:prepare conn sql) params)
                      (incf total)))
@@ -1110,7 +1110,7 @@
                                   placeholders))
                       (conn (or connection (get-connection))))
 
-                 (when (log-level-enabled-p :sql :debug)
+                 (when (log-level-enabled-p :debug :sql)
                    (log.sql (format nil "sql: ~S" sql))
                    (log.sql (format nil "params: ~S" ids)))
 
