@@ -217,7 +217,7 @@
    "
   (multiple-value-bind (sql params)
       (generate-query query named-values :convert-types convert-types)
-    (when (log-level-enabled-p :sql :debug)
+    (when (log-level-enabled-p :debug :sql)
       (log.sql (format nil "sql: ~S" query))
       (log.sql (format nil "params: ~S" params)))
     (let* ((connection (get-connection))
@@ -330,7 +330,7 @@
         (let* ((table-name (kebab->snake (slot-value inst 'clails/model/base-model::table-name)))
                (sql (format NIL "DELETE FROM ~A WHERE id = ?" table-name))
                (params (list (ref inst :id))))
-          (when (log-level-enabled-p :sql :debug)
+          (when (log-level-enabled-p :debug :sql)
             (log.sql (format nil "sql: ~S" sql))
             (log.sql (format nil "params: ~S" params)))
           (let ((connection (get-connection)))
@@ -376,7 +376,7 @@
                       when (not (frozen-p i))
                         collect (ref i :id)))
                (sql (format NIL "DELETE FROM ~A WHERE id IN (~{?~*~^, ~})" table-name ids)))
-          (when (log-level-enabled-p :sql :debug)
+          (when (log-level-enabled-p :debug :sql)
             (log.sql (format nil "sql: ~S" sql))
             (log.sql (format nil "ids: ~S" ids)))
           (prog1
@@ -902,7 +902,7 @@
         (appendf final-params (list (getf named-values offset-param))))
       
       ;; For debug
-      (when (log-level-enabled-p :sql :debug)
+      (when (log-level-enabled-p :debug :sql)
         (log.sql (format nil "sql: ~S" final-sql))
         (log.sql (format nil "params: ~S" final-params)))
       
@@ -1556,7 +1556,7 @@
                                      (funcall (getf column-info :cl-db-fn) value)
                                      value)))
 
-      (when (log-level-enabled-p :sql :debug)
+      (when (log-level-enabled-p :debug :sql)
         (log.sql (format nil "sql: ~S" sql))
         (log.sql (format nil "params: ~S" params)))
 
@@ -1638,7 +1638,7 @@
     ;; append where-params
     (setf params (append params where-params))
 
-    (when (log-level-enabled-p :sql :debug)
+    (when (log-level-enabled-p :debug :sql)
       (log.sql (format nil "sql: ~S" sql))
       (log.sql (format nil "params: ~S" params)))
 
@@ -1870,7 +1870,7 @@
    @param param-values [list] Parameter values
    @return [list of plist] Query results (list of plists)
    "
-  (when (log-level-enabled-p :sql :debug)
+  (when (log-level-enabled-p :debug :sql)
     (log.sql (format nil "sql: ~A" sql-string))
     (log.sql (format nil "params: ~S" param-values)))
 
@@ -1887,7 +1887,7 @@
    @param param-values [list] Parameter values
    @return [integer] Number of affected rows
    "
-  (when (log-level-enabled-p :sql :debug)
+  (when (log-level-enabled-p :debug :sql)
     (log.sql (format nil "sql: ~A" sql-string))
     (log.sql (format nil "params: ~S" param-values)))
 
