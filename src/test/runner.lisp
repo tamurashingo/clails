@@ -11,7 +11,8 @@
                 #:get-all-tags
                 #:get-all-packages)
   (:import-from #:rove
-                #:run-tests)
+                #:run-tests
+                #:find-suite)
   (:export #:run-suite-tests
            #:run-suite-tests-by-tags
            #:run-suite-tests-by-packages
@@ -83,6 +84,48 @@
       (t
        all-tests))))
 
+(defun run-tests-with-setup-teardown (pkg pkg-tests style)
+  "Run tests with suite setup and teardown.
+   
+   @param pkg [string] Package name
+   @param pkg-tests [list] List of test symbols
+   @param style [keyword] Reporter style
+   @return [boolean] True if all tests passed
+   "
+  (let ((suite (find-suite pkg))
+        (result nil)
+        (setup-failed nil))
+    (unwind-protect
+        (progn
+          ;; Execute setup
+          (when suite
+            (handler-case
+                (let ((setup-fn (rove/core/suite/package:suite-setup suite)))
+                  (when setup-fn
+                    (funcall setup-fn)))
+              (error (e)
+                (format t "~%ERROR in setup for package '~A': ~A~%" pkg e)
+                (format t "Skipping tests for this package.~%")
+                (setf setup-failed t))))
+          
+          ;; Run tests only if setup succeeded
+          (unless setup-failed
+            (setf result (run-tests pkg-tests :style style))))
+      
+      ;; Execute teardown (ensured by unwind-protect)
+      (when suite
+        (handler-case
+            (let ((teardown-fn (rove/core/suite/package:suite-teardown suite)))
+              (when teardown-fn
+                (funcall teardown-fn)))
+          (error (e)
+            (format t "~%ERROR in teardown for package '~A': ~A~%" pkg e)))))
+    
+    ;; Return nil if setup failed, otherwise return test result
+    (if setup-failed
+        nil
+        result)))
+
 (defun run-suite-tests (&key tags excluded-tags packages (style :spec))
   "Run tests with optional filtering.
    
@@ -111,7 +154,7 @@
                           (when pkg-tests
                             (format t "~%;; testing '~A'~%" pkg)
                             ;; Record failed test names
-                            (let ((result (rove:run-tests pkg-tests :style style)))
+                            (let ((result (run-tests-with-setup-teardown pkg pkg-tests style)))
                               (unless result
                                 (setf all-passed nil)
                                 ;; Simply record that this package had failures
@@ -136,7 +179,7 @@
                         (maphash (lambda (pkg tests)
                                    (when tests
                                      (format t "~%;; testing '~A'~%" pkg)
-                                     (let ((result (rove:run-tests (nreverse tests) :style style)))
+                                     (let ((result (run-tests-with-setup-teardown pkg (nreverse tests) style)))
                                        (unless result
                                          (setf all-passed nil)
                                          (push (cons pkg tests) failed-package-tests)))))
@@ -163,7 +206,7 @@
                       (when pkg-tests
                         (format t "~%;; testing '~A'~%" pkg)
                         ;; Record failed test names
-                        (let ((result (rove:run-tests pkg-tests :style style)))
+                        (let ((result (run-tests-with-setup-teardown pkg pkg-tests style)))
                           (unless result
                             (setf all-passed nil)
                             ;; Simply record that this package had failures
