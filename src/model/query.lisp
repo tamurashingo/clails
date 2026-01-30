@@ -998,7 +998,7 @@
                    (case (join-type join-obj)
                      (:inner-join "INNER JOIN")
                      (:left-join "LEFT JOIN"))
-                   target-table-name
+                   (kebab->snake target-table-name)
                    (kebab->snake target-alias)
                    on-clause))))))
 
