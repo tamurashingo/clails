@@ -136,7 +136,9 @@
                                  :limit-param nil
                                  :offset-param nil)")
    (query-cache-valid-p :initform nil
-                        :documentation "Flag indicating if query-cache is valid."))
+                        :documentation "Flag indicating if query-cache is valid.")
+   (query-source-info :initform nil
+                      :documentation "Original query definition for error messages"))
   (:documentation "Query builder class for constructing and executing database queries."))
 
 (defclass <join-query> ()
@@ -180,7 +182,9 @@
            :documentation "OFFSET value")
    (actual-query :initform nil
                  :accessor actual-query
-                 :documentation "Actual <query> instance after initialization"))
+                 :documentation "Actual <query> instance after initialization")
+   (query-source-info :initform nil
+                      :documentation "Original query definition for error messages"))
   (:documentation "Placeholder for query instances created before table information initialization."))
 
 
@@ -442,18 +446,30 @@
                                            :join-type ',join-type
                                            :relation ',relation
                                            :through ',through)))
-                     joins-list)))
+                     joins-list))
+
+           (make-source-info ()
+             (list :model model
+                   :as as
+                   :columns columns
+                   :joins joins
+                   :where where
+                   :order-by order-by
+                   :limit limit
+                   :offset offset)))
     `(if clails/environment:*table-information-initialized*
          ;; Table information initialized: create actual query instance
-         (make-instance '<query>
-                        :model ',model
-                        :alias ',as
-                        :columns ',(expand-columns columns)
-                        :joins (list ,@(expand-joins joins))
-                        :where ',where
-                        :order-by ',order-by
-                        :limit ',limit
-                        :offset ',offset)
+         (let ((q (make-instance '<query>
+                                 :model ',model
+                                 :alias ',as
+                                 :columns ',(expand-columns columns)
+                                 :joins (list ,@(expand-joins joins))
+                                 :where ',where
+                                 :order-by ',order-by
+                                 :limit ',limit
+                                 :offset ',offset)))
+           (setf (slot-value q 'query-source-info) ',(make-source-info))
+           q)
          ;; Not initialized: create placeholder and register callback
          (let ((placeholder (make-instance '<query-placeholder>
                                            :model ',model
@@ -464,17 +480,19 @@
                                            :order-by ',order-by
                                            :limit ',limit
                                            :offset ',offset)))
+           (setf (slot-value placeholder 'query-source-info) ',(make-source-info))
            (push (lambda ()
-                   (setf (actual-query placeholder)
-                         (make-instance '<query>
-                                        :model ',model
-                                        :alias ',as
-                                        :columns ',(expand-columns columns)
-                                        :joins (list ,@(expand-joins joins))
-                                        :where ',where
-                                        :order-by ',order-by
-                                        :limit ',limit
-                                        :offset ',offset)))
+                   (let ((q (make-instance '<query>
+                                           :model ',model
+                                           :alias ',as
+                                           :columns ',(expand-columns columns)
+                                           :joins (list ,@(expand-joins joins))
+                                           :where ',where
+                                           :order-by ',order-by
+                                           :limit ',limit
+                                           :offset ',offset)))
+                     (setf (slot-value q 'query-source-info) ',(make-source-info))
+                     (setf (actual-query placeholder) q)))
                  clails/environment:*query-initialization-callbacks*)
            placeholder))))
 
@@ -753,9 +771,36 @@
                (let* ((relations (getf (gethash source-model clails/model/base-model::*table-information*) :relations))
                       (rel-info (gethash target-alias relations)))
                  (unless rel-info
-                   (error "Relation `~A' not found for model `~A'" target-alias source-model))
+                   (error "Relation `~A' not found for model `~A'~A" target-alias source-model (format-query-source-info query)))
                  (let ((target-model (getf rel-info :model)))
                    (setf (gethash target-alias alias->model) target-model)))))))
+
+(defun format-query-source-info (query)
+  "Format query source information for error messages.
+   
+   @param query [<query>] Query instance
+   @return [string] Formatted source information, or empty string if not available
+   "
+  (let ((source-info (slot-value query 'query-source-info)))
+    (if source-info
+        (with-output-to-string (s)
+          (format s "~%~%Query definition:")
+          (format s "~%  (query ~A" (getf source-info :model))
+          (format s "~%    :as ~A" (getf source-info :as))
+          (when (getf source-info :columns)
+            (format s "~%    :columns ~S" (getf source-info :columns)))
+          (when (getf source-info :joins)
+            (format s "~%    :joins ~S" (getf source-info :joins)))
+          (when (getf source-info :where)
+            (format s "~%    :where ~S" (getf source-info :where)))
+          (when (getf source-info :order-by)
+            (format s "~%    :order-by ~S" (getf source-info :order-by)))
+          (when (getf source-info :limit)
+            (format s "~%    :limit ~S" (getf source-info :limit)))
+          (when (getf source-info :offset)
+            (format s "~%    :offset ~S" (getf source-info :offset)))
+          (format s ")"))
+        "")))
 
 ;;; ----------------------------------------
 ;;; query
@@ -932,7 +977,7 @@
         (alias->model (slot-value query 'alias->model)))
     (loop for join-obj in (slot-value query 'joins)
           with joins-sql and keywords
-          do (let ((sql (generate-join-sql join-obj base-model-alias alias->model)))
+          do (let ((sql (generate-join-sql join-obj base-model-alias alias->model query)))
                (push sql joins-sql))
           finally (return (nreverse joins-sql)))))
 
@@ -956,7 +1001,7 @@
                            collect (list alias (getf column :name)))))))
 
 
-(defmethod generate-join-sql ((join-obj <join-query>) base-model-alias alias->model)
+(defmethod generate-join-sql ((join-obj <join-query>) base-model-alias alias->model query)
   "Generate SQL JOIN clause for a single join specification.
 
    Constructs INNER JOIN or LEFT JOIN with ON clause based on relation metadata.
@@ -964,6 +1009,7 @@
    @param join-obj [<join-query>] Join specification
    @param base-model-alias [keyword] Base model alias
    @param alias->model [hash-table] Mapping from aliases to model classes
+   @param query [<query>] Query instance for error messages
    @return [string] JOIN SQL string
    @condition error Signaled when source model or relation cannot be resolved
    "
@@ -979,7 +1025,7 @@
         (error "Table information not found for model: ~A" source-model))
       (let* ((rel-info (gethash (relation join-obj) relations)))
         (unless rel-info
-          (error "Relation `~A` not found for model `~A`" (relation join-obj) source-model))
+          (error "Relation `~A` not found for model `~A`~A" (relation join-obj) source-model (format-query-source-info query)))
         (let* ((target-model (getf rel-info :model))
                (target-alias (relation join-obj))
                (target-table-name (getf (gethash target-model clails/model/base-model::*table-information*) :table-name))
