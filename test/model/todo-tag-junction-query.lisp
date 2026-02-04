@@ -109,7 +109,7 @@
                                     '(:owner-id "owner1" :tag-ids (1)))))
         (format t "~%Results: ~S~%" results)
         (ok (= 1 (length results)))
-        (ok (string= "Todo A" (ref (first results) :title)))))
+        (ok (string= "Todo A" (ref (ref (first results) :todo) :title)))))
     
     (testing "Verify parameter order bug with JOIN query"
       (multiple-value-bind (sql params)
@@ -122,4 +122,23 @@
         (format t "Actual params order:   ~A~%" params)
         (ok (equal params '("owner1" "owner1" 1 2))
             "Parameters should be in WHERE clause order")))))
+
+(deftest test-multiple-in-clauses
+  (testing "Multiple IN clauses with mixed parameters"
+    (let ((query-with-multiple-ins (query <todo-tag>
+                                         :as :todo-tags
+                                         :where (:and (:= (:todo-tags :owner-id) :owner-id)
+                                                      (:in (:todo-tags :todo-id) :todo-ids)
+                                                      (:= (:todo-tags :tag-id) :tag-id)
+                                                      (:in (:todo-tags :id) :ids)))))
+      (multiple-value-bind (sql params)
+          (generate-query query-with-multiple-ins
+                         '(:owner-id "owner1" :todo-ids (100 200) :tag-id 5 :ids (10 20 30)))
+        (format t "~%=== Multiple IN Clauses Test ===~%")
+        (format t "Generated SQL: ~A~%" sql)
+        (format t "Parameters: ~A~%" params)
+        (format t "Expected params order: (~S ~A ~A ~A ~A ~A ~A)~%" "owner1" 100 200 5 10 20 30)
+        (format t "Actual params order:   ~A~%" params)
+        (ok (equal params '("owner1" 100 200 5 10 20 30))
+            "Parameters should be in WHERE clause order with multiple IN clauses")))))
 

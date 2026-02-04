@@ -848,52 +848,63 @@
     
     (let ((final-sql sql-template)
           (final-params '())
-          (regular-named-params '())
-          (regular-column-types '())
+          (param-specs '())
           (alias->model (slot-value query 'alias->model)))
       
-      ;; Process WHERE clause parameters (including dynamic IN clause expansion)
+      ;; Process WHERE clause parameters - collect all parameter specs in order
       (loop for param in where-params
             for param-index from 0
             do (if (and (listp param) (eq (car param) :in-expansion))
-                   ;; Dynamic IN clause expansion
+                   ;; Dynamic IN clause expansion - store spec for later processing
                    (destructuring-bind (op column-sql keyword) (cdr param)
-                     (let* ((values (getf named-values keyword))
-                            (placeholder (format nil "__IN_CLAUSE_~A_~A__"
-                                                 (cl-ppcre:regex-replace-all "[.:]" column-sql "_")
-                                                 keyword)))
-                       (if (null values)
-                           (let ((replacement (if (string= op "IN") "1=0" "1=1")))
-                             (setf final-sql (cl-ppcre:regex-replace-all 
-                                              (cl-ppcre:quote-meta-chars placeholder) 
-                                              final-sql 
-                                              replacement)))
-                           (let* ((question-marks (format nil "(~{?~*~^, ~})" values))
-                                  (replacement (format nil "~A ~A ~A" column-sql op question-marks)))
-                             (setf final-sql (cl-ppcre:regex-replace-all 
-                                              (cl-ppcre:quote-meta-chars placeholder) 
-                                              final-sql 
-                                              replacement))
-                             (appendf final-params values)))))
-                   ;; Regular parameter
-                   (progn
-                     (push param regular-named-params)
-                     (push (nth param-index column-types) regular-column-types))))
+                     (let ((placeholder (format nil "__IN_CLAUSE_~A_~A__"
+                                                (cl-ppcre:regex-replace-all "[.:]" column-sql "_")
+                                                keyword)))
+                       (push (list :in-expansion 
+                                   :op op 
+                                   :column-sql column-sql 
+                                   :keyword keyword 
+                                   :placeholder placeholder)
+                             param-specs)))
+                   ;; Regular parameter - store spec for later processing
+                   (push (list :regular 
+                               :keyword param 
+                               :column-type (nth param-index column-types))
+                         param-specs)))
       
-      ;; Convert parameter values based on column types
-      (let* ((reversed-params (nreverse regular-named-params))
-             (reversed-types (nreverse regular-column-types))
-             (converted-values
-              (if convert-types
-                  (loop for param-key in reversed-params
-                        for column-type in reversed-types
-                        as value = (getf named-values param-key)
-                        collect (if column-type
-                                    (convert-value-by-type value column-type)
-                                    value))
-                  (loop for param-key in reversed-params
-                        collect (getf named-values param-key)))))
-        (appendf final-params converted-values))
+      ;; Reverse to maintain original order
+      (setf param-specs (nreverse param-specs))
+      
+      ;; Process all parameters in order
+      (loop for spec in param-specs
+            do (case (first spec)
+                 (:in-expansion
+                  (let* ((op (getf (rest spec) :op))
+                         (column-sql (getf (rest spec) :column-sql))
+                         (keyword (getf (rest spec) :keyword))
+                         (placeholder (getf (rest spec) :placeholder))
+                         (values (getf named-values keyword)))
+                    (if (null values)
+                        (let ((replacement (if (string= op "IN") "1=0" "1=1")))
+                          (setf final-sql (cl-ppcre:regex-replace-all 
+                                           (cl-ppcre:quote-meta-chars placeholder) 
+                                           final-sql 
+                                           replacement)))
+                        (let* ((question-marks (format nil "(~{?~*~^, ~})" values))
+                               (replacement (format nil "~A ~A ~A" column-sql op question-marks)))
+                          (setf final-sql (cl-ppcre:regex-replace-all 
+                                           (cl-ppcre:quote-meta-chars placeholder) 
+                                           final-sql 
+                                           replacement))
+                          (appendf final-params values)))))
+                 (:regular
+                  (let* ((keyword (getf (rest spec) :keyword))
+                         (column-type (getf (rest spec) :column-type))
+                         (value (getf named-values keyword))
+                         (converted-value (if (and convert-types column-type)
+                                              (convert-value-by-type value column-type)
+                                              value)))
+                    (appendf final-params (list converted-value))))))
       
       ;; Add LIMIT/OFFSET parameters
       (when limit-param
