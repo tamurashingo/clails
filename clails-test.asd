@@ -69,6 +69,7 @@
                #:clails-test/model/type-conversion/mysql
                #:clails-test/model/type-conversion/postgresql
                #:clails-test/model/type-conversion/sqlite3
+               #:clails-test/model/todo-tag-junction-query
                #:clails-test/task/registry
                #:clails-test/task/runner
                #:clails-test/task/core)
