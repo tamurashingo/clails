@@ -138,7 +138,8 @@
   (let ((*active-tags* tags)
         (*excluded-tags* excluded-tags)
         (*active-packages* packages)
-        (failed-package-tests nil))
+        (failed-package-tests nil)
+        (passed-package-tests nil))
     (if (or tags excluded-tags packages)
         (let ((filtered-tests (get-filtered-tests)))
           (if filtered-tests
@@ -153,18 +154,24 @@
                                                        (get-tests-by-package pkg))))
                           (when pkg-tests
                             (format t "~%;; testing '~A'~%" pkg)
-                            ;; Record failed test names
+                            ;; Record test results
                             (let ((result (run-tests-with-setup-teardown pkg pkg-tests style)))
-                              (unless result
-                                (setf all-passed nil)
-                                ;; Simply record that this package had failures
-                                (push (cons pkg pkg-tests) failed-package-tests))))))
-                      ;; Print summary of failed tests
+                              (if result
+                                  (push pkg passed-package-tests)
+                                  (progn
+                                    (setf all-passed nil)
+                                    (push (cons pkg pkg-tests) failed-package-tests)))))))
+                      ;; Print summary of test results
+                      (format t "~%~%=== Test Results Summary ===~%")
+                      (when passed-package-tests
+                        (format t "~%Passed Packages (~D):~%" (length passed-package-tests))
+                        (dolist (pkg (reverse passed-package-tests))
+                          (format t "  ~A~%" pkg)))
                       (when failed-package-tests
-                        (format t "~%~%=== Failed Tests Summary ===~%")
+                        (format t "~%Failed Packages (~D):~%" (length failed-package-tests))
                         (dolist (entry (reverse failed-package-tests))
                           (let ((pkg (car entry)))
-                            (format t "~%Package: ~A~%" pkg))))
+                            (format t "  ~A~%" pkg))))
                       all-passed)
                     ;; When filtering by tags only, run all at once
                     (let ((all-passed t))
@@ -180,16 +187,23 @@
                                    (when tests
                                      (format t "~%;; testing '~A'~%" pkg)
                                      (let ((result (run-tests-with-setup-teardown pkg (nreverse tests) style)))
-                                       (unless result
-                                         (setf all-passed nil)
-                                         (push (cons pkg tests) failed-package-tests)))))
+                                       (if result
+                                           (push pkg passed-package-tests)
+                                           (progn
+                                             (setf all-passed nil)
+                                             (push (cons pkg tests) failed-package-tests))))))
                                  pkg-test-map))
-                      ;; Print summary of failed tests
+                      ;; Print summary of test results
+                      (format t "~%~%=== Test Results Summary ===~%")
+                      (when passed-package-tests
+                        (format t "~%Passed Packages (~D):~%" (length passed-package-tests))
+                        (dolist (pkg (reverse passed-package-tests))
+                          (format t "  ~A~%" pkg)))
                       (when failed-package-tests
-                        (format t "~%~%=== Failed Tests Summary ===~%")
+                        (format t "~%Failed Packages (~D):~%" (length failed-package-tests))
                         (dolist (entry (reverse failed-package-tests))
                           (let ((pkg (car entry)))
-                            (format t "~%Package: ~A~%" pkg))))
+                            (format t "  ~A~%" pkg))))
                       all-passed)))
               (progn
                 (format t "~&No tests matched the filter criteria.~%")
@@ -205,18 +219,24 @@
                     (let ((pkg-tests (get-tests-by-package pkg)))
                       (when pkg-tests
                         (format t "~%;; testing '~A'~%" pkg)
-                        ;; Record failed test names
+                        ;; Record test results
                         (let ((result (run-tests-with-setup-teardown pkg pkg-tests style)))
-                          (unless result
-                            (setf all-passed nil)
-                            ;; Simply record that this package had failures
-                            (push (cons pkg pkg-tests) failed-package-tests))))))
-                  ;; Print summary of failed tests
+                          (if result
+                              (push pkg passed-package-tests)
+                              (progn
+                                (setf all-passed nil)
+                                (push (cons pkg pkg-tests) failed-package-tests)))))))
+                  ;; Print summary of test results
+                  (format t "~%~%=== Test Results Summary ===~%")
+                  (when passed-package-tests
+                    (format t "~%Passed Packages (~D):~%" (length passed-package-tests))
+                    (dolist (pkg (reverse passed-package-tests))
+                      (format t "  ~A~%" pkg)))
                   (when failed-package-tests
-                    (format t "~%~%=== Failed Tests Summary ===~%")
+                    (format t "~%Failed Packages (~D):~%" (length failed-package-tests))
                     (dolist (entry (reverse failed-package-tests))
                       (let ((pkg (car entry)))
-                        (format t "~%Package: ~A~%" pkg))))
+                        (format t "  ~A~%" pkg))))
                   all-passed)
                 (progn
                   (format t "~&No tests found.~%")
