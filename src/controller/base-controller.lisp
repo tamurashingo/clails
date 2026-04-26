@@ -55,7 +55,10 @@
            :documentation "HTTP response headers as plist")
    (params :initform (make-hash-table :test 'equal)
            :reader params
-           :documentation "Request parameters hash table"))
+           :documentation "Request parameters hash table")
+   (action :initform nil
+           :reader action
+           :documentation "Action name to be called (e.g., \"index\", \"show\")"))
   (:documentation "Base controller class for handling HTTP requests."))
 
 (defmethod initialize-instance :after ((c <base-controller>) &rest initargs)
@@ -274,22 +277,37 @@
   "Global routing table holding compiled route scanners.")
 
 
-(defun path-controller (path)
-  "Find matching controller for the given request path.
+(defun path-controller (path http-method)
+  "Find matching controller for the given request path and HTTP method.
 
-   Iterates through *router* and returns the first route that matches the path,
-   including captured URL parameters.
+   Matches routes based on:
+   1. Path and HTTP method (highest priority)
+   2. Path only (when :method not specified in route)
 
    @param path [string] Request path to match
-   @return [plist] Route information with :scanner, :controller, :parameters, etc.
+   @param http-method [keyword] HTTP method (:get, :post, :put, :delete)
+   @return [plist] Route information with :scanner, :controller, :action, :parameters, etc.
    @return [nil] NIL if no matching route found
    "
-  (loop for r in *router*
-        do (multiple-value-bind (match regs)
-               (ppcre:scan-to-strings (getf r :scanner) path)
-             (when match
-               (return (append r
-                               `(:parameters ,regs)))))))
+  (let ((exact-match nil)
+        (path-only-match nil))
+    
+    (loop for r in *router*
+          do (multiple-value-bind (match regs)
+                 (ppcre:scan-to-strings (getf r :scanner) path)
+               (when match
+                 (let ((route-method (getf r :method)))
+                   (cond
+                     ;; Exact match: path and method
+                     ((and route-method (eq route-method http-method))
+                      (setf exact-match (append r `(:parameters ,regs)))
+                      (return))
+                     ;; Path-only match: no method specified
+                     ((null route-method)
+                      (unless path-only-match
+                        (setf path-only-match (append r `(:parameters ,regs))))))))))
+    
+    (or exact-match path-only-match)))
 
 
 (defun initialize-routing-tables ()
