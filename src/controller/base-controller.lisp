@@ -37,7 +37,8 @@
            #:param
            #:initialize-routing-tables
            #:create-scanner-from-uri-path
-           #:path-controller))
+           #:path-controller
+           #:resources))
 
 
 (in-package #:clails/controller/base-controller)
@@ -55,7 +56,10 @@
            :documentation "HTTP response headers as plist")
    (params :initform (make-hash-table :test 'equal)
            :reader params
-           :documentation "Request parameters hash table"))
+           :documentation "Request parameters hash table")
+   (action :initform nil
+           :reader action
+           :documentation "Action name to be called (e.g., \"index\", \"show\")"))
   (:documentation "Base controller class for handling HTTP requests."))
 
 (defmethod initialize-instance :after ((c <base-controller>) &rest initargs)
@@ -274,22 +278,37 @@
   "Global routing table holding compiled route scanners.")
 
 
-(defun path-controller (path)
-  "Find matching controller for the given request path.
+(defun path-controller (path http-method)
+  "Find matching controller for the given request path and HTTP method.
 
-   Iterates through *router* and returns the first route that matches the path,
-   including captured URL parameters.
+   Matches routes based on:
+   1. Path and HTTP method (highest priority)
+   2. Path only (when :method not specified in route)
 
    @param path [string] Request path to match
-   @return [plist] Route information with :scanner, :controller, :parameters, etc.
+   @param http-method [keyword] HTTP method (:get, :post, :put, :delete)
+   @return [plist] Route information with :scanner, :controller, :action, :parameters, etc.
    @return [nil] NIL if no matching route found
    "
-  (loop for r in *router*
-        do (multiple-value-bind (match regs)
-               (ppcre:scan-to-strings (getf r :scanner) path)
-             (when match
-               (return (append r
-                               `(:parameters ,regs)))))))
+  (let ((exact-match nil)
+        (path-only-match nil))
+    
+    (loop for r in *router*
+          do (multiple-value-bind (match regs)
+                 (ppcre:scan-to-strings (getf r :scanner) path)
+               (when match
+                 (let ((route-method (getf r :method)))
+                   (cond
+                     ;; Exact match: path and method
+                     ((and route-method (eq route-method http-method))
+                      (setf exact-match (append r `(:parameters ,regs)))
+                      (return))
+                     ;; Path-only match: no method specified
+                     ((null route-method)
+                      (unless path-only-match
+                        (setf path-only-match (append r `(:parameters ,regs))))))))))
+    
+    (or exact-match path-only-match)))
 
 
 (defun initialize-routing-tables ()
@@ -421,4 +440,39 @@
                                                     'string))
                      keys)
                (%create-scanner-normal path (1+ pos) len scanner keys))))))
+
+
+(defun resources (name controller &key only except)
+  "Generate RESTful route entries for a resource.
+
+   By default, generates 7 standard routes: index, new, create, show, edit, update, destroy.
+   Use :only to include specific actions, or :except to exclude specific actions.
+
+   @param name [string] Resource name (e.g., \"todos\")
+   @param controller [string] Fully qualified controller class (e.g., \"myapp/controllers/todo-controller:<todo-controller>\")
+   @param only [list] List of action keywords to include (e.g., '(:index :show))
+   @param except [list] List of action keywords to exclude (e.g., '(:destroy))
+   @return [list] List of route plists
+   "
+  (let* ((collection-path (format nil "/~A" name))
+         (new-path (format nil "/~A/new" name))
+         (member-path (format nil "/~A/:id" name))
+         (edit-path (format nil "/~A/:id/edit" name))
+         (all-routes
+          (list
+           (list :name :index   :path collection-path :controller controller :action "index"   :method :get)
+           (list :name :new     :path new-path        :controller controller :action "new"     :method :get)
+           (list :name :create  :path collection-path :controller controller :action "create"  :method :post)
+           (list :name :show    :path member-path     :controller controller :action "show"    :method :get)
+           (list :name :edit    :path edit-path       :controller controller :action "edit"    :method :get)
+           (list :name :update  :path member-path     :controller controller :action "update"  :method :put)
+           (list :name :destroy :path member-path     :controller controller :action "destroy" :method :delete))))
+    (mapcar (lambda (route)
+              (let ((r (copy-list route)))
+                (remf r :name)
+                r))
+            (cond
+              (only   (remove-if-not (lambda (r) (member (getf r :name) only)) all-routes))
+              (except (remove-if     (lambda (r) (member (getf r :name) except)) all-routes))
+              (t      all-routes)))))
 
