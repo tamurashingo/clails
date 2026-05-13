@@ -37,7 +37,8 @@
            #:param
            #:initialize-routing-tables
            #:create-scanner-from-uri-path
-           #:path-controller))
+           #:path-controller
+           #:resources))
 
 
 (in-package #:clails/controller/base-controller)
@@ -439,4 +440,25 @@
                                                     'string))
                      keys)
                (%create-scanner-normal path (1+ pos) len scanner keys))))))
+
+
+(defun resources (name controller)
+  "Generate 7 standard RESTful route entries for a resource.
+
+   @param name [string] Resource name (e.g., \"todos\")
+   @param controller [string] Fully qualified controller class (e.g., \"myapp/controllers/todo-controller:<todo-controller>\")
+   @return [list] List of 7 route plists for index, new, create, show, edit, update, destroy
+   "
+  (let ((collection-path (format nil "/~A" name))
+        (new-path (format nil "/~A/new" name))
+        (member-path (format nil "/~A/:id" name))
+        (edit-path (format nil "/~A/:id/edit" name)))
+    (list
+     (list :path collection-path :controller controller :action "index"   :method :get)
+     (list :path new-path        :controller controller :action "new"     :method :get)
+     (list :path collection-path :controller controller :action "create"  :method :post)
+     (list :path member-path     :controller controller :action "show"    :method :get)
+     (list :path edit-path       :controller controller :action "edit"    :method :get)
+     (list :path member-path     :controller controller :action "update"  :method :put)
+     (list :path member-path     :controller controller :action "destroy" :method :delete))))
 

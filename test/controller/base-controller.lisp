@@ -297,3 +297,103 @@
         (ok (null result2))))))
 
 
+(deftest resources-test
+  (testing "generates 7 RESTful routes"
+    (let ((routes (resources "todos" "test::<todo-controller>")))
+      (ok (= (length routes) 7))))
+
+  (testing "routes have correct path, action, and method"
+    (let ((routes (resources "todos" "test::<todo-controller>")))
+      ;; index
+      (let ((r (nth 0 routes)))
+        (ok (string= (getf r :path) "/todos"))
+        (ok (string= (getf r :action) "index"))
+        (ok (eq (getf r :method) :get)))
+      ;; new (before :id routes)
+      (let ((r (nth 1 routes)))
+        (ok (string= (getf r :path) "/todos/new"))
+        (ok (string= (getf r :action) "new"))
+        (ok (eq (getf r :method) :get)))
+      ;; create
+      (let ((r (nth 2 routes)))
+        (ok (string= (getf r :path) "/todos"))
+        (ok (string= (getf r :action) "create"))
+        (ok (eq (getf r :method) :post)))
+      ;; show
+      (let ((r (nth 3 routes)))
+        (ok (string= (getf r :path) "/todos/:id"))
+        (ok (string= (getf r :action) "show"))
+        (ok (eq (getf r :method) :get)))
+      ;; edit
+      (let ((r (nth 4 routes)))
+        (ok (string= (getf r :path) "/todos/:id/edit"))
+        (ok (string= (getf r :action) "edit"))
+        (ok (eq (getf r :method) :get)))
+      ;; update
+      (let ((r (nth 5 routes)))
+        (ok (string= (getf r :path) "/todos/:id"))
+        (ok (string= (getf r :action) "update"))
+        (ok (eq (getf r :method) :put)))
+      ;; destroy
+      (let ((r (nth 6 routes)))
+        (ok (string= (getf r :path) "/todos/:id"))
+        (ok (string= (getf r :action) "destroy"))
+        (ok (eq (getf r :method) :delete)))))
+
+  (testing "all routes reference the same controller"
+    (let ((routes (resources "blogs" "myapp::<blog-controller>")))
+      (dolist (r routes)
+        (ok (string= (getf r :controller) "myapp::<blog-controller>"))))))
+
+
+(defclass <test-resource-controller> (<base-controller>)
+  ())
+
+(deftest resources-routing-integration-test
+  (testing "resources routes are correctly matched by path-controller"
+    (let* ((*routing-tables* (resources "todos" "clails-test/controller/base-controller::<test-resource-controller>"))
+           (clails/controller/base-controller::*router* nil))
+      (initialize-routing-tables)
+
+      ;; GET /todos -> index
+      (let ((result (clails/controller/base-controller::path-controller "/todos" :get)))
+        (ok result)
+        (ok (string= (getf result :action) "index")))
+
+      ;; GET /todos/new -> new (not matched as :id)
+      (let ((result (clails/controller/base-controller::path-controller "/todos/new" :get)))
+        (ok result)
+        (ok (string= (getf result :action) "new")))
+
+      ;; POST /todos -> create
+      (let ((result (clails/controller/base-controller::path-controller "/todos" :post)))
+        (ok result)
+        (ok (string= (getf result :action) "create")))
+
+      ;; GET /todos/123 -> show with params
+      (let ((result (clails/controller/base-controller::path-controller "/todos/123" :get)))
+        (ok result)
+        (ok (string= (getf result :action) "show"))
+        (ok (= (length (getf result :parameters)) 1))
+        (ok (string= (aref (getf result :parameters) 0) "123")))
+
+      ;; GET /todos/123/edit -> edit
+      (let ((result (clails/controller/base-controller::path-controller "/todos/123/edit" :get)))
+        (ok result)
+        (ok (string= (getf result :action) "edit"))
+        (ok (string= (aref (getf result :parameters) 0) "123")))
+
+      ;; PUT /todos/123 -> update
+      (let ((result (clails/controller/base-controller::path-controller "/todos/123" :put)))
+        (ok result)
+        (ok (string= (getf result :action) "update"))
+        (ok (string= (aref (getf result :parameters) 0) "123")))
+
+      ;; DELETE /todos/123 -> destroy
+      (let ((result (clails/controller/base-controller::path-controller "/todos/123" :delete)))
+        (ok result)
+        (ok (string= (getf result :action) "destroy"))
+        (ok (string= (aref (getf result :parameters) 0) "123")))
+
+      ;; GET /nonexistent -> nil
+      (ok (null (clails/controller/base-controller::path-controller "/nonexistent" :get))))))
