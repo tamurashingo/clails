@@ -377,6 +377,119 @@ YYYYmmdd-HHMMSS-description.lisp
        :where (:not-like (:user :email) "%@test.com"))
 ```
 
+### パラメータの自動型変換
+
+`execute-query` では、WHERE句で使用されるパラメータに対して、データベース固有の型に自動的に変換する機能を提供しています。これにより、アプリケーション側では型を意識せずにCommon Lispの値をそのまま使用できます。
+
+#### 対応する演算子
+
+以下の演算子を使用した場合、パラメータ値が自動的に変換されます:
+
+- `:=` (equal)
+- `:>` (greater than)
+- `:<` (less than)
+- `:>=` (greater than or equal)
+- `:<=` (less than or equal)
+- `:!=` (not equal)
+- `:in` (in)
+- `:not-in` (not in)
+- `:between` (between)
+- `:not-between` (not between)
+
+**注意**: LIMIT/OFFSET のパラメータには型変換は適用されません。
+
+#### 対応する型
+
+以下のカラム型に対して自動変換が行われます:
+
+- `:string` - 文字列型
+- `:text` - テキスト型
+- `:integer` - 整数型
+- `:float` - 浮動小数点型
+- `:decimal` - 固定小数点型
+- `:datetime` - 日時型
+- `:date` - 日付型
+- `:time` - 時刻型
+- `:boolean` - 真偽値型
+
+#### Boolean型の自動変換
+
+Boolean型のカラムに対しては、Common Lispの `t`/`nil` を使用でき、データベースごとに適切な値に自動変換されます。
+
+```common-lisp
+;; Boolean型の自動変換
+(let* ((query (query <user> :as :user :where (:= (:user :is-active) :active)))
+       (result (execute-query query '(:active t))))
+  ;; t が自動的にデータベースの boolean 型に変換される
+  ;; MySQL: 1, PostgreSQL: true, SQLite3: 1
+  result)
+
+;; 複数条件での自動変換
+(let* ((query (query <task> 
+                     :as :task 
+                     :where (:and (:= (:task :done) :done)
+                                  (:> (:task :priority) :min-priority))))
+       (result (execute-query query '(:done nil :min-priority 10))))
+  ;; done と priority がそれぞれの型に応じて自動変換される
+  result)
+```
+
+#### Datetime型の自動変換
+
+Datetime型のカラムに対しては、universal-time（整数）を渡すことができ、データベースの日時形式に自動変換されます。
+
+```common-lisp
+;; Datetime型の自動変換
+(let* ((completed-time (encode-universal-time 0 0 10 24 1 2026))
+       (query (query <task>
+                     :as :task
+                     :where (:>= (:task :completed-at) :completed-time)))
+       (result (execute-query query `(:completed-time ,completed-time))))
+  ;; universal-time が "2026-01-24 10:00:00" のような形式に変換される
+  result)
+```
+
+#### IN句での自動変換
+
+IN句やBETWEEN句でも自動型変換が適用されます。
+
+```common-lisp
+;; IN句での自動変換
+(let* ((query (query <product>
+                     :as :product
+                     :where (:in (:product :category-id) :category-ids)))
+       (result (execute-query query '(:category-ids (1 2 3)))))
+  ;; リスト内の各値が適切な型に変換される
+  result)
+
+;; BETWEEN句での自動変換
+(let* ((start-time (encode-universal-time 0 0 0 1 1 2026))
+       (end-time (encode-universal-time 0 0 0 31 12 2026))
+       (query (query <event>
+                     :as :event
+                     :where (:between (:event :event-date) :start-date :end-date)))
+       (result (execute-query query `(:start-date ,start-time :end-date ,end-time))))
+  result)
+```
+
+#### 型変換の無効化
+
+型変換を無効化したい場合は、`:convert-types nil` を指定できます。
+
+```common-lisp
+;; 型変換を無効化（従来の動作）
+(let* ((query (query <user> :as :user :where (:= (:user :is-active) :active)))
+       (result (execute-query query '(:active 1) :convert-types nil)))
+  ;; 値がそのまま渡される
+  result)
+```
+
+#### 注意事項
+
+1. **型情報の取得**: カラムの型情報が取得できない場合は、変換をスキップし、値はそのまま渡されます
+2. **既存コードとの互換性**: デフォルトで型変換が有効ですが、型情報がない場合は従来通り動作するため、既存コードへの影響はありません
+3. **データベース固有の変換**: 各データベースの型変換は `cl-db-fn` を通じて実装されており、一貫性が保たれています
+
 ### ORDER BY 句
 
 ```common-lisp
@@ -396,6 +509,145 @@ YYYYmmdd-HHMMSS-description.lisp
        :order-by ((:user :age :desc)
                   (:user :name)))
 ```
+
+### 動的なクエリ構築（query-builder）
+
+`query` マクロは静的なクエリ定義に適していますが、実行時にクエリを動的に構築したい場合は `query-builder` 関数を使用します。
+
+#### 基本的な使い方
+
+```common-lisp
+;; query-builder でクエリインスタンスを作成
+(defvar *q* (query-builder '<user> :as :user))
+
+;; set-* 関数でクエリを構築
+(set-columns *q* '((user :id :name :email)))
+(set-where *q* '(:= (:user :status) :status))
+(set-order-by *q* '((:user :created-at :desc)))
+(set-limit *q* 10)
+
+;; execute-query で実行
+(execute-query *q* '(:status "active"))
+```
+
+#### setter 関数
+
+すべての setter 関数は、設定されている内容を**置き換え**ます。また、メソッドチェーンのためにクエリインスタンス自身を返します。
+
+- `set-columns` - SELECT するカラムを設定
+- `set-joins` - JOIN 句を設定
+- `set-where` - WHERE 句を設定（nil で削除）
+- `set-order-by` - ORDER BY 句を設定
+- `set-limit` - LIMIT 句を設定
+- `set-offset` - OFFSET 句を設定
+
+```common-lisp
+;; メソッドチェーンの例
+(execute-query
+  (set-limit
+    (set-offset
+      (set-columns (query-builder '<user> :as :user)
+                   '((user :id :name)))
+      10)
+    20)
+  '())
+```
+
+#### 動的なカラム選択
+
+```common-lisp
+(defun search-users (search-column keyword)
+  "指定されたカラムでユーザーを検索"
+  (let ((q (query-builder '<user> :as :user)))
+    ;; 実行時に決まるカラムを指定
+    (set-columns q `((user :id ,search-column)))
+    (set-where q `(:like (:user ,search-column) :keyword))
+    (execute-query q (list :keyword (format nil "%~A%" keyword)))))
+
+;; 使用例
+(search-users :name "John")    ; name カラムで検索
+(search-users :email "example") ; email カラムで検索
+```
+
+#### 動的な WHERE 句の構築
+
+```common-lisp
+(defun find-users (params)
+  "パラメータに応じて動的に検索条件を追加"
+  (let ((q (query-builder '<user> :as :user))
+        (conditions nil))
+    (set-columns q '((user :id :name :email :status)))
+    
+    ;; 条件を動的に追加
+    (when (getf params :status)
+      (push '(:= (:user :status) :status) conditions))
+    
+    (when (getf params :min-age)
+      (push '(:>= (:user :age) :min-age) conditions))
+    
+    (when (getf params :keyword)
+      (push '(:or
+              (:like (:user :name) :keyword)
+              (:like (:user :email) :keyword))
+            conditions))
+    
+    ;; 条件を AND で結合
+    (when conditions
+      (set-where q `(:and ,@(nreverse conditions))))
+    
+    (execute-query q params)))
+
+;; 使用例
+(find-users '(:status "active" :min-age 20))
+(find-users '(:keyword "%test%"))
+(find-users '(:status "active" :keyword "%admin%"))
+```
+
+#### 動的なソート順
+
+```common-lisp
+(defun list-users (sort-by sort-order)
+  "ソート順を動的に変更"
+  (let ((q (query-builder '<user> :as :user)))
+    (set-columns q '((user :id :name :created-at)))
+    ;; 実行時にソート順を決定
+    (set-order-by q `((:user ,sort-by ,sort-order)))
+    (execute-query q '())))
+
+;; 使用例
+(list-users :name :asc)        ; 名前の昇順
+(list-users :created-at :desc) ; 作成日時の降順
+```
+
+#### 生成される SQL の確認
+
+```common-lisp
+;; ログで確認（LOG_LEVEL=sql:debug を設定）
+(execute-query q params)
+
+;; generate-query で直接確認
+(let ((q (query-builder '<user> :as :user)))
+  (set-columns q '((user :id :name)))
+  (set-where q '(:= (:user :status) :status))
+  (multiple-value-bind (sql params)
+      (generate-query q '(:status "active"))
+    (format t "SQL: ~A~%" sql)
+    (format t "Params: ~S~%" params)))
+;; => SQL: SELECT USER.ID as "USER.ID", USER.NAME as "USER.NAME" FROM users as USER WHERE USER.STATUS = ?
+;; => Params: ("active")
+```
+
+#### query マクロと query-builder の使い分け
+
+- **query マクロ**: 静的で型安全なクエリが必要な場合（推奨）
+  - クエリの構造がコンパイル時に確定している
+  - IDE のサポート（補完、エラー検出）を受けたい
+  - 最もパフォーマンスが良い
+
+- **query-builder**: 動的なクエリ構築が必要な場合
+  - 検索条件をユーザー入力に応じて変更
+  - カラムやソート順を実行時に決定
+  - 複雑な条件分岐でクエリを組み立てる
 
 ---
 
@@ -2023,6 +2275,183 @@ Model インスタンスは自動的に JSON に変換できます。
 
 ---
 
+## 15. クエリキャッシュ機能
+
+clails では、クエリのパース結果をキャッシュすることで、同じクエリを繰り返し実行する際のパフォーマンスを向上させています。
+
+### 概要
+
+`<query>` クラスは、クエリ全体（SELECT、JOIN、WHERE、ORDER BY、LIMIT、OFFSET）のパース結果を内部的にキャッシュします。これにより、`execute-query` でのクエリ実行時に、初回のみパース処理が行われ、2回目以降はキャッシュされた結果が使用されます。
+
+### キャッシュの仕組み
+
+#### 自動キャッシュ
+
+クエリは初回実行時に自動的にキャッシュされます。ユーザーが明示的にキャッシュを管理する必要はありません。
+
+```common-lisp
+;; クエリを定義
+(defvar *user-query* 
+  (query <user>
+         :as :user
+         :where (:= (:user :is-active) :active)
+         :order-by ((:user :created-at :desc))))
+
+;; 初回実行: パース処理が実行され、結果がキャッシュされる
+(execute-query *user-query* '(:active t))
+
+;; 2回目以降: キャッシュされた結果が使用される（パース処理はスキップ）
+(execute-query *user-query* '(:active t))
+(execute-query *user-query* '(:active nil))
+```
+
+#### キャッシュの無効化
+
+クエリ定義を変更すると、キャッシュは自動的に無効化され、次回実行時に再度パース処理が行われます。
+
+```common-lisp
+;; query-builder で動的にクエリを構築
+(defvar *q* (query-builder '<user> :as :user))
+(set-columns *q* '((user :id :name)))
+(set-where *q* '(:= (:user :status) :status))
+
+;; 初回実行: キャッシュ生成
+(execute-query *q* '(:status "active"))
+
+;; クエリ定義を変更: キャッシュが自動的に無効化される
+(set-where *q* '(:> (:user :age) :min-age))
+
+;; 次回実行: 新しいクエリでパース処理が実行され、キャッシュされる
+(execute-query *q* '(:min-age 20))
+```
+
+### キャッシュの対象
+
+以下のクエリコンポーネントのパース結果がキャッシュされます:
+
+- **SELECT句**: カラム選択のパース結果
+- **JOIN句**: JOIN条件のパース結果
+- **WHERE句**: 条件式のパース結果（動的IN句のテンプレートを含む）
+- **ORDER BY句**: ソート条件のパース結果
+- **LIMIT/OFFSET句**: ページネーションのパース結果
+
+### 動的IN句の扱い
+
+動的IN句（パラメータでリストを渡す場合）では、IN句のテンプレートがキャッシュされ、実際の展開は実行時に行われます。
+
+```common-lisp
+(defvar *blog-query*
+  (query <blog>
+         :as :blog
+         :where (:in (:blog :id) :blog-ids)))
+
+;; 初回実行: IN句のテンプレートがキャッシュされる
+(execute-query *blog-query* '(:blog-ids (1 2 3)))
+
+;; 2回目実行: キャッシュされたテンプレートから動的に展開される
+(execute-query *blog-query* '(:blog-ids (4 5 6 7 8)))
+
+;; 異なる数の値でも正しく展開される
+(execute-query *blog-query* '(:blog-ids (10)))
+```
+
+### パフォーマンスへの影響
+
+キャッシュ機能により、以下のような状況でパフォーマンスが向上します:
+
+#### 1. ページネーション
+
+```common-lisp
+(defvar *page-query*
+  (query <user>
+         :as :user
+         :where (:= (:user :status) :status)
+         :order-by ((:user :created-at :desc))
+         :limit 20
+         :offset :offset))
+
+;; 各ページの取得でパース処理がスキップされる
+(execute-query *page-query* '(:status "active" :offset 0))   ; ページ1
+(execute-query *page-query* '(:status "active" :offset 20))  ; ページ2
+(execute-query *page-query* '(:status "active" :offset 40))  ; ページ3
+```
+
+#### 2. バッチ処理
+
+```common-lisp
+(defvar *batch-query*
+  (query <task>
+         :as :task
+         :where (:= (:task :status) :status)))
+
+;; 大量のクエリ実行で効果を発揮
+(loop for i from 1 to 1000
+      do (execute-query *batch-query* '(:status "pending")))
+```
+
+#### 3. 複雑なクエリ
+
+複雑なJOINやWHERE句を持つクエリでは、パース処理のコストが大きいため、キャッシュの効果が顕著になります。
+
+```common-lisp
+(defvar *complex-query*
+  (query <employee>
+         :as :emp
+         :joins ((:inner-join :department)
+                 (:inner-join :company :through :department))
+         :where (:and (:= (:dept :name) :dept-name)
+                      (:>= (:emp :salary) :min-salary)
+                      (:in (:company :industry) :industries))
+         :order-by ((:emp :salary :desc))))
+
+;; 複雑なクエリでも2回目以降はパース処理がスキップされる
+(execute-query *complex-query* 
+               '(:dept-name "Sales" 
+                 :min-salary 50000 
+                 :industries ("Tech" "Finance")))
+```
+
+### 注意事項
+
+1. **クエリの再利用**: 同じクエリを複数回実行する場合は、クエリオブジェクトを変数に保存して再利用してください
+2. **メモリ使用量**: キャッシュはクエリオブジェクトのライフサイクルと同期して管理されます。不要になったクエリオブジェクトは適切に破棄してください
+3. **スレッドセーフティ**: 現在の実装では、`<query>` インスタンスを複数のスレッドから同時に使用することは想定していません
+
+### ベストプラクティス
+
+#### 推奨: クエリの再利用
+
+```common-lisp
+;; 推奨: クエリオブジェクトを再利用
+(defvar *user-search-query*
+  (query <user>
+         :as :user
+         :where (:like (:user :name) :keyword)))
+
+(defun search-users (keyword)
+  (execute-query *user-search-query* 
+                 (list :keyword (format nil "%~A%" keyword))))
+
+;; 何度呼び出しても効率的
+(search-users "Alice")
+(search-users "Bob")
+(search-users "Charlie")
+```
+
+#### 非推奨: クエリの再生成
+
+```common-lisp
+;; 非推奨: 毎回クエリを生成（キャッシュの恩恵を受けられない）
+(defun search-users-bad (keyword)
+  (execute-query
+    (query <user>
+           :as :user
+           :where (:like (:user :name) :keyword))
+    (list :keyword (format nil "%~A%" keyword))))
+```
+
+---
+
 ## まとめ
 
 clails の Model は以下の特徴を持ちます。
@@ -2035,5 +2464,6 @@ clails の Model は以下の特徴を持ちます。
 6. **トランザクション管理**: `with-transaction` による簡単なトランザクション制御とネストしたトランザクション（セーブポイント）のサポート
 7. **ネイティブクエリ**: cl-batis を使用した柔軟な SQL クエリの実行
 8. **バルク操作**: 大量データを効率的に処理するためのストリーミング処理とバッチ操作のサポート
+9. **クエリキャッシュ**: クエリのパース結果を自動的にキャッシュし、同じクエリの繰り返し実行時のパフォーマンスを向上
 
 詳細な API リファレンスについては、各関数の docstring を参照してください。

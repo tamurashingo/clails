@@ -18,7 +18,6 @@ This guide explains environment variables and global variables available to appl
 3. [Middleware Configuration](#3-middleware-configuration)
    - Middleware Stack
    - Adding Middleware
-   - Built-in Middleware
    - Middleware Execution Order
    - Middleware Usage Examples
 4. [Setting Environment Variables](#4-setting-environment-variables)
@@ -407,21 +406,89 @@ clails/environment:*routing-tables*
 
 **Type**: `list`
 
-**Structure**:
-```lisp
-'((:path "/path"
-   :controller "package::<controller-class>")
-  ...)
-```
+**Default value**: `'((:path "/" :controller "clails/controller/base-controller:<default-controller>"))`
 
-**Usage**:
+**Configuration location**: `app/config/environment.lisp`
+
+**Route Entry Properties**:
+
+Each route entry is a plist with the following properties:
+
+**Required properties**:
+- `:path` [string] - URI path pattern. Supports parameter placeholders like `/users/:id`
+- `:controller` [string] - Fully qualified controller class name in format `"package::<class-name>"`
+
+**Optional properties** (for custom routing patterns):
+- `:scanner` [string] - Custom regex pattern string for matching request paths. Takes highest priority.
+- `:keys` [list of strings] - List of URL parameter names to extract. Used with `:scanner`.
+- `:generate-scanner` [function designator] - Function to generate `:scanner` and `:keys` dynamically. Must return a plist with `:scanner` (string) and `:keys` (list).
+
+**Priority order for scanner generation**:
+1. `:scanner` (highest priority)
+2. `:generate-scanner` (only if `:scanner` not present)
+3. Default behavior using `create-scanner-from-uri-path`
+
+**Basic Usage**:
 ```lisp
-;; app/config/routes.lisp
+;; app/config/environment.lisp
 (setf clails/environment:*routing-tables*
   '((:path "/"
      :controller "myapp/controller::<top-controller>")
     (:path "/users/:id"
      :controller "myapp/controller::<user-controller>")))
+
+;; Initialize routing tables
+(clails/controller/base-controller:initialize-routing-tables)
+```
+
+**Advanced Usage - Custom Routing Patterns**:
+
+```lisp
+;; Catch-all route for SPA (Single Page Application)
+(setf clails/environment:*routing-tables*
+  '((:path "/spa/*"
+     :controller "myapp/controller::<spa-controller>"
+     :scanner "^/spa/.*$")))
+
+;; Static file serving with parameter extraction
+(setf clails/environment:*routing-tables*
+  '((:path "/static/*"
+     :controller "myapp/controller::<static-controller>"
+     :scanner "^/static/(.*)$"
+     :keys ("filepath"))))
+
+;; Numeric ID only constraint
+(setf clails/environment:*routing-tables*
+  '((:path "/users/:id"
+     :controller "myapp/controller::<user-controller>"
+     :scanner "^/users/([0-9]+)$"
+     :keys ("id"))))
+
+;; Custom scanner generator function
+(setf clails/environment:*routing-tables*
+  '((:path "/api/*"
+     :controller "myapp/controller::<api-controller>"
+     :generate-scanner (lambda (route-entry)
+                         (let ((path (getf route-entry :path)))
+                           (list :scanner "^/api/.*$"
+                                 :keys nil))))))
+
+;; Mixed patterns
+(setf clails/environment:*routing-tables*
+  '(;; Default pattern with parameters
+    (:path "/posts/:post-id/comments/:comment-id"
+     :controller "myapp/controller::<comments-controller>")
+    
+    ;; Catch-all for SPA
+    (:path "/app/*"
+     :controller "myapp/controller::<spa-controller>"
+     :scanner "^/app/.*$")
+    
+    ;; Custom pattern with parameter
+    (:path "/files/*"
+     :controller "myapp/controller::<file-controller>"
+     :scanner "^/files/(.*)$"
+     :keys ("path"))))
 
 ;; Initialize routing tables
 (clails/controller/base-controller:initialize-routing-tables)
@@ -475,271 +542,353 @@ clails/environment:*shutdown-hooks*
 
 ## 3. Middleware Configuration
 
+clails supports Lack middleware, allowing you to customize the request processing pipeline.
+
 ### Middleware Stack
 
-Middleware is software that processes HTTP requests and responses.
-clails uses Clack's middleware system.
+#### `*clails-middleware-stack*`
 
-#### `*middleware-stacks*`
+Holds a list of Lack middlewares. Requests are processed in the order of this stack.
 
-Middleware stack configuration.
+**Package**: `clails/middleware`
 
+**Type**: list of middleware functions
+
+**Default value**: 
 ```lisp
-clails/environment:*middleware-stacks*
-;; => ((#<FUNCTION ...> :option1 value1) ...)
+(list
+  *lack-middleware-transaction*
+  *lack-middleware-clails-controller*
+  #'(lambda (app)
+      (funcall *lack-middleware-static*
+               app
+               :path "/"
+               :root #P"./public/")))
 ```
 
-**Type**: `list`
+**Configuration location**: `app/config/environment.lisp`
 
-**Structure**:
-```lisp
-'((middleware-function :option1 value1 :option2 value2)
-  (middleware-function)
-  ...)
-```
+**Note**: Do not modify this variable directly. Use `add-middleware-before` or `add-middleware-after` functions instead.
 
 ### Adding Middleware
 
-Use `add-middleware` to add middleware.
+#### `add-middleware-before` Function
 
-#### `add-middleware` Function
-
-```lisp
-(clails/environment:add-middleware middleware-function &rest options)
-```
+Adds a middleware to the beginning of the middleware stack. Middleware added at the beginning will be executed before all existing middleware.
 
 **Parameters**:
-- `middleware-function` [function] - Middleware function
-- `options` [keyword parameters] - Middleware options
+- `middleware` [function] - Middleware function to add
 
-**Usage**:
+**Configuration example**:
 ```lisp
-;; Add session middleware
-(clails/environment:add-middleware
-  #'clails/middleware/session:session-middleware
-  :store (make-instance 'clails/middleware/session:<memory-store>))
+(in-package #:myapp/config/environment)
+
+;; Add Lack's session middleware
+(clails/middleware:add-middleware-before
+  (lambda (app)
+    (funcall lack.middleware.session:*lack-middleware-session*
+             app
+             :state (make-instance 'lack.session.state.cookie:cookie-state))))
 
 ;; Add custom middleware
-(clails/environment:add-middleware
-  #'my-custom-middleware)
+(clails/middleware:add-middleware-before
+  (lambda (app)
+    (lambda (env)
+      ;; Pre-request processing
+      (format t "Request started: ~A~%" (getf env :path-info))
+      (let ((response (funcall app env)))
+        ;; Post-response processing
+        (format t "Request completed~%")
+        response))))
 ```
 
-### Built-in Middleware
+#### `add-middleware-after` Function
 
-clails provides the following built-in middleware:
+Adds a middleware to the end of the middleware stack. Middleware added at the end will be executed after all existing middleware.
 
-#### Session Middleware
+**Parameters**:
+- `middleware` [function] - Middleware function to add
 
-Provides session management.
-
+**Configuration example**:
 ```lisp
-(clails/environment:add-middleware
-  #'clails/middleware/session:session-middleware
-  :store (make-instance 'clails/middleware/session:<memory-store>)
-  :cookie-name "session-id"
-  :cookie-path "/"
-  :cookie-domain nil
-  :cookie-secure nil
-  :cookie-http-only t
-  :cookie-max-age 86400)
+(in-package #:myapp/config/environment)
+
+;; Add logging middleware
+(clails/middleware:add-middleware-after
+  (lambda (app)
+    (lambda (env)
+      (let* ((start-time (get-internal-real-time))
+             (response (funcall app env))
+             (elapsed (/ (- (get-internal-real-time) start-time)
+                        internal-time-units-per-second)))
+        (format t "Request time: ~A seconds~%" elapsed)
+        response))))
 ```
 
-**Options**:
-- `:store` - Session store (default: `<memory-store>`)
-- `:cookie-name` - Cookie name (default: `"session-id"`)
-- `:cookie-path` - Cookie path (default: `"/"`)
-- `:cookie-domain` - Cookie domain (default: `nil`)
-- `:cookie-secure` - HTTPS only (default: `nil`)
-- `:cookie-http-only` - HTTP only (default: `t`)
-- `:cookie-max-age` - Cookie lifetime in seconds (default: `86400`)
+#### `*lack-middleware-transaction*`
 
-#### CORS Middleware
+Middleware that automatically manages database transactions.
 
-Provides CORS (Cross-Origin Resource Sharing) support.
+**Package**: `clails/middleware/transaction-middleware`
 
+**Features**:
+- Acquires a database connection for each request
+- Starts a transaction
+- Commits if the request completes successfully
+- Rolls back if an error occurs
+- Returns the connection to the connection pool
+
+**Enable/disable toggle**:
 ```lisp
-(clails/environment:add-middleware
-  #'clails/middleware/cors:cors-middleware
-  :allow-origins '("http://localhost:3000" "https://example.com")
-  :allow-methods '(:GET :POST :PUT :DELETE)
-  :allow-headers '("Content-Type" "Authorization")
-  :allow-credentials t
-  :max-age 86400)
+;; Disable transaction middleware
+(setf clails/middleware/transaction-middleware:*enable-transaction-middleware* nil)
+
+;; Enable transaction middleware (default)
+(setf clails/middleware/transaction-middleware:*enable-transaction-middleware* t)
 ```
 
-**Options**:
-- `:allow-origins` - Allowed origins (list)
-- `:allow-methods` - Allowed HTTP methods (list)
-- `:allow-headers` - Allowed headers (list)
-- `:allow-credentials` - Allow credentials (boolean)
-- `:max-age` - Preflight cache duration in seconds (number)
+#### `*lack-middleware-clails-controller*`
 
-#### Logger Middleware
+Middleware that handles routing and controller dispatch.
 
-Logs HTTP requests.
+**Package**: `clails/middleware/clails-middleware`
 
+**Features**:
+- Searches for controllers based on URL paths
+- Calls appropriate methods based on HTTP methods (GET/POST/PUT/DELETE)
+- View resolution and rendering
+- 404 error handling
+
+**Note**: This middleware is required. Do not remove it.
+
+#### `*lack-middleware-static*`
+
+Middleware that serves static files (CSS, JavaScript, images, etc.).
+
+**Package**: `lack.middleware.static`
+
+**Default configuration**:
 ```lisp
-(clails/environment:add-middleware
-  #'clails/middleware/logger:logger-middleware
-  :output *standard-output*
-  :format :combined)
+#'(lambda (app)
+    (funcall *lack-middleware-static*
+             app
+             :path "/"
+             :root #P"./public/"))
 ```
 
-**Options**:
-- `:output` - Output destination (stream)
-- `:format` - Log format (`:combined`, `:common`, `:short`)
+**Customization example**:
+```lisp
+;; Change static file path
+(setf clails/middleware:*clails-middleware-stack*
+  (list
+    clails/middleware:*lack-middleware-transaction*
+    clails/middleware:*lack-middleware-clails-controller*
+    #'(lambda (app)
+        (funcall lack.middleware.static:*lack-middleware-static*
+                 app
+                 :path "/static"
+                 :root #P"./assets/"))))
+```
 
 ### Middleware Execution Order
 
-Middleware is executed in the order it was added.
+Middleware is executed in the order of `*clails-middleware-stack*`.
 
-**Example**:
-```lisp
-;; First middleware
-(clails/environment:add-middleware #'middleware-1)
-
-;; Second middleware
-(clails/environment:add-middleware #'middleware-2)
-
-;; Third middleware
-(clails/environment:add-middleware #'middleware-3)
 ```
-
-**Execution order**:
-```
-Request  → middleware-1 → middleware-2 → middleware-3 → Application
-Response ← middleware-1 ← middleware-2 ← middleware-3 ← Application
+Request
+  ↓
+*lack-middleware-transaction*
+  ↓
+*lack-middleware-clails-controller*
+  ↓
+*lack-middleware-static*
+  ↓
+Response
 ```
 
 ### Middleware Usage Examples
 
-#### Adding Session Support
+#### Session Management
 
 ```lisp
-;; app/config/middleware.lisp
-(in-package #:myapp/config)
+(in-package #:myapp/config/environment)
 
-;; Add session middleware
-(clails/environment:add-middleware
-  #'clails/middleware/session:session-middleware
-  :store (make-instance 'clails/middleware/session:<memory-store>)
-  :cookie-name "myapp-session"
-  :cookie-http-only t
-  :cookie-max-age (* 24 60 60))  ; 24 hours
+;; Add Lack's session middleware
+(clails/middleware:add-middleware-before
+  (lambda (app)
+    (funcall lack.middleware.session:*lack-middleware-session*
+             app
+             :state (make-instance 'lack.session.state.cookie:cookie-state
+                                  :secret "your-secret-key"
+                                  :httponly t))))
 ```
 
-#### Adding CORS Support
+#### CORS Support
 
 ```lisp
-;; app/config/middleware.lisp
-(in-package #:myapp/config)
+(in-package #:myapp/config/environment)
 
 ;; Add CORS middleware
-(clails/environment:add-middleware
-  #'clails/middleware/cors:cors-middleware
-  :allow-origins '("http://localhost:3000")
-  :allow-methods '(:GET :POST :PUT :DELETE :OPTIONS)
-  :allow-headers '("Content-Type" "Authorization")
-  :allow-credentials t)
+(clails/middleware:add-middleware-before
+  (lambda (app)
+    (lambda (env)
+      (let ((response (funcall app env)))
+        ;; Add CORS headers
+        (setf (getf (second response) :access-control-allow-origin) "*")
+        (setf (getf (second response) :access-control-allow-methods) "GET, POST, PUT, DELETE")
+        response))))
 ```
 
-#### Adding Request Logging
+#### Request Logging
 
 ```lisp
-;; app/config/middleware.lisp
-(in-package #:myapp/config)
+(in-package #:myapp/config/environment)
 
-;; Add logger middleware
-(clails/environment:add-middleware
-  #'clails/middleware/logger:logger-middleware
-  :output *standard-output*
-  :format :combined)
+;; Add request logging middleware
+(clails/middleware:add-middleware-before
+  (lambda (app)
+    (lambda (env)
+      (format t "~A ~A~%"
+              (getf env :request-method)
+              (getf env :path-info))
+      (funcall app env))))
 ```
 
-#### Creating Custom Middleware
+#### Authentication
 
 ```lisp
-;; app/middleware/custom.lisp
-(defun authentication-middleware (app)
-  "Authentication middleware"
-  (lambda (env)
-    (let ((token (getf (getf env :headers) "authorization")))
-      (if (valid-token-p token)
-          (funcall app env)
-          '(401 (:content-type "text/plain") ("Unauthorized"))))))
+(in-package #:myapp/config/environment)
 
-;; Add to middleware stack
-(clails/environment:add-middleware
-  #'authentication-middleware)
+;; Add authentication middleware
+(clails/middleware:add-middleware-before
+  (lambda (app)
+    (lambda (env)
+      (let ((path (getf env :path-info)))
+        ;; Skip authentication for specific paths
+        (if (or (string= path "/login")
+                (string= path "/public"))
+            (funcall app env)
+            ;; Check authentication
+            (if (authenticated-p env)
+                (funcall app env)
+                '(401 (:content-type "text/plain") ("Unauthorized"))))))))
+```
+
+#### Viewing the Middleware Stack
+
+```lisp
+;; Display current middleware stack
+(clails/middleware:show-middleware-stack)
 ```
 
 ---
 
 ## 4. Setting Environment Variables
 
-### Using .env File
+### Development Environment
 
-Create a `.env` file in the project root.
+In development, you can set environment variables in the shell or use a `.env` file.
 
-**.env**:
-```bash
-CLAILS_DB_NAME=myapp_develop
-CLAILS_DB_HOST=localhost
-CLAILS_DB_PORT=5432
-CLAILS_DB_USERNAME=postgres
-CLAILS_DB_PASSWORD=secret
-```
-
-**Important**: Add `.env` to `.gitignore` to prevent committing it.
-
-### Setting in Shell
+#### Setting in Shell
 
 ```bash
-# Set temporarily
+# Bash/Zsh
 export CLAILS_DB_NAME="myapp_develop"
 export CLAILS_DB_HOST="localhost"
+export CLAILS_DB_PORT="5432"
+export CLAILS_DB_USERNAME="postgres"
+export CLAILS_DB_PASSWORD="password"
 
-# Start application with environment variables
-CLAILS_DB_NAME="myapp" CLAILS_DB_HOST="db.example.com" clails server
+# Start application
+clails server
 ```
 
-### Setting in Dockerfile
+#### Using .env File (with direnv, etc.)
 
-```dockerfile
-FROM fukamachi/sbcl:latest
+```bash
+# .env
+export CLAILS_DB_NAME="myapp_develop"
+export CLAILS_DB_HOST="localhost"
+export CLAILS_DB_PORT="5432"
+export CLAILS_DB_USERNAME="postgres"
+export CLAILS_DB_PASSWORD="password"
+```
 
-# Set environment variables
-ENV CLAILS_DB_NAME=myapp_production
-ENV CLAILS_DB_HOST=db
-ENV CLAILS_DB_PORT=5432
-ENV CLAILS_DB_USERNAME=appuser
+### Production Environment
 
-# Application setup
-COPY . /app
-WORKDIR /app
-RUN qlot install
+In production, always set environment variables. Do not rely on default values.
 
-CMD ["qlot", "exec", "ros", "run", "--load", "app/application.lisp"]
+```bash
+# For Systemd service
+[Service]
+Environment="CLAILS_DB_NAME=myapp_production"
+Environment="CLAILS_DB_HOST=db.example.com"
+Environment="CLAILS_DB_PORT=5432"
+Environment="CLAILS_DB_USERNAME=app_user"
+Environment="CLAILS_DB_PASSWORD=secret_password"
+
+# For Docker Compose
+services:
+  app:
+    environment:
+      - CLAILS_DB_NAME=myapp_production
+      - CLAILS_DB_HOST=db
+      - CLAILS_DB_PORT=5432
+      - CLAILS_DB_USERNAME=app_user
+      - CLAILS_DB_PASSWORD=secret_password
+```
+
+### Test Environment
+
+In test environment, use test-specific configuration.
+
+```bash
+# When running tests
+export CLAILS_DB_NAME="myapp_test"
+export APP_ENV="TEST"
+
+# Run tests
+qlot exec rove myapp-test.asd
 ```
 
 ---
 
 ## 5. Configuration File Examples
 
+### app/config/environment.lisp
+
+```lisp
+(in-package #:myapp/config)
+
+;; Set project name
+(setf clails/environment:*project-name* "myapp")
+
+;; Set execution environment
+(clails/environment:set-environment 
+  (clails/util:env-or-default "APP_ENV" "DEVELOP"))
+
+;; Set startup hooks
+(setf clails/environment:*startup-hooks*
+  '("clails/model/connection:startup-connection-pool"
+    "myapp/initializer:initialize-table-information"
+    "myapp/initializer:setup-logger"))
+
+;; Set shutdown hooks
+(setf clails/environment:*shutdown-hooks*
+  '("myapp/finalizer:cleanup-resources"
+    "clails/model/connection:shutdown-connection-pool"))
+```
+
 ### app/config/database.lisp
 
 ```lisp
-(in-package #:cl-user)
-(defpackage #:myapp/config
-  (:use #:cl))
-
 (in-package #:myapp/config)
 
-;; Database type
-(setf clails/environment:*database-type* 
+;; Set database type
+(setf clails/environment:*database-type*
       (make-instance 'clails/environment:<database-type-postgresql>))
 
-;; Database connection information
+;; Set database connection information
 (setf clails/environment:*database-config*
   (list
     :develop (:database-name ,(clails/util:env-or-default 

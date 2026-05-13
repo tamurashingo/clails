@@ -56,13 +56,13 @@
 
 
 (deftest path-controller-test
-  (let ((result (clails/controller/base-controller::path-controller "/")))
+  (let ((result (clails/controller/base-controller::path-controller "/" :get)))
     (ok result)
     (ok (string= (getf result :controller)
                  "clails-test/controller/base-controller::<test-controller>"))
     (ok (= (length (getf result :parameters)) 0)))
 
-  (let ((result (clails/controller/base-controller::path-controller "/blog/123")))
+  (let ((result (clails/controller/base-controller::path-controller "/blog/123" :get)))
     (ok result)
     (ok (string= (getf result :controller)
                  "clails-test/controller/base-controller::<test-detail-controller>"))
@@ -71,7 +71,7 @@
     (ok (string= (aref (getf result :parameters) 0)
                  "123")))
 
-  (let ((result (clails/controller/base-controller::path-controller "/blog/abc/comment/def")))
+  (let ((result (clails/controller/base-controller::path-controller "/blog/abc/comment/def" :get)))
     (ok result)
     (ok (string= (getf result :controller)
                  "clails-test/controller/base-controller::<test-comment-controller>"))
@@ -115,5 +115,306 @@
       (ok (view controller)))))
 
 
+(defclass <test-spa-controller> (<base-controller>)
+  ())
+
+(defclass <test-static-controller> (<base-controller>)
+  ())
+
+(defclass <test-numeric-controller> (<base-controller>)
+  ())
 
 
+(defun generate-wildcard-scanner (route-entry)
+  "Generate scanner for wildcard patterns.
+
+   @param route-entry [plist] Route entry
+   @return [plist] Scanner and keys
+   "
+  (let ((path (getf route-entry :path)))
+    (cond ((ppcre:scan "\\*$" path)
+           `(:scanner ,(ppcre:regex-replace "\\*$" (concatenate 'string "^" path) ".*$")
+             :keys nil))
+          (t
+           (create-scanner-from-uri-path path)))))
+
+
+(defun generate-numeric-id-scanner (route-entry)
+  "Generate scanner for numeric ID patterns.
+
+   @param route-entry [plist] Route entry
+   @return [plist] Scanner and keys
+   "
+  (let ((path (getf route-entry :path)))
+    `(:scanner "^/users/([0-9]+)$"
+      :keys ("id"))))
+
+
+(deftest initialize-routing-tables-test
+  (testing "Default behavior - only :path and :controller specified"
+    (let* ((test-tables '((:path "/test/:id"
+                           :controller "test::<test-controller>")))
+           (*routing-tables* test-tables))
+      (initialize-routing-tables)
+      (let ((route (first clails/controller/base-controller::*router*)))
+        (ok (string= (getf route :scanner) "^/test/([0-9A-Za-z\\-._~%]+)$"))
+        (ok (equal (getf route :keys) '("id"))))))
+
+  (testing ":scanner only (keys should be NIL)"
+    (let* ((test-tables '((:path "/spa/*"
+                           :controller "test::<spa-controller>"
+                           :scanner "^/spa/.*$")))
+           (*routing-tables* test-tables))
+      (initialize-routing-tables)
+      (let ((route (first clails/controller/base-controller::*router*)))
+        (ok (string= (getf route :scanner) "^/spa/.*$"))
+        (ok (null (getf route :keys))))))
+
+  (testing "Both :scanner and :keys specified"
+    (let* ((test-tables '((:path "/static/*"
+                           :controller "test::<static-controller>"
+                           :scanner "^/static/(.*)$"
+                           :keys ("filepath"))))
+           (*routing-tables* test-tables))
+      (initialize-routing-tables)
+      (let ((route (first clails/controller/base-controller::*router*)))
+        (ok (string= (getf route :scanner) "^/static/(.*)$"))
+        (ok (equal (getf route :keys) '("filepath"))))))
+
+  (testing ":generate-scanner specified"
+    (let* ((test-tables `((:path "/api/*"
+                           :controller "test::<api-controller>"
+                           :generate-scanner ,#'generate-wildcard-scanner)))
+           (*routing-tables* test-tables))
+      (initialize-routing-tables)
+      (let ((route (first clails/controller/base-controller::*router*)))
+        (ok (string= (getf route :scanner) "^/api/.*$"))
+        (ok (null (getf route :keys))))))
+
+  (testing "Both :scanner and :generate-scanner specified (warning, :scanner prioritized)"
+    (let* ((test-tables `((:path "/test"
+                           :controller "test::<test-controller>"
+                           :scanner "^/test$"
+                           :generate-scanner ,#'generate-wildcard-scanner)))
+           (*routing-tables* test-tables)
+           (warning-output (make-string-output-stream)))
+      (let ((*error-output* warning-output))
+        (initialize-routing-tables))
+      (let ((route (first clails/controller/base-controller::*router*))
+            (warning-text (get-output-stream-string warning-output)))
+        (ok (string= (getf route :scanner) "^/test$"))
+        (ok (ppcre:scan "Warning.*:scanner.*:generate-scanner" warning-text)))))
+
+  (testing "Mixed patterns in *routing-tables*"
+    (let* ((test-tables `((:path "/"
+                           :controller "test::<root-controller>")
+                          (:path "/spa/*"
+                           :controller "test::<spa-controller>"
+                           :scanner "^/spa/.*$")
+                          (:path "/users/:id"
+                           :controller "test::<user-controller>"
+                           :generate-scanner ,#'generate-numeric-id-scanner)))
+           (*routing-tables* test-tables))
+      (initialize-routing-tables)
+      (let ((routes clails/controller/base-controller::*router*))
+        (ok (= (length routes) 3))
+        (ok (string= (getf (first routes) :scanner) "^/$"))
+        (ok (string= (getf (second routes) :scanner) "^/spa/.*$"))
+        (ok (string= (getf (third routes) :scanner) "^/users/([0-9]+)$"))))))
+
+
+(deftest initialize-routing-tables-error-test
+  (testing ":scanner is not a string"
+    (let* ((test-tables '((:path "/test"
+                           :controller "test::<test-controller>"
+                           :scanner 123)))
+           (*routing-tables* test-tables))
+      (ok (signals (initialize-routing-tables) 'error))))
+
+  (testing ":generate-scanner is not a function"
+    (let* ((test-tables '((:path "/test"
+                           :controller "test::<test-controller>"
+                           :generate-scanner not-a-function)))
+           (*routing-tables* test-tables))
+      (ok (signals (initialize-routing-tables) 'error))))
+
+  (testing ":generate-scanner returns invalid format"
+    (let* ((invalid-generator (lambda (route) "invalid"))
+           (test-tables `((:path "/test"
+                           :controller "test::<test-controller>"
+                           :generate-scanner ,invalid-generator)))
+           (*routing-tables* test-tables))
+      (ok (signals (initialize-routing-tables) 'error)))))
+
+
+(deftest path-controller-with-custom-scanner-test
+  (testing "Catch-all route matching"
+    (let* ((test-tables '((:path "/spa/*"
+                           :controller "clails-test/controller/base-controller::<test-spa-controller>"
+                           :scanner "^/spa/.*$")))
+           (*routing-tables* test-tables))
+      (initialize-routing-tables)
+      (let ((result1 (clails/controller/base-controller::path-controller "/spa/" :get))
+            (result2 (clails/controller/base-controller::path-controller "/spa/home" :get))
+            (result3 (clails/controller/base-controller::path-controller "/spa/users/123" :get)))
+        (ok result1)
+        (ok (string= (getf result1 :controller)
+                     "clails-test/controller/base-controller::<test-spa-controller>"))
+        (ok result2)
+        (ok (string= (getf result2 :controller)
+                     "clails-test/controller/base-controller::<test-spa-controller>"))
+        (ok result3)
+        (ok (string= (getf result3 :controller)
+                     "clails-test/controller/base-controller::<test-spa-controller>")))))
+
+  (testing "Static file route with parameter"
+    (let* ((test-tables '((:path "/static/*"
+                           :controller "clails-test/controller/base-controller::<test-static-controller>"
+                           :scanner "^/static/(.*)$"
+                           :keys ("filepath"))))
+           (*routing-tables* test-tables))
+      (initialize-routing-tables)
+      (let ((result (clails/controller/base-controller::path-controller "/static/images/logo.png" :get)))
+        (ok result)
+        (ok (string= (getf result :controller)
+                     "clails-test/controller/base-controller::<test-static-controller>"))
+        (ok (= (length (getf result :parameters)) 1))
+        (ok (string= (aref (getf result :parameters) 0) "images/logo.png")))))
+
+  (testing "Numeric ID only route"
+    (let* ((test-tables `((:path "/users/:id"
+                           :controller "clails-test/controller/base-controller::<test-numeric-controller>"
+                           :generate-scanner ,#'generate-numeric-id-scanner)))
+           (*routing-tables* test-tables))
+      (initialize-routing-tables)
+      (let ((result1 (clails/controller/base-controller::path-controller "/users/123" :get))
+            (result2 (clails/controller/base-controller::path-controller "/users/abc" :get)))
+        (ok result1)
+        (ok (string= (getf result1 :controller)
+                     "clails-test/controller/base-controller::<test-numeric-controller>"))
+        (ok (= (length (getf result1 :parameters)) 1))
+        (ok (string= (aref (getf result1 :parameters) 0) "123"))
+        (ok (null result2))))))
+
+
+(deftest resources-test
+  (testing "generates 7 RESTful routes"
+    (let ((routes (resources "todos" "test::<todo-controller>")))
+      (ok (= (length routes) 7))))
+
+  (testing "routes have correct path, action, and method"
+    (let ((routes (resources "todos" "test::<todo-controller>")))
+      ;; index
+      (let ((r (nth 0 routes)))
+        (ok (string= (getf r :path) "/todos"))
+        (ok (string= (getf r :action) "index"))
+        (ok (eq (getf r :method) :get)))
+      ;; new (before :id routes)
+      (let ((r (nth 1 routes)))
+        (ok (string= (getf r :path) "/todos/new"))
+        (ok (string= (getf r :action) "new"))
+        (ok (eq (getf r :method) :get)))
+      ;; create
+      (let ((r (nth 2 routes)))
+        (ok (string= (getf r :path) "/todos"))
+        (ok (string= (getf r :action) "create"))
+        (ok (eq (getf r :method) :post)))
+      ;; show
+      (let ((r (nth 3 routes)))
+        (ok (string= (getf r :path) "/todos/:id"))
+        (ok (string= (getf r :action) "show"))
+        (ok (eq (getf r :method) :get)))
+      ;; edit
+      (let ((r (nth 4 routes)))
+        (ok (string= (getf r :path) "/todos/:id/edit"))
+        (ok (string= (getf r :action) "edit"))
+        (ok (eq (getf r :method) :get)))
+      ;; update
+      (let ((r (nth 5 routes)))
+        (ok (string= (getf r :path) "/todos/:id"))
+        (ok (string= (getf r :action) "update"))
+        (ok (eq (getf r :method) :put)))
+      ;; destroy
+      (let ((r (nth 6 routes)))
+        (ok (string= (getf r :path) "/todos/:id"))
+        (ok (string= (getf r :action) "destroy"))
+        (ok (eq (getf r :method) :delete)))))
+
+  (testing "all routes reference the same controller"
+    (let ((routes (resources "blogs" "myapp::<blog-controller>")))
+      (dolist (r routes)
+        (ok (string= (getf r :controller) "myapp::<blog-controller>")))))
+
+  (testing ":only filters to specified actions"
+    (let ((routes (resources "todos" "test::<todo-controller>" :only '(:index :show))))
+      (ok (= (length routes) 2))
+      (ok (string= (getf (nth 0 routes) :action) "index"))
+      (ok (string= (getf (nth 1 routes) :action) "show"))))
+
+  (testing ":except excludes specified actions"
+    (let ((routes (resources "todos" "test::<todo-controller>" :except '(:destroy :update))))
+      (ok (= (length routes) 5))
+      (ok (every (lambda (r) (not (member (getf r :action) '("destroy" "update") :test #'string=))) routes))))
+
+  (testing ":only with single action"
+    (let ((routes (resources "todos" "test::<todo-controller>" :only '(:index))))
+      (ok (= (length routes) 1))
+      (ok (string= (getf (nth 0 routes) :action) "index"))))
+
+  (testing "generated routes do not contain :name key"
+    (let ((routes (resources "todos" "test::<todo-controller>")))
+      (dolist (r routes)
+        (ok (null (getf r :name)))))))
+
+
+(defclass <test-resource-controller> (<base-controller>)
+  ())
+
+(deftest resources-routing-integration-test
+  (testing "resources routes are correctly matched by path-controller"
+    (let* ((*routing-tables* (resources "todos" "clails-test/controller/base-controller::<test-resource-controller>"))
+           (clails/controller/base-controller::*router* nil))
+      (initialize-routing-tables)
+
+      ;; GET /todos -> index
+      (let ((result (clails/controller/base-controller::path-controller "/todos" :get)))
+        (ok result)
+        (ok (string= (getf result :action) "index")))
+
+      ;; GET /todos/new -> new (not matched as :id)
+      (let ((result (clails/controller/base-controller::path-controller "/todos/new" :get)))
+        (ok result)
+        (ok (string= (getf result :action) "new")))
+
+      ;; POST /todos -> create
+      (let ((result (clails/controller/base-controller::path-controller "/todos" :post)))
+        (ok result)
+        (ok (string= (getf result :action) "create")))
+
+      ;; GET /todos/123 -> show with params
+      (let ((result (clails/controller/base-controller::path-controller "/todos/123" :get)))
+        (ok result)
+        (ok (string= (getf result :action) "show"))
+        (ok (= (length (getf result :parameters)) 1))
+        (ok (string= (aref (getf result :parameters) 0) "123")))
+
+      ;; GET /todos/123/edit -> edit
+      (let ((result (clails/controller/base-controller::path-controller "/todos/123/edit" :get)))
+        (ok result)
+        (ok (string= (getf result :action) "edit"))
+        (ok (string= (aref (getf result :parameters) 0) "123")))
+
+      ;; PUT /todos/123 -> update
+      (let ((result (clails/controller/base-controller::path-controller "/todos/123" :put)))
+        (ok result)
+        (ok (string= (getf result :action) "update"))
+        (ok (string= (aref (getf result :parameters) 0) "123")))
+
+      ;; DELETE /todos/123 -> destroy
+      (let ((result (clails/controller/base-controller::path-controller "/todos/123" :delete)))
+        (ok result)
+        (ok (string= (getf result :action) "destroy"))
+        (ok (string= (aref (getf result :parameters) 0) "123")))
+
+      ;; GET /nonexistent -> nil
+      (ok (null (clails/controller/base-controller::path-controller "/nonexistent" :get))))))

@@ -12,7 +12,7 @@
 (in-package #:clails/middleware/transaction-middleware)
 
 
-(defparameter *enable-transaction-middleware* t
+(defvar *enable-transaction-middleware* t
   "Flag to enable/disable transaction middleware.
    
    When T (default), all requests are wrapped in transactions.

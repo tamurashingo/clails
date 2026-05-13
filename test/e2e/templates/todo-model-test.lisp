@@ -9,6 +9,18 @@
 
 (in-package #:todoapp-test/models/todo)
 
+(defparameter *setup-called* nil)
+
+(setup
+  (setf *setup-called* t)
+  (format t "~%>>> SETUP CALLED~%"))
+
+(teardown
+  (format t "~%>>TEARDOWN CALLED~%"))
+
+(deftest-suite :model setup-test
+  (ok *setup-called* "setup should be called"))
+
 (deftest-suite :model test-create-todo
   "create-todo creates a new todo"
   (let ((todo (create-todo "Test task")))

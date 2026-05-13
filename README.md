@@ -127,6 +127,7 @@ Comprehensive guides for developing with clails:
 - **[QuickStart](document/quickstart.md)** ([日本語](document/quickstart_ja.md)) - Build your first TODO application
 - **[Command Guide](document/command.md)** ([日本語](document/command_ja.md)) - CLI commands reference
 - **[Model Guide](document/model.md)** ([日本語](document/model_ja.md)) - Database operations, queries, transactions, and pessimistic locking
+- **[Logging Guide](document/logging.md)** ([日本語](document/logging_ja.md)) - Flexible logging system with hierarchical loggers
 - **[Task Guide](document/task.md)** ([日本語](document/task_ja.md)) - Custom task system with dependency management
 - **[View Guide](document/view.md)** ([日本語](document/view_ja.md)) - Template engine and rendering (coming soon)
 - **[Controller Guide](document/controller.md)** ([日本語](document/controller_ja.md)) - Request handling and routing (coming soon)

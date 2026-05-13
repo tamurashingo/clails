@@ -17,6 +17,8 @@
            #:*sqlite3-lock-retry-count*
            #:*sqlite3-transaction-mode*
            #:*sqlite3-lock-module-loaded*
+           #:*table-information-initialized*
+           #:*query-initialization-callbacks*
            #:<database-type>
            #:<database-type-mysql>
            #:<database-type-postgresql>
@@ -48,41 +50,106 @@
   (:documentation "Dummy database type specification for testing."))
 
 
-(defparameter *project-name* ""
+(defvar *project-name* ""
   "Project name. Set in app/config/environment.lisp.")
 
-(defparameter *project-dir* ""
+(defvar *project-dir* ""
   "Project directory. Set at startup.")
 
-(defparameter *project-environment* :develop
+(defvar *project-environment* :develop
   "Specify one of :develop, :test, or :production. Can be overridden in app/config/environment.lisp.")
 
-(defparameter *database-config* nil
+(defvar *database-config* nil
   "Holds database connection information, etc. Set in app/config/database.lisp.")
 
-(defparameter *database-type* nil
+(defvar *database-type* nil
   "Holds an instance of <database-type> to specify the database in use. Set in app/config/database.lisp.")
 
-(defparameter *migration-base-dir* ""
+(defvar *migration-base-dir* ""
   "The base path for directories where migration files are placed. Usually set to *project-dir*. (May be set to a different directory for testing, etc.)")
 
-(defparameter *task-base-dir* ""
+(defvar *task-base-dir* ""
   "The base path for directories where task files are placed. Usually set to *project-dir*. (May be set to a different directory for testing, etc.)")
 
-(defparameter *connection-pool* nil
+(defvar *connection-pool* nil
   "Database connection pool. Created when the application server statts and destroyed when it shuts down.")
 
-(defparameter *routing-tables*
+(defvar *routing-tables*
   '((:path "/"
-     :controller "clails/controller/base-controller:<default-controller>")))
+     :controller "clails/controller/base-controller:<default-controller>"))
+  "Application routing table configuration.
 
-(defparameter *startup-hooks*
+   Each route entry is a plist with the following properties:
+
+   Required properties:
+   - :path [string]
+     URI path pattern. Supports parameter placeholders like /users/:id
+     Examples: \"/\", \"/users/:id\", \"/blog/:blog-id/comment/:comment-id\"
+
+   - :controller [string]
+     Fully qualified controller class name in format \"package::<class-name>\"
+     Example: \"myapp/controllers/users:<user-controller>\"
+
+   Optional properties (for custom routing patterns):
+   - :scanner [string]
+     Custom regex pattern string for matching request paths.
+     When specified, this takes highest priority over automatic pattern generation.
+     Examples: \"^/spa/.*$\" (catch-all), \"^/users/([0-9]+)$\" (numeric ID only)
+
+   - :keys [list of strings]
+     List of URL parameter names to extract from the matched path.
+     Used with :scanner to specify which capture groups correspond to parameters.
+     If :scanner is specified without :keys, keys defaults to NIL.
+     Example: '(\"id\" \"post-id\")
+
+   - :generate-scanner [function designator]
+     Function to generate :scanner and :keys dynamically.
+     Called with the entire route entry as argument.
+     Must return a plist with :scanner (string) and :keys (list).
+     Only used if :scanner is not specified.
+     Example: (lambda (route-entry)
+                (let ((path (getf route-entry :path)))
+                  (list :scanner (format nil \"^~A.*$\" path)
+                        :keys nil)))
+
+   Priority order for scanner generation:
+   1. :scanner (highest priority)
+   2. :generate-scanner (only if :scanner not present)
+   3. Default behavior using create-scanner-from-uri-path
+
+   Example configurations:
+
+   ;; Default behavior - automatic pattern generation
+   (:path \"/users/:id\" :controller \"myapp/controllers/users:<user-controller>\")
+
+   ;; Custom scanner for catch-all routes (SPA)
+   (:path \"/spa/*\"
+    :controller \"myapp/controllers/spa:<spa-controller>\"
+    :scanner \"^/spa/.*$\")
+
+   ;; Custom scanner with parameter extraction
+   (:path \"/static/*\"
+    :controller \"myapp/controllers/static:<static-controller>\"
+    :scanner \"^/static/(.*)$\"
+    :keys (\"filepath\"))
+
+   ;; Custom scanner generator function
+   (:path \"/api/*\"
+    :controller \"myapp/controllers/api:<api-controller>\"
+    :generate-scanner (lambda (route-entry)
+                        (let ((path (getf route-entry :path)))
+                          (list :scanner \"^/api/.*$\"
+                                :keys nil))))
+
+   Set in app/config/environment.lisp.")
+
+(defvar *startup-hooks*
   '("clails/model/connection:startup-connection-pool"))
 
-(defparameter *shutdown-hooks*
+(defvar *shutdown-hooks*
   '("clails/model/connection:shutdown-connection-pool"))
 
-(defparameter *default-lock-mode* :for-update
+(defvar *default-lock-mode* :for-update
   "Default lock mode for with-locked-transaction macro.
 
    Possible values:
@@ -95,7 +162,7 @@
 
    This can be overridden in <project>/app/config/environment.lisp")
 
-(defparameter *sqlite3-busy-timeout* 50
+(defvar *sqlite3-busy-timeout* 50
   "SQLite3 busy timeout in milliseconds.
 
    When SQLite3 encounters a locked database, it will wait up to this
@@ -104,7 +171,7 @@
 
    This can be overridden in <project>/app/config/environment.lisp")
 
-(defparameter *sqlite3-lock-retry-count* 3
+(defvar *sqlite3-lock-retry-count* 3
   "Number of retry attempts for SQLite3 locked database errors.
 
    When BEGIN IMMEDIATE fails due to database lock, the transaction
@@ -113,7 +180,7 @@
 
    This can be overridden in <project>/app/config/environment.lisp")
 
-(defparameter *sqlite3-transaction-mode* nil
+(defvar *sqlite3-transaction-mode* nil
   "SQLite3 transaction mode for the current dynamic context.
 
    This is a special variable used to pass the transaction mode
@@ -127,11 +194,27 @@
    This variable is set by with-locked-transaction macro and should not
    be set directly by user code.")
 
-(defparameter *sqlite3-lock-module-loaded* nil
+(defvar *sqlite3-lock-module-loaded* nil
   "Flag indicating whether sqlite3-lock module has been loaded.
 
    Set to T after src/model/impl/sqlite3-lock.lisp is successfully loaded.
    Used to ensure the module is loaded only once.")
+
+(defvar *table-information-initialized* nil
+  "Flag indicating whether initialize-table-information has been executed.
+
+   Set to T after initialize-table-information completes successfully.
+   Used by query macro to determine whether to create actual query instances
+   or placeholder instances for lazy initialization.")
+
+(defvar *query-initialization-callbacks* nil
+  "List of callback functions to initialize query placeholders.
+
+   When query macro is expanded before initialize-table-information is called,
+   callback functions are registered here to initialize query placeholders later.
+   Each callback takes no arguments and sets the actual query instance to the
+   corresponding placeholder's actual-query slot.
+   Cleared after initialize-table-information executes all callbacks.")
 
 (defparameter +ENVIRONMENT-NAMES+ '("DEVELOP" "TEST" "PRODUCTION")
   "List of valid environment names.")

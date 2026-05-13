@@ -368,6 +368,258 @@ Use the `query` function to build queries.
      (:= (:user :status) "pending"))
 ```
 
+### Automatic Parameter Type Conversion
+
+`execute-query` provides automatic type conversion for parameters used in WHERE clauses, converting them to database-specific types. This allows application code to use Common Lisp values directly without worrying about type conversions.
+
+#### Supported Operators
+
+The following operators trigger automatic parameter type conversion:
+
+- `:=` (equal)
+- `:>` (greater than)
+- `:<` (less than)
+- `:>=` (greater than or equal)
+- `:<=` (less than or equal)
+- `:!=` (not equal)
+- `:in` (in)
+- `:not-in` (not in)
+- `:between` (between)
+- `:not-between` (not between)
+
+**Note**: Type conversion is not applied to LIMIT/OFFSET parameters.
+
+#### Supported Types
+
+Automatic conversion is performed for the following column types:
+
+- `:string` - String type
+- `:text` - Text type
+- `:integer` - Integer type
+- `:float` - Floating-point type
+- `:decimal` - Decimal type
+- `:datetime` - Datetime type
+- `:date` - Date type
+- `:time` - Time type
+- `:boolean` - Boolean type
+
+#### Boolean Type Conversion
+
+For Boolean columns, you can use Common Lisp's `t`/`nil`, which are automatically converted to the appropriate database values.
+
+```common-lisp
+;; Boolean type automatic conversion
+(let* ((query (query <user> :as :user :where (:= (:user :is-active) :active)))
+       (result (execute-query query '(:active t))))
+  ;; t is automatically converted to database boolean type
+  ;; MySQL: 1, PostgreSQL: true, SQLite3: 1
+  result)
+
+;; Multiple conditions with automatic conversion
+(let* ((query (query <task> 
+                     :as :task 
+                     :where (:and (:= (:task :done) :done)
+                                  (:> (:task :priority) :min-priority))))
+       (result (execute-query query '(:done nil :min-priority 10))))
+  ;; done and priority are converted according to their respective types
+  result)
+```
+
+#### Datetime Type Conversion
+
+For Datetime columns, you can pass universal-time (integer), which is automatically converted to the database datetime format.
+
+```common-lisp
+;; Datetime type automatic conversion
+(let* ((completed-time (encode-universal-time 0 0 10 24 1 2026))
+       (query (query <task>
+                     :as :task
+                     :where (:>= (:task :completed-at) :completed-time)))
+       (result (execute-query query `(:completed-time ,completed-time))))
+  ;; universal-time is converted to format like "2026-01-24 10:00:00"
+  result)
+```
+
+#### IN Clause Conversion
+
+Automatic type conversion also applies to IN and BETWEEN clauses.
+
+```common-lisp
+;; IN clause with automatic conversion
+(let* ((query (query <product>
+                     :as :product
+                     :where (:in (:product :category-id) :category-ids)))
+       (result (execute-query query '(:category-ids (1 2 3)))))
+  ;; Each value in the list is converted to the appropriate type
+  result)
+
+;; BETWEEN clause with automatic conversion
+(let* ((start-time (encode-universal-time 0 0 0 1 1 2026))
+       (end-time (encode-universal-time 0 0 0 31 12 2026))
+       (query (query <event>
+                     :as :event
+                     :where (:between (:event :event-date) :start-date :end-date)))
+       (result (execute-query query `(:start-date ,start-time :end-date ,end-time))))
+  result)
+```
+
+#### Disabling Type Conversion
+
+You can disable type conversion by specifying `:convert-types nil`.
+
+```common-lisp
+;; Disable type conversion (traditional behavior)
+(let* ((query (query <user> :as :user :where (:= (:user :is-active) :active)))
+       (result (execute-query query '(:active 1) :convert-types nil)))
+  ;; Values are passed as-is
+  result)
+```
+
+#### Notes
+
+1. **Type Information Retrieval**: If column type information is unavailable, conversion is skipped and values are passed as-is
+2. **Backward Compatibility**: Type conversion is enabled by default, but when type information is unavailable, it operates as before, ensuring no impact on existing code
+3. **Database-Specific Conversion**: Type conversion for each database is implemented via `cl-db-fn`, ensuring consistency
+
+### Dynamic Query Construction (query-builder)
+
+While the `query` macro is suitable for static query definitions, use the `query-builder` function when you need to construct queries dynamically at runtime.
+
+#### Basic Usage
+
+```common-lisp
+;; Create a query instance with query-builder
+(defvar *q* (query-builder '<user> :as :user))
+
+;; Build the query with set-* functions
+(set-columns *q* '((user :id :name :email)))
+(set-where *q* '(:= (:user :status) :status))
+(set-order-by *q* '((:user :created-at :desc)))
+(set-limit *q* 10)
+
+;; Execute with execute-query
+(execute-query *q* '(:status "active"))
+```
+
+#### Setter Functions
+
+All setter functions **replace** the existing content and return the query instance itself for method chaining.
+
+- `set-columns` - Set columns to SELECT
+- `set-joins` - Set JOIN clauses
+- `set-where` - Set WHERE clause (nil to remove)
+- `set-order-by` - Set ORDER BY clause
+- `set-limit` - Set LIMIT clause
+- `set-offset` - Set OFFSET clause
+
+```common-lisp
+;; Method chaining example
+(execute-query
+  (set-limit
+    (set-offset
+      (set-columns (query-builder '<user> :as :user)
+                   '((user :id :name)))
+      10)
+    20)
+  '())
+```
+
+#### Dynamic Column Selection
+
+```common-lisp
+(defun search-users (search-column keyword)
+  "Search users in the specified column"
+  (let ((q (query-builder '<user> :as :user)))
+    ;; Specify column determined at runtime
+    (set-columns q `((user :id ,search-column)))
+    (set-where q `(:like (:user ,search-column) :keyword))
+    (execute-query q (list :keyword (format nil "%~A%" keyword)))))
+
+;; Usage examples
+(search-users :name "John")    ; Search in name column
+(search-users :email "example") ; Search in email column
+```
+
+#### Dynamic WHERE Clause Construction
+
+```common-lisp
+(defun find-users (params)
+  "Dynamically add search conditions based on parameters"
+  (let ((q (query-builder '<user> :as :user))
+        (conditions nil))
+    (set-columns q '((user :id :name :email :status)))
+    
+    ;; Dynamically add conditions
+    (when (getf params :status)
+      (push '(:= (:user :status) :status) conditions))
+    
+    (when (getf params :min-age)
+      (push '(:>= (:user :age) :min-age) conditions))
+    
+    (when (getf params :keyword)
+      (push '(:or
+              (:like (:user :name) :keyword)
+              (:like (:user :email) :keyword))
+            conditions))
+    
+    ;; Combine conditions with AND
+    (when conditions
+      (set-where q `(:and ,@(nreverse conditions))))
+    
+    (execute-query q params)))
+
+;; Usage examples
+(find-users '(:status "active" :min-age 20))
+(find-users '(:keyword "%test%"))
+(find-users '(:status "active" :keyword "%admin%"))
+```
+
+#### Dynamic Sort Order
+
+```common-lisp
+(defun list-users (sort-by sort-order)
+  "Change sort order dynamically"
+  (let ((q (query-builder '<user> :as :user)))
+    (set-columns q '((user :id :name :created-at)))
+    ;; Determine sort order at runtime
+    (set-order-by q `((:user ,sort-by ,sort-order)))
+    (execute-query q '())))
+
+;; Usage examples
+(list-users :name :asc)        ; Ascending by name
+(list-users :created-at :desc) ; Descending by created_at
+```
+
+#### Inspecting Generated SQL
+
+```common-lisp
+;; Check via logs (set LOG_LEVEL=sql:debug)
+(execute-query q params)
+
+;; Check directly with generate-query
+(let ((q (query-builder '<user> :as :user)))
+  (set-columns q '((user :id :name)))
+  (set-where q '(:= (:user :status) :status))
+  (multiple-value-bind (sql params)
+      (generate-query q '(:status "active"))
+    (format t "SQL: ~A~%" sql)
+    (format t "Params: ~S~%" params)))
+;; => SQL: SELECT USER.ID as "USER.ID", USER.NAME as "USER.NAME" FROM users as USER WHERE USER.STATUS = ?
+;; => Params: ("active")
+```
+
+#### When to Use query Macro vs query-builder
+
+- **query macro**: When you need static, type-safe queries (recommended)
+  - Query structure is determined at compile time
+  - Want IDE support (completion, error detection)
+  - Best performance
+
+- **query-builder**: When you need dynamic query construction
+  - Change search conditions based on user input
+  - Determine columns or sort order at runtime
+  - Build queries with complex conditional logic
+
 ---
 
 ## 6. JOIN Queries
@@ -1903,6 +2155,183 @@ Bulk operations occupy connections for long periods and maintain transactions, s
 
 ---
 
+## 15. Query Cache Feature
+
+clails improves performance when executing the same query repeatedly by caching query parsing results.
+
+### Overview
+
+The `<query>` class internally caches the parsing results of the entire query (SELECT, JOIN, WHERE, ORDER BY, LIMIT, OFFSET). This ensures that when executing queries with `execute-query`, parsing is performed only on the first execution, with cached results used for subsequent executions.
+
+### How Caching Works
+
+#### Automatic Caching
+
+Queries are automatically cached on their first execution. Users do not need to explicitly manage the cache.
+
+```common-lisp
+;; Define a query
+(defvar *user-query* 
+  (query <user>
+         :as :user
+         :where (:= (:user :is-active) :active)
+         :order-by ((:user :created-at :desc))))
+
+;; First execution: Parsing is performed and results are cached
+(execute-query *user-query* '(:active t))
+
+;; Subsequent executions: Cached results are used (parsing is skipped)
+(execute-query *user-query* '(:active t))
+(execute-query *user-query* '(:active nil))
+```
+
+#### Cache Invalidation
+
+When the query definition is modified, the cache is automatically invalidated, and parsing is performed again on the next execution.
+
+```common-lisp
+;; Dynamically construct query with query-builder
+(defvar *q* (query-builder '<user> :as :user))
+(set-columns *q* '((user :id :name)))
+(set-where *q* '(:= (:user :status) :status))
+
+;; First execution: Cache generation
+(execute-query *q* '(:status "active"))
+
+;; Modify query definition: Cache is automatically invalidated
+(set-where *q* '(:> (:user :age) :min-age))
+
+;; Next execution: Parsing is performed with new query and cached
+(execute-query *q* '(:min-age 20))
+```
+
+### Cached Components
+
+Parsing results of the following query components are cached:
+
+- **SELECT clause**: Parsing results of column selection
+- **JOIN clause**: Parsing results of JOIN conditions
+- **WHERE clause**: Parsing results of conditional expressions (including dynamic IN clause templates)
+- **ORDER BY clause**: Parsing results of sort conditions
+- **LIMIT/OFFSET clause**: Parsing results of pagination
+
+### Handling Dynamic IN Clauses
+
+For dynamic IN clauses (when passing lists as parameters), the IN clause template is cached, and actual expansion is performed at execution time.
+
+```common-lisp
+(defvar *blog-query*
+  (query <blog>
+         :as :blog
+         :where (:in (:blog :id) :blog-ids)))
+
+;; First execution: IN clause template is cached
+(execute-query *blog-query* '(:blog-ids (1 2 3)))
+
+;; Second execution: Dynamically expanded from cached template
+(execute-query *blog-query* '(:blog-ids (4 5 6 7 8)))
+
+;; Correctly expanded even with different numbers of values
+(execute-query *blog-query* '(:blog-ids (10)))
+```
+
+### Performance Impact
+
+The caching feature improves performance in the following situations:
+
+#### 1. Pagination
+
+```common-lisp
+(defvar *page-query*
+  (query <user>
+         :as :user
+         :where (:= (:user :status) :status)
+         :order-by ((:user :created-at :desc))
+         :limit 20
+         :offset :offset))
+
+;; Parsing is skipped for each page retrieval
+(execute-query *page-query* '(:status "active" :offset 0))   ; Page 1
+(execute-query *page-query* '(:status "active" :offset 20))  ; Page 2
+(execute-query *page-query* '(:status "active" :offset 40))  ; Page 3
+```
+
+#### 2. Batch Processing
+
+```common-lisp
+(defvar *batch-query*
+  (query <task>
+         :as :task
+         :where (:= (:task :status) :status)))
+
+;; Effective for large volumes of query execution
+(loop for i from 1 to 1000
+      do (execute-query *batch-query* '(:status "pending")))
+```
+
+#### 3. Complex Queries
+
+For queries with complex JOINs and WHERE clauses, the cost of parsing is high, making the caching effect more pronounced.
+
+```common-lisp
+(defvar *complex-query*
+  (query <employee>
+         :as :emp
+         :joins ((:inner-join :department)
+                 (:inner-join :company :through :department))
+         :where (:and (:= (:dept :name) :dept-name)
+                      (:>= (:emp :salary) :min-salary)
+                      (:in (:company :industry) :industries))
+         :order-by ((:emp :salary :desc))))
+
+;; Even for complex queries, parsing is skipped from the second execution onward
+(execute-query *complex-query* 
+               '(:dept-name "Sales" 
+                 :min-salary 50000 
+                 :industries ("Tech" "Finance")))
+```
+
+### Notes
+
+1. **Query Reuse**: When executing the same query multiple times, save the query object in a variable and reuse it
+2. **Memory Usage**: Cache is managed in sync with the query object lifecycle. Properly dispose of query objects that are no longer needed
+3. **Thread Safety**: The current implementation does not anticipate simultaneous use of `<query>` instances from multiple threads
+
+### Best Practices
+
+#### Recommended: Query Reuse
+
+```common-lisp
+;; Recommended: Reuse query objects
+(defvar *user-search-query*
+  (query <user>
+         :as :user
+         :where (:like (:user :name) :keyword)))
+
+(defun search-users (keyword)
+  (execute-query *user-search-query* 
+                 (list :keyword (format nil "%~A%" keyword))))
+
+;; Efficient no matter how many times it's called
+(search-users "Alice")
+(search-users "Bob")
+(search-users "Charlie")
+```
+
+#### Not Recommended: Query Regeneration
+
+```common-lisp
+;; Not recommended: Generate query each time (cannot benefit from cache)
+(defun search-users-bad (keyword)
+  (execute-query
+    (query <user>
+           :as :user
+           :where (:like (:user :name) :keyword))
+    (list :keyword (format nil "%~A%" keyword))))
+```
+
+---
+
 ## Summary
 
 clails Models have the following features:
@@ -1915,5 +2344,6 @@ clails Models have the following features:
 6. **Transaction Management**: Easy transaction control with `with-transaction` and nested transaction (savepoint) support
 7. **Native Queries**: Flexible SQL query execution using cl-batis
 8. **Bulk Operations**: Support for streaming processing and batch operations for efficient handling of large data
+9. **Query Cache**: Automatically cache query parsing results to improve performance when executing the same query repeatedly
 
 For detailed API reference, please refer to the docstring of each function.

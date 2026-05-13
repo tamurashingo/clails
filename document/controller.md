@@ -8,6 +8,8 @@ Controllers receive HTTP requests, process data using Models, and pass data to V
 ## Basic Concepts
 
 - Controllers define processing for each HTTP method (GET, POST, PUT, DELETE)
+- Action-based routing allows defining multiple actions (index, show, new, edit, etc.) in a single Controller
+- The `resources` function provides concise RESTful route definitions
 - There are `<web-controller>` for web applications and `<rest-controller>` for REST APIs
 - Routing tables bind URL paths to Controllers
 - URL parameters are automatically extracted and accessible from the Controller
@@ -171,6 +173,126 @@ Define routes in `config/routes.lisp` or similar.
         (post-id (param controller "post-id")))  ; => "456"
     ;; Processing...
     ))
+```
+
+### Action-Based Routing
+
+By specifying `:action` and `:method` in a route, you can define multiple action methods in a single Controller.
+
+```common-lisp
+(setf clails/environment:*routing-tables*
+  '((:path "/todos"
+     :controller "your-app/controllers/todo-controller::<todo-controller>"
+     :action "index"
+     :method :get)
+    (:path "/todos/:id"
+     :controller "your-app/controllers/todo-controller::<todo-controller>"
+     :action "show"
+     :method :get)
+    (:path "/todos/new"
+     :controller "your-app/controllers/todo-controller::<todo-controller>"
+     :action "new"
+     :method :get)))
+```
+
+In the corresponding Controller, define action-named methods instead of `do-get`.
+
+```common-lisp
+(defclass <todo-controller> (<web-controller>)
+  ())
+
+(defmethod index ((controller <todo-controller>))
+  (set-view controller "todos/index.html"))
+
+(defmethod show ((controller <todo-controller>))
+  (let ((id (param controller "id")))
+    (set-view controller "todos/show.html" `(:id ,id))))
+
+(defmethod new ((controller <todo-controller>))
+  (set-view controller "todos/new.html"))
+```
+
+**Route matching priority:**
+
+1. Routes where both path and HTTP method match (highest priority)
+2. Routes where only the path matches and `:method` is not specified
+3. No match → 404
+
+**Backward compatibility:** Routes without `:action` continue to dispatch to `do-get`, `do-post`, etc. as before.
+
+### RESTful Routing with the `resources` Function
+
+The `resources` function lets you define 7 standard RESTful routes in a single line.
+
+```common-lisp
+(setf clails/environment:*routing-tables*
+  `(,@(resources "todos" "your-app/controllers/todo-controller::<todo-controller>")
+    ,@(resources "blogs" "your-app/controllers/blog-controller::<blog-controller>")))
+```
+
+`(resources "todos" "controller")` generates the following 7 routes:
+
+| HTTP Method | Path | Action | Purpose |
+|---|---|---|---|
+| GET | /todos | index | List |
+| GET | /todos/new | new | New form |
+| POST | /todos | create | Create |
+| GET | /todos/:id | show | Detail |
+| GET | /todos/:id/edit | edit | Edit form |
+| PUT | /todos/:id | update | Update |
+| DELETE | /todos/:id | destroy | Delete |
+
+`/todos/new` is placed before `/todos/:id`, so "new" will never be matched as an `:id` parameter.
+
+#### `:only` Option — Generate Only Specific Actions
+
+```common-lisp
+;; Generate only index and show
+(resources "todos" "controller" :only '(:index :show))
+```
+
+#### `:except` Option — Exclude Specific Actions
+
+```common-lisp
+;; Exclude destroy and update
+(resources "todos" "controller" :except '(:destroy :update))
+```
+
+#### Controller Implementation Example with `resources`
+
+```common-lisp
+(defclass <todo-controller> (<web-controller>)
+  ())
+
+(defmethod index ((controller <todo-controller>))
+  (let ((todos (get-all-todos)))
+    (set-view controller "todos/index.html" `(:todos ,todos))))
+
+(defmethod show ((controller <todo-controller>))
+  (let ((todo (find-todo (param controller "id"))))
+    (set-view controller "todos/show.html" `(:todo ,todo))))
+
+(defmethod new ((controller <todo-controller>))
+  (set-view controller "todos/new.html"))
+
+(defmethod create ((controller <todo-controller>))
+  (let ((title (param controller "title")))
+    (create-todo title)
+    (set-redirect controller "/todos")))
+
+(defmethod edit ((controller <todo-controller>))
+  (let ((todo (find-todo (param controller "id"))))
+    (set-view controller "todos/edit.html" `(:todo ,todo))))
+
+(defmethod update ((controller <todo-controller>))
+  (let ((id (param controller "id"))
+        (title (param controller "title")))
+    (update-todo id title)
+    (set-redirect controller (format nil "/todos/~A" id))))
+
+(defmethod destroy ((controller <todo-controller>))
+  (destroy-todo (param controller "id"))
+  (set-redirect controller "/todos"))
 ```
 
 ---
@@ -656,9 +778,11 @@ REST APIs should follow RESTful design principles.
 clails Controllers have the following features:
 
 1. **Simple Design**: Just define methods for each HTTP method
-2. **Flexible Routing**: Automatic URL parameter extraction and pattern matching
-3. **View Integration**: Easy view rendering with `set-view`
-4. **REST API Support**: Return JSON responses with `<rest-controller>`
-5. **Transaction Support**: Transaction management in coordination with Models
+2. **RESTful Routing**: Rails-like route definitions with the `resources` function (supports `:only` / `:except` options)
+3. **Flexible Routing**: Automatic URL parameter extraction and pattern matching
+4. **View Integration**: Easy view rendering with `set-view`
+5. **REST API Support**: Return JSON responses with `<rest-controller>`
+6. **Transaction Support**: Transaction management in coordination with Models
+7. **Backward Compatibility**: Traditional `do-get` / `do-post` style and new action-based style can coexist
 
 For detailed API reference, please refer to the docstring of each function.

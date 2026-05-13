@@ -33,7 +33,7 @@
                       (:immediate "BEGIN IMMEDIATE")
                       (:exclusive "BEGIN EXCLUSIVE")
                       (otherwise "BEGIN TRANSACTION"))))
-    (when (log-level-enabled-p :sql :debug)
+    (when (log-level-enabled-p :debug :sql)
       (log.sql begin-sql))
     (sqlite:execute-non-query 
      (dbi.driver:connection-handle conn) 
