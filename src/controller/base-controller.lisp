@@ -442,23 +442,37 @@
                (%create-scanner-normal path (1+ pos) len scanner keys))))))
 
 
-(defun resources (name controller)
-  "Generate 7 standard RESTful route entries for a resource.
+(defun resources (name controller &key only except)
+  "Generate RESTful route entries for a resource.
+
+   By default, generates 7 standard routes: index, new, create, show, edit, update, destroy.
+   Use :only to include specific actions, or :except to exclude specific actions.
 
    @param name [string] Resource name (e.g., \"todos\")
    @param controller [string] Fully qualified controller class (e.g., \"myapp/controllers/todo-controller:<todo-controller>\")
-   @return [list] List of 7 route plists for index, new, create, show, edit, update, destroy
+   @param only [list] List of action keywords to include (e.g., '(:index :show))
+   @param except [list] List of action keywords to exclude (e.g., '(:destroy))
+   @return [list] List of route plists
    "
-  (let ((collection-path (format nil "/~A" name))
-        (new-path (format nil "/~A/new" name))
-        (member-path (format nil "/~A/:id" name))
-        (edit-path (format nil "/~A/:id/edit" name)))
-    (list
-     (list :path collection-path :controller controller :action "index"   :method :get)
-     (list :path new-path        :controller controller :action "new"     :method :get)
-     (list :path collection-path :controller controller :action "create"  :method :post)
-     (list :path member-path     :controller controller :action "show"    :method :get)
-     (list :path edit-path       :controller controller :action "edit"    :method :get)
-     (list :path member-path     :controller controller :action "update"  :method :put)
-     (list :path member-path     :controller controller :action "destroy" :method :delete))))
+  (let* ((collection-path (format nil "/~A" name))
+         (new-path (format nil "/~A/new" name))
+         (member-path (format nil "/~A/:id" name))
+         (edit-path (format nil "/~A/:id/edit" name))
+         (all-routes
+          (list
+           (list :name :index   :path collection-path :controller controller :action "index"   :method :get)
+           (list :name :new     :path new-path        :controller controller :action "new"     :method :get)
+           (list :name :create  :path collection-path :controller controller :action "create"  :method :post)
+           (list :name :show    :path member-path     :controller controller :action "show"    :method :get)
+           (list :name :edit    :path edit-path       :controller controller :action "edit"    :method :get)
+           (list :name :update  :path member-path     :controller controller :action "update"  :method :put)
+           (list :name :destroy :path member-path     :controller controller :action "destroy" :method :delete))))
+    (mapcar (lambda (route)
+              (let ((r (copy-list route)))
+                (remf r :name)
+                r))
+            (cond
+              (only   (remove-if-not (lambda (r) (member (getf r :name) only)) all-routes))
+              (except (remove-if     (lambda (r) (member (getf r :name) except)) all-routes))
+              (t      all-routes)))))
 

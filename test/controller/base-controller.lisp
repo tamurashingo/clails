@@ -343,7 +343,28 @@
   (testing "all routes reference the same controller"
     (let ((routes (resources "blogs" "myapp::<blog-controller>")))
       (dolist (r routes)
-        (ok (string= (getf r :controller) "myapp::<blog-controller>"))))))
+        (ok (string= (getf r :controller) "myapp::<blog-controller>")))))
+
+  (testing ":only filters to specified actions"
+    (let ((routes (resources "todos" "test::<todo-controller>" :only '(:index :show))))
+      (ok (= (length routes) 2))
+      (ok (string= (getf (nth 0 routes) :action) "index"))
+      (ok (string= (getf (nth 1 routes) :action) "show"))))
+
+  (testing ":except excludes specified actions"
+    (let ((routes (resources "todos" "test::<todo-controller>" :except '(:destroy :update))))
+      (ok (= (length routes) 5))
+      (ok (every (lambda (r) (not (member (getf r :action) '("destroy" "update") :test #'string=))) routes))))
+
+  (testing ":only with single action"
+    (let ((routes (resources "todos" "test::<todo-controller>" :only '(:index))))
+      (ok (= (length routes) 1))
+      (ok (string= (getf (nth 0 routes) :action) "index"))))
+
+  (testing "generated routes do not contain :name key"
+    (let ((routes (resources "todos" "test::<todo-controller>")))
+      (dolist (r routes)
+        (ok (null (getf r :name)))))))
 
 
 (defclass <test-resource-controller> (<base-controller>)
