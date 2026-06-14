@@ -86,7 +86,9 @@
   (unless *swank-server*
     (handler-case
         (let ((swank-port (parse-integer port)))
-          (setf swank::*loopback-interface* address)
+          (asdf:load-system :swank)
+          (let ((var (find-symbol "*LOOPBACK-INTERFACE*" :swank)))
+            (when var (setf (symbol-value var) address)))
           (setf *swank-server*
                 (funcall (intern "CREATE-SERVER" :swank)
                          :style :spawn
