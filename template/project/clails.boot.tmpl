@@ -6,7 +6,7 @@
                         (uiop:ensure-directory-pathname clails-home)
                         (uiop/os:getcwd))))
   (push project-dir asdf:*central-registry*)
-  (asdf:load-system :<%= (@ project-name ) %>)
+  (ql:quickload :<%= (@ project-name ) %>)
   (setf clails/environment:*project-dir* project-dir)
   (setf clails/environment:*migration-base-dir* clails/environment:*project-dir*)
   (setf clails/environment:*task-base-dir* clails/environment:*project-dir*))
