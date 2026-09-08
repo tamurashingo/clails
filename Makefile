@@ -122,3 +122,11 @@ e2e.console:
 	@echo "Starting E2E test console..."
 	docker compose -f docker-compose.e2e.yml run --rm e2e-test bash
 
+
+# ----------------------------------------
+# clails CLI image (docker run tamurashingo/clails ...)
+# ----------------------------------------
+.PHONY: cli.build
+cli.build:
+	docker build -f Dockerfile.cli -t tamurashingo/clails .
+
