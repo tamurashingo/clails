@@ -1,0 +1,36 @@
+FROM fukamachi/sbcl:2.5.10
+
+RUN apt-get update && apt-get install -y \
+  default-libmysqlclient-dev \
+  libpq-dev \
+  libsqlite3-dev \
+  default-mysql-client \
+  postgresql-client \
+  sqlite3 \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd -g 1000 clails && useradd -m -u 1000 -g clails -s /bin/bash clails
+
+USER clails
+WORKDIR /home/clails
+
+RUN ros run -e "(ql-dist:install-dist \"http://dist.shirakumo.org/shirakumo.txt\" :prompt nil)"
+RUN ros install rove
+RUN ros install fukamachi/cl-dbi
+RUN ros install tamurashingo/cl-dbi-connection-pool
+RUN ros install tamurashingo/cl-batis
+RUN ros install tamurashingo/getcmd
+
+ENV PATH="/home/clails/.roswell/bin:${PATH}"
+
+COPY --chown=clails:clails . /home/clails/app
+ENV CL_SOURCE_REGISTRY="/home/clails/app"
+
+RUN ros install /home/clails/app/roswell/clails.ros
+RUN clails --help
+
+EXPOSE 5000
+
+WORKDIR /workspace
+ENTRYPOINT ["clails"]
+CMD ["--help"]
