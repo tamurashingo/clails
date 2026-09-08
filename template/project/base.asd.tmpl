@@ -13,6 +13,13 @@
   :pathname "app"
   :depends-on ("clails"
                "swank"
+               ;; application server
+               ;; clails uses clack, which does not bundle a server backend by default.
+               ;; choose one of the following (see https://github.com/fukamachi/clack):
+               "clack-handler-hunchentoot"
+               ;; "clack-handler-wookie"
+               ;; "clack-handler-toot"
+               ;; "clack-handler-woo"
                "<%= (@ project-name ) %>/application-loader")
   :in-order-to ((test-op (test-op "<%= (@ project-name ) %>-test"))))
 

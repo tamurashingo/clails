@@ -249,6 +249,36 @@
    "
   (error "Not yet implemented"))
 
+(defparameter +clack-handler-prefix+ "clack-handler-"
+  "Prefix shared by every Clack handler backend's ASDF system name.")
+
+(defun detect-server-backend (project-name)
+  "Detect the Clack server backend from the project's ASDF :depends-on.
+
+   Scans <project-name>'s :depends-on in declaration order and returns the
+   keyword for the first dependency named \"clack-handler-<name>\" (e.g.
+   \"clack-handler-woo\" -> :woo). When more than one clack-handler-* entry
+   is present, the one declared earliest wins. Returns nil when none is
+   found, leaving clack:clackup's own default (:hunchentoot) in effect.
+
+   @param project-name [string] Project name
+   @return [keyword|nil] Clack :server backend keyword, or nil if undetected
+   "
+  (handler-case
+      (let* ((system (asdf:find-system project-name))
+             (deps (asdf/component:component-sideway-dependencies system)))
+        (loop for dep in deps
+              when (and (stringp dep)
+                        (>= (length dep) (length +clack-handler-prefix+))
+                        (string= dep +clack-handler-prefix+
+                                 :end1 (length +clack-handler-prefix+)))
+                return (intern (string-upcase
+                                (subseq dep (length +clack-handler-prefix+)))
+                               :keyword)))
+    (error (e)
+      (warn "Failed to detect clack server backend for project ~a: ~a" project-name e)
+      nil)))
+
 (defun server (&key (port "5000") (bind "127.0.0.1") swank-port (swank-address "127.0.0.1"))
   "Start the web server with the specified port and bind address.
 
@@ -269,12 +299,14 @@
          (builder `(lack:builder ,@args)))
     (setf *app* (eval builder)))
 
-  (setf *handler*
-        (clack:clackup *app*
-                       :debug nil
-                       :use-thread T
-                       :port (parse-integer port)
-                       :address bind))
+  (let ((backend (detect-server-backend *project-name*)))
+    (setf *handler*
+          (apply #'clack:clackup *app*
+                 :debug nil
+                 :use-thread T
+                 :port (parse-integer port)
+                 :address bind
+                 (when backend (list :server backend)))))
 
   (call-startup-hooks)
   (clack::with-handle-interrupt
