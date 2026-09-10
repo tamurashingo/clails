@@ -12,7 +12,8 @@
                 #:gen/view
                 #:gen/controller
                 #:gen/scaffold
-                #:gen/task)
+                #:gen/task
+                #:check-unregistered-models)
   (:import-from #:clails/model/migration
                 #:db-create
                 #:db-migrate
@@ -186,6 +187,7 @@
    @param version [string] Migration name to migrate up to (optional). If nil, runs all pending migrations.
    @return [t] Migration execution result
    "
+  (check-unregistered-models)
   (db-migrate :version version))
 
 (defun db/status ()
@@ -233,6 +235,7 @@
 
    @return [t] Seeding execution result
    "
+  (check-unregistered-models)
   (startup-connection-pool)
   (initialize-table-information)
   (unwind-protect
