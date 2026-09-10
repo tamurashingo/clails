@@ -433,7 +433,11 @@
   "Seed the database with initial data from db/seeds.lisp.
 
    Implementation of db/seed command.
-   Loads all model files before executing seeds to ensure models are available.
+   Models are not loaded here; they must already be loaded via the application
+   loader (app/models/package.lisp, wired in by 'clails generate:model' or
+   'generate:scaffold') by the time this runs. See
+   clails/project/generate:check-unregistered-models for a warning when a model
+   file exists but was never registered.
    "
   (let ((seeds-file (format nil "~A/db/seeds.lisp" *migration-base-dir*)))
     (when (probe-file seeds-file)

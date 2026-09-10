@@ -10,7 +10,8 @@
            #:gen/controller
            #:gen/scaffold
            #:gen/schema
-           #:gen/task))
+           #:gen/task
+           #:check-unregistered-models))
 (in-package #:clails/project/generate)
 
 
@@ -67,11 +68,11 @@
                                   :current-datetime ,(current-datetime)))))))
 
 (defun add-import-model (name)
-  "Add model import-from to application-loader.lisp.
+  "Add model import-from to app/models/package.lisp.
 
    @param name [string] Model name
    "
-  (let ((filepath (format nil "~A/app/application-loader.lisp" *project-dir*))
+  (let ((filepath (format nil "~A/app/models/package.lisp" *project-dir*))
         (package-name (format nil "~A/models/~A" *project-name* name)))
     (add-import-to-defpackage filepath package-name)))
 
@@ -122,7 +123,7 @@
                          (options (cddr form))
                          (new-options (copy-list options))
                          (import-found nil)
-                         (pkg-symbol (intern (string-upcase package-name) :keyword)))
+                         (pkg-symbol (make-symbol (string-upcase package-name))))
                     ;; Look for existing :import-from with the same package
                     (dolist (opt new-options)
                       (when (and (consp opt)
@@ -176,10 +177,37 @@
     (gen/template model-name filename "/app/models/" "template/generate/model.lisp.tmpl" overwrite))
   (let ((test-filename (format nil "~A.lisp" model-name)))
     (gen/template model-name test-filename "/test/models/" "template/generate/test/model.lisp.tmpl" overwrite))
-  ;; Add to application-loader.lisp
+  ;; Add to app/models/package.lisp
   (add-import-model model-name)
   ;; Add to test-loader.lisp
   (add-test-import-model model-name))
+
+(defun check-unregistered-models ()
+  "Warn about model files under app/models/ that are not part of any loaded package.
+
+   Intended as a safety net for models that were hand-written (or otherwise never
+   went through 'clails generate:model'/'generate:scaffold') and so never got an
+   :import-from entry anywhere in the application-loader.lisp dependency closure.
+   By the time this runs (from db:migrate/db:seed, after the project has been
+   loaded), any properly registered model's package already exists, so a missing
+   package is a reliable signal that the file was never wired up.
+
+   @return [null]
+   "
+  (let ((models-dir (format nil "~A/app/models/" *project-dir*)))
+    (when (probe-file models-dir)
+      (dolist (file (directory (format nil "~A*.lisp" models-dir)))
+        (let ((base-name (pathname-name file)))
+          (unless (string-equal base-name "package")
+            (let* ((package-name (format nil "~A/models/~A" *project-name* base-name))
+                   (upcased-package-name (string-upcase package-name)))
+              (unless (find-package upcased-package-name)
+                (format t "WARNING: app/models/~A.lisp is not loaded (no package \"~A\" found).~%"
+                        base-name upcased-package-name)
+                (format t "         Add (:import-from #:~A) to app/models/package.lisp to register it.~%"
+                        package-name)
+                (format t "         (the file already exists, so re-running 'clails generate:model ~A' would overwrite it.)~%"
+                        base-name)))))))))
 
 (defun gen/migration (migration-name &key (overwrite T))
   "Generate a migration file with unique timestamp prefix.

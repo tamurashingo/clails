@@ -172,6 +172,24 @@ Execute once at application startup.
 (clails/model/base-model:initialize-table-information)
 ```
 
+### Model File Loading and app/models/package.lisp
+
+clails uses ASDF's package-inferred-system, so only files reachable via the `:import-from`
+dependency graph starting from `app/application-loader.lisp`'s `defpackage` get loaded
+automatically. Running `clails generate:model` (including via `generate:scaffold`) appends the
+new model's package to `app/models/package.lisp`'s `defpackage` as an `:import-from` entry, and
+`app/application-loader.lisp` imports `app/models/package.lisp` once so every generated model
+gets pulled in together.
+
+If a model file is added to `app/models/` by hand and never gets registered this way, its
+package/symbols will never be loaded, and `db:migrate` / `db:seed` will fail with a
+package/symbol-not-found error. Before running, `clails db:migrate` and `clails db:seed` scan
+every file under `app/models/` and print a warning for any model whose package isn't loaded
+(`clails/project/generate:check-unregistered-models`). If you see this warning, add the
+`:import-from` entry to `app/models/package.lisp` by hand — don't re-run
+`clails generate:model <name>` to fix it, since the model file already exists and would just be
+overwritten (`generate:model` has no safe "register an existing file" mode).
+
 ---
 
 ## 3. Defining Models with Parent-Child Relationships
