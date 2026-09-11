@@ -87,7 +87,7 @@
   (unless *swank-server*
     (handler-case
         (let ((swank-port (parse-integer port)))
-          (asdf:load-system :swank)
+          (ql:quickload :swank :silent t)
           (let ((var (find-symbol "*LOOPBACK-INTERFACE*" :swank)))
             (when var (setf (symbol-value var) address)))
           (setf *swank-server*
