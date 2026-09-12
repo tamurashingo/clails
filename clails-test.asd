@@ -10,6 +10,7 @@
                #:clails
                #:rove
                #:clails-test/util
+               #:clails-test/environment
                #:clails-test/model/impl/sqlite3
                #:clails-test/model/impl/mysql
                #:clails-test/model/impl/postgresql
@@ -74,7 +75,6 @@
                #:clails-test/task/runner
                #:clails-test/task/core
                #:clails-test/project/generate
-               #:clails-test/environment
                #:clails-test/cmd)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))

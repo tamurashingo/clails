@@ -164,6 +164,8 @@ myapp/
 └── README.md
 ```
 
+`clails.boot` は `clails new` 実行時に clails 本体のテンプレートから一度だけ生成され、生成時点の clails フレームワークのバージョンを記録します。clails フレームワークをアップグレードしても自動的には更新されません。実行の都度、記録されたバージョンと現在インストールされている clails のバージョンを比較し、異なる場合は警告を標準エラー出力に表示します(処理は継続されます)。この警告が出た場合は、インストール済みの clails ソースにある `template/project/clails.boot.tmpl` とプロジェクトの `clails.boot` を見比べて、変更点を確認してください。
+
 ### `clails server` - Web サーバーを起動
 
 開発用 Web サーバーを起動します。

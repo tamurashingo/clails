@@ -164,6 +164,8 @@ myapp/
 └── README.md
 ```
 
+`clails.boot` is generated once from clails' own template at `clails new` time and records the clails framework version used to generate it. It is not automatically updated when you upgrade the clails framework. Each time it runs, it compares the recorded version against the currently installed clails version and prints a non-fatal warning to stderr if they differ, so you know the boot sequence may be out of date. If you see this warning, compare your project's `clails.boot` against `template/project/clails.boot.tmpl` in the installed clails source to see what changed.
+
 ### `clails server` - Start Web Server
 
 Starts the development web server.
