@@ -554,76 +554,67 @@ URL パスと Controller の対応を定義するルーティングテーブル�
 
 #### `*startup-hooks*`
 
-アプリケーション起動時に実行される関数のリストです。
+アプリケーション起動時に、**リストの並び順どおりに**実行される関数のリストです。
+フレームワーク既定のフック(`clails/model/connection:startup-connection-pool`)が
+あらかじめ登録されているため、自分で登録したフックはその後に実行されます。
 
-**型**: list of strings or symbols
+**型**: list of strings or functions
 
 **デフォルト値**: `'("clails/model/connection:startup-connection-pool")`
 
 **設定場所**: `app/config/environment.lisp`
 
 **指定方法**:
-- 文字列: `"package-name:function-name"` の形式で指定
-- シンボル: 関数名のシンボルで指定
+- 文字列: `"package-name:function-name"` の形式で指定（循環参照を避けたい場合はこちら）
+- 関数オブジェクト: `#'function-name` や `(lambda () ...)` で指定
 
-循環参照が発生する場合は、文字列で指定してください。
+（注意: シンボル単体 `'function-name` は受け付けません。関数呼び出し時に
+`etypecase` で `string`/`function` 以外は型エラーになります。）
+
+`add-startup-hook` でフックを登録してください。この関数はリストの**末尾に追加**するため、
+登録した順番がそのまま実行順になります。`*startup-hooks*` に対して直接 `push` するのは
+避けてください。`push` は先頭に追加するため、登録したフックがフレームワーク既定のフック
+（や、より前に登録した他のフック）より先に実行されてしまいます。
 
 **設定例**:
 ```lisp
-;; 文字列で指定（推奨: 循環参照を避けるため）
-(setf clails/environment:*startup-hooks*
-  '("clails/model/connection:startup-connection-pool"
-    "myapp/initializer:setup-logger"
-    "myapp/initializer:load-cache"))
+;; 登録順 = 実行順
+(clails/environment:add-startup-hook "myapp/initializer:setup-logger")
+(clails/environment:add-startup-hook "myapp/initializer:load-cache")
 
-;; シンボルで指定（循環参照がない場合のみ）
-(setf clails/environment:*startup-hooks*
-  '(clails/model/connection:startup-connection-pool
-    myapp/initializer:setup-logger
-    myapp/initializer:load-cache))
-
-;; 混在も可能
-(setf clails/environment:*startup-hooks*
-  '("clails/model/connection:startup-connection-pool"
-    myapp/initializer:setup-logger
-    "myapp/initializer:load-cache"))
+;; 関数オブジェクトでも指定可能
+(clails/environment:add-startup-hook
+  #'(lambda ()
+      (format t "starting...~%")))
 ```
 
 #### `*shutdown-hooks*`
 
-アプリケーション終了時に実行される関数のリストです。
+アプリケーション終了時に、**リストの並び順どおりに**実行される関数のリストです。
+フレームワーク既定のフック(`clails/model/connection:shutdown-connection-pool`)が
+あらかじめ登録されているため、自分で登録したフックはその後に実行されます。
 
-**型**: list of strings or symbols
+**型**: list of strings or functions
 
 **デフォルト値**: `'("clails/model/connection:shutdown-connection-pool")`
 
 **設定場所**: `app/config/environment.lisp`
 
 **指定方法**:
-- 文字列: `"package-name:function-name"` の形式で指定
-- シンボル: 関数名のシンボルで指定
+- 文字列: `"package-name:function-name"` の形式で指定（循環参照を避けたい場合はこちら）
+- 関数オブジェクト: `#'function-name` や `(lambda () ...)` で指定
 
-循環参照が発生する場合は、文字列で指定してください。
+（注意: シンボル単体 `'function-name` は受け付けません。関数呼び出し時に
+`etypecase` で `string`/`function` 以外は型エラーになります。）
+
+`add-shutdown-hook` でフックを登録してください。挙動は `add-startup-hook` と同様、
+末尾追加(登録順=実行順)です。
 
 **設定例**:
 ```lisp
-;; 文字列で指定（推奨: 循環参照を避けるため）
-(setf clails/environment:*shutdown-hooks*
-  '("clails/model/connection:shutdown-connection-pool"
-    "myapp/finalizer:cleanup-cache"
-    "myapp/finalizer:save-statistics"))
-
-;; シンボルで指定（循環参照がない場合のみ）
-(setf clails/environment:*shutdown-hooks*
-  '(clails/model/connection:shutdown-connection-pool
-    myapp/finalizer:cleanup-cache
-    myapp/finalizer:save-statistics))
-
-;; 混在も可能
-(setf clails/environment:*shutdown-hooks*
-  '("clails/model/connection:shutdown-connection-pool"
-    myapp/finalizer:cleanup-cache
-    "myapp/finalizer:save-statistics"))
+;; 登録順 = 実行順
+(clails/environment:add-shutdown-hook "myapp/finalizer:cleanup-cache")
+(clails/environment:add-shutdown-hook "myapp/finalizer:save-statistics")
 ```
 
 ---
@@ -957,16 +948,14 @@ qlot exec rove myapp-test.asd
 (clails/environment:set-environment 
   (clails/util:env-or-default "APP_ENV" "DEVELOP"))
 
-;; スタートアップフックの設定
-(setf clails/environment:*startup-hooks*
-  '("clails/model/connection:startup-connection-pool"
-    "myapp/initializer:initialize-table-information"
-    "myapp/initializer:setup-logger"))
+;; スタートアップフックの追加（フレームワーク既定の
+;; clails/model/connection:startup-connection-pool の後、登録した順に実行される）
+(clails/environment:add-startup-hook "myapp/initializer:initialize-table-information")
+(clails/environment:add-startup-hook "myapp/initializer:setup-logger")
 
-;; シャットダウンフックの設定
-(setf clails/environment:*shutdown-hooks*
-  '("myapp/finalizer:cleanup-resources"
-    "clails/model/connection:shutdown-connection-pool"))
+;; シャットダウンフックの追加（フレームワーク既定の
+;; clails/model/connection:shutdown-connection-pool の後、登録した順に実行される）
+(clails/environment:add-shutdown-hook "myapp/finalizer:cleanup-resources")
 ```
 
 ### app/config/database.lisp

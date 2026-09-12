@@ -1002,13 +1002,15 @@ You can execute arbitrary processes when starting or stopping the server.
 
 ```common-lisp
 ;; Define in config/environment.lisp or similar
-(setf clails/environment:*startup-hooks*
-      (list #'(lambda ()
-                (format t "Server starting...~%"))))
+;; add-startup-hook/add-shutdown-hook append to the list, so hooks run in the
+;; order they were registered
+(clails/environment:add-startup-hook
+  #'(lambda ()
+      (format t "Server starting...~%")))
 
-(setf clails/environment:*shutdown-hooks*
-      (list #'(lambda ()
-                (format t "Server stopping...~%"))))
+(clails/environment:add-shutdown-hook
+  #'(lambda ()
+      (format t "Server stopping...~%")))
 ```
 
 ### Development with Swank Server

@@ -498,44 +498,54 @@ Each route entry is a plist with the following properties:
 
 #### `*startup-hooks*`
 
-Functions to execute at application startup.
+Functions to execute at application startup, **in list order**. The
+framework's own default (`clails/model/connection:startup-connection-pool`)
+is already in this list, so any hook you register runs after it.
 
 ```lisp
 clails/environment:*startup-hooks*
-;; => (#<FUNCTION ...> #<FUNCTION ...>)
+;; => ("clails/model/connection:startup-connection-pool" #<FUNCTION ...> ...)
 ```
 
-**Type**: `list of functions`
+**Type**: `list of functions (or function-name strings)`
 
-**Usage**:
+**Usage**: Use `add-startup-hook` to register a hook. It appends to the list,
+so hooks run in the order they were registered — do not `push` onto
+`*startup-hooks*` directly, since `push` prepends and would run your hook
+*before* the framework's default (and before any hook registered earlier).
+
 ```lisp
-;; Add startup hook
-(setf clails/environment:*startup-hooks*
-      (list #'(lambda ()
-                (format t "Application starting...~%")
-                (initialize-cache)
-                (connect-external-services))))
+;; Add startup hooks (registration order = execution order)
+(clails/environment:add-startup-hook
+  #'(lambda ()
+      (format t "Application starting...~%")
+      (initialize-cache)
+      (connect-external-services)))
 ```
 
 #### `*shutdown-hooks*`
 
-Functions to execute at application shutdown.
+Functions to execute at application shutdown, **in list order**. The
+framework's own default (`clails/model/connection:shutdown-connection-pool`)
+is already in this list, so any hook you register runs after it.
 
 ```lisp
 clails/environment:*shutdown-hooks*
-;; => (#<FUNCTION ...> #<FUNCTION ...>)
+;; => ("clails/model/connection:shutdown-connection-pool" #<FUNCTION ...> ...)
 ```
 
-**Type**: `list of functions`
+**Type**: `list of functions (or function-name strings)`
 
-**Usage**:
+**Usage**: Use `add-shutdown-hook` to register a hook. Same append-only
+behavior as `add-startup-hook` above.
+
 ```lisp
-;; Add shutdown hook
-(setf clails/environment:*shutdown-hooks*
-      (list #'(lambda ()
-                (format t "Application shutting down...~%")
-                (cleanup-cache)
-                (disconnect-external-services))))
+;; Add shutdown hooks (registration order = execution order)
+(clails/environment:add-shutdown-hook
+  #'(lambda ()
+      (format t "Application shutting down...~%")
+      (cleanup-cache)
+      (disconnect-external-services)))
 ```
 
 ---
@@ -867,16 +877,14 @@ qlot exec rove myapp-test.asd
 (clails/environment:set-environment 
   (clails/util:env-or-default "APP_ENV" "DEVELOP"))
 
-;; Set startup hooks
-(setf clails/environment:*startup-hooks*
-  '("clails/model/connection:startup-connection-pool"
-    "myapp/initializer:initialize-table-information"
-    "myapp/initializer:setup-logger"))
+;; Add startup hooks (they run after the framework's own default,
+;; clails/model/connection:startup-connection-pool, in the order registered)
+(clails/environment:add-startup-hook "myapp/initializer:initialize-table-information")
+(clails/environment:add-startup-hook "myapp/initializer:setup-logger")
 
-;; Set shutdown hooks
-(setf clails/environment:*shutdown-hooks*
-  '("myapp/finalizer:cleanup-resources"
-    "clails/model/connection:shutdown-connection-pool"))
+;; Add shutdown hooks (they run after the framework's own default,
+;; clails/model/connection:shutdown-connection-pool, in the order registered)
+(clails/environment:add-shutdown-hook "myapp/finalizer:cleanup-resources")
 ```
 
 ### app/config/database.lisp
