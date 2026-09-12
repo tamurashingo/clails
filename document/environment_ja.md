@@ -1144,6 +1144,21 @@ qlot exec rove myapp-test.asd
 2. **環境に依存しない設定**: 設定ファイルに直接記述
 3. **複雑な設定**: 専用の初期化関数を作成
 
+### 内部専用の制御変数
+
+`clails/environment` パッケージには、`*%sqlite3-transaction-mode*` や
+`*%sqlite3-lock-module-loaded*`、`*%table-information-initialized*`、
+`*%query-initialization-callbacks*` のように、clails 自身が内部的に使用する
+制御・管理用の特殊変数がいくつか存在します。これらは `with-locked-transaction`
+などのマクロや内部関数によって再束縛・変更されるものであり、アプリケーション
+コードから直接参照したり設定したりすることを意図していません。
+
+これらの変数名には先頭に `%` を付けることで、`*routing-tables*` や
+`*sqlite3-busy-timeout*` のような通常のユーザー向け設定変数と、技術的には
+同じパッケージからエクスポートされていても明確に区別できるようにしています。
+clails 自体にコントリビュートする際、新たに内部専用の制御変数を追加する
+場合は、今後もこの `%` プレフィックスの命名規則に従ってください。
+
 ---
 
 ## 7. トラブルシューティング

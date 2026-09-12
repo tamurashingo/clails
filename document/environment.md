@@ -1073,6 +1073,24 @@ qlot exec rove myapp-test.asd
 2. **Environment-independent Configuration**: Write directly in configuration files
 3. **Complex Configuration**: Create dedicated initialization functions
 
+### Internal-only Control Variables
+
+A small number of special variables in `clails/environment` (for example
+`*%sqlite3-transaction-mode*`, `*%sqlite3-lock-module-loaded*`,
+`*%table-information-initialized*`, and `*%query-initialization-callbacks*`)
+exist purely as internal control/bookkeeping state for clails itself — they
+are rebound or mutated by macros and internal functions (such as
+`with-locked-transaction`) and are **not** meant to be read or set from
+application code.
+
+These variables are named with a leading `%` (e.g. `*%sqlite3-transaction-mode*`)
+to visibly distinguish them from ordinary, user-facing configuration variables
+like `*routing-tables*` or `*sqlite3-busy-timeout*`, even though both kinds
+are technically exported from the same package. If you are contributing to
+clails itself and need to introduce a new internal-only control variable,
+please follow this same `%`-prefix convention so the distinction stays clear
+for future readers.
+
 ---
 
 ## 7. Troubleshooting
