@@ -167,6 +167,7 @@ Comprehensive guides for developing with clails:
 - **[Task Guide](document/task.md)** ([日本語](document/task_ja.md)) - Custom task system with dependency management
 - **[View Guide](document/view.md)** ([日本語](document/view_ja.md)) - Template engine and rendering (coming soon)
 - **[Controller Guide](document/controller.md)** ([日本語](document/controller_ja.md)) - Request handling and routing (coming soon)
+- **[Session & Authentication Guide](document/session.md)** ([日本語](document/session_ja.md)) - Opt-in cookie sessions and the `current-user` extension point
 - **[Environment Guide](document/environment.md)** ([日本語](document/environment_ja.md)) - Configuration management (coming soon)
 - **[Testing Guide](document/testing.md)** ([日本語](document/testing_ja.md)) - Testing framework (coming soon)
 

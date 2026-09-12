@@ -35,6 +35,8 @@
            #:do-put
            #:do-delete
            #:param
+           #:session
+           #:current-user
            #:initialize-routing-tables
            #:create-scanner-from-uri-path
            #:path-controller
@@ -118,6 +120,62 @@
    @return [t] Parameter value, or NIL if not found
    "
   (gethash key (slot-value controller 'params)))
+
+
+(defparameter +current-user-session-key+ "clails.current-user"
+  "Key under which (current-user controller) stores the authenticated user
+   inside the request's session hash table.")
+
+(defmethod session ((controller <base-controller>))
+  "Return the request-scoped session hash table for this controller.
+
+   clails does not implement session storage itself; this simply exposes
+   the hash table populated by lack-middleware-session (via
+   clails/middleware/session-middleware) under the :lack.session key of the
+   request environment. Callers can freely (gethash key (session controller))
+   and (setf (gethash key (session controller)) value) to read/write session
+   data; it is persisted (as a cookie-tracked session) after the response is
+   sent.
+
+   @param controller [<base-controller>] Controller instance
+   @return [hash-table] Session hash table
+   @condition error Signaled when session middleware is not enabled, i.e.
+     (getf (env controller) :lack.session) is NIL. Enable it by setting
+     clails/middleware/session-middleware:*enable-session-middleware* to T
+     (typically in app/config/environment.lisp).
+   "
+  (or (getf (env controller) :lack.session)
+      (error "Session is not available. Enable session middleware by setting ~
+              clails/middleware/session-middleware:*enable-session-middleware* ~
+              to T (e.g. in app/config/environment.lisp).")))
+
+(defmethod current-user ((controller <base-controller>))
+  "Return the currently authenticated user, or NIL if no user is logged in.
+
+   This is plumbing only: clails does not implement any authentication
+   scheme (no password hashing, no login/logout routes). Project code is
+   expected to implement its own login logic and call
+   (setf (current-user controller) user) once a user has been authenticated
+   (e.g. after verifying credentials), and (current-user controller) to read
+   it back on subsequent requests belonging to the same session.
+
+   Internally this value is stored in the session (see `session`), so
+   session middleware must be enabled for current-user to work.
+
+   @param controller [<base-controller>] Controller instance
+   @return [t] The value previously stored via (setf (current-user controller) ...), or NIL
+   "
+  (gethash +current-user-session-key+ (session controller)))
+
+(defmethod (setf current-user) (user (controller <base-controller>))
+  "Set the currently authenticated user for the request's session.
+
+   @param user [t] Application-defined user object/record to remember as the
+     authenticated user. Pass NIL to log the user out.
+   @param controller [<base-controller>] Controller instance
+   @return [t] user
+   "
+  (setf (gethash +current-user-session-key+ (session controller)) user))
 
 ;;; ------------------------------------------------------------------
 ;;; DEPRECATED: HTTP-method dispatch (do-get / do-post / do-put / do-delete)
