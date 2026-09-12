@@ -63,6 +63,8 @@ JSON などの構造化データを返す REST API 用の Controller です。
 
 ### HTTP メソッドハンドラの実装
 
+> **非推奨:** `do-get` / `do-post` / `do-put` / `do-delete` は clails のもともとの、HTTP メソッドに基づくディスパッチ機構です。以下の説明どおり今後も動作し続け、このリリースで削除されることはありませんが、新しく書くコードでは代わりに[アクションベースのルーティング](#アクションベースのルーティング)を使うことを推奨します。理由と移行方法は後述の[「HTTP メソッドディスパッチから `:action` ベースのルーティングへの移行」](#http-メソッドディスパッチから-action-ベースのルーティングへの移行)を参照してください。
+
 各 HTTP メソッドに対応するメソッドをオーバーライドします。
 
 ```common-lisp
@@ -218,7 +220,70 @@ URL パス内の `:parameter-name` は自動的に抽出され、`param` 関数�
 2. パスのみ一致し、`:method` が指定されていないルート
 3. マッチなし → 404
 
-**後方互換性:** `:action` が指定されていないルートは、従来通り `do-get`、`do-post` 等にディスパッチされます。
+**後方互換性:** `:action` が指定されていないルートは、従来通り `do-get`、`do-post` 等にディスパッチされます。この HTTP メソッドディスパッチ機構は非推奨です（後述）が、このリリースで削除されることはありません。
+
+### HTTP メソッドディスパッチから `:action` ベースのルーティングへの移行
+
+clails には、ルートがどの Controller メソッドを呼ぶかを決める方法が現在2つあります。
+
+1. **HTTP メソッドディスパッチ**（もともとの機構）: ルートには `:path` と `:controller` のみを指定し、ミドルウェア（`clails/middleware/clails-middleware`）がリクエストの HTTP メソッドに基づいて `do-get`、`do-post`、`do-put`、`do-delete` のいずれかを選びます。POST リクエストに対する `_method` パラメータのチェックも含まれます（後述）。
+2. **`:action` ベースのルーティング**（前述）: ルートに `:path`、`:method`、`:controller`、`:action` を指定し、フレームワークが `:action` で指定されたメソッドを直接呼び出します。
+
+両者は現在どちらも動作しますが、**新しいコードでは `:action` ベースのルーティングを使うことを推奨**し、既存の HTTP メソッドディスパッチのルートは徐々に移行してください。
+
+- **パス → メソッドの対応関係が一箇所にまとまる。** HTTP メソッドディスパッチでは、あるリクエストで実際にどの Controller メソッドが呼ばれるかは、ルーティングテーブル（どの Controller がそのパスを処理するか）とミドルウェアの HTTP メソッド用 `cond`（`do-get`/`do-post`/`do-put`/`do-delete` のどれを呼ぶか、および `_method` による上書き）という2箇所に分かれて決まります。`:action` ベースのルーティングでは、1つのルートエントリの `:path`、`:method`、`:action` だけがその対応関係の唯一の定義場所になります。
+- **正しいディスパッチ先に到達するために `_method` の偽装が不要。** `path-controller` は `:action` ルートをリクエストの実際の HTTP メソッドと直接照合し、`_method` パラメータは一切参照しません。このチェックが存在するのは、ミドルウェアの従来（レガシー）フォールバック分岐だけです。そのため、Controller に新しいアクションを追加するときに `_method` のケースを追加で配線する必要がありません。
+- **1つのメソッドに複数の意味を持たせずに、Controller ごとに複数のアクションを定義できる。** `do-get` は Controller ごとに1つの意味しか持てません。`:action` を使えば、`resources` 関数がすでに前提としているように、`index`、`show`、`new`、`edit` などをそれぞれ同じ Controller クラス上の別々のメソッドとして定義できます。
+
+**移行前（HTTP メソッドディスパッチ）:**
+
+```common-lisp
+;; ルート定義
+(setf clails/environment:*routing-tables*
+  '((:path "/todos"     :controller "your-app/controllers/todo-controller::<todo-controller>")
+    (:path "/todos/:id" :controller "your-app/controllers/todo-controller::<todo-controller>")))
+
+;; Controller
+(defclass <todo-controller> (<web-controller>) ())
+
+(defmethod do-get ((controller <todo-controller>))
+  (set-view controller "todos/index.html" `(:todos ,(find-all))))
+
+(defmethod do-put ((controller <todo-controller>))
+  (mark-as-done (find-by-id (param controller "id")))
+  (set-redirect controller "/todos"))
+```
+
+HTML の `<form>` は PUT をネイティブに送信できないため、上記の `do-put` には通常、`_method=PUT` の隠しフィールドを付けて POST することでしか到達できません。
+
+**移行後（`:action` ベースのルーティング）:**
+
+```common-lisp
+;; ルート定義
+(setf clails/environment:*routing-tables*
+  '((:path "/todos"     :controller "your-app/controllers/todo-controller::<todo-controller>"
+     :action "index" :method :get)
+    (:path "/todos/:id" :controller "your-app/controllers/todo-controller::<todo-controller>"
+     :action "update" :method :put)))
+
+;; Controller
+(defclass <todo-controller> (<web-controller>) ())
+
+(defmethod index ((controller <todo-controller>))
+  (set-view controller "todos/index.html" `(:todos ,(find-all))))
+
+(defmethod update ((controller <todo-controller>))
+  (mark-as-done (find-by-id (param controller "id")))
+  (set-redirect controller "/todos"))
+```
+
+（`resources` 関数は、CRUD の一式についてまさにこの形のルートテーブルを生成します。詳細は後述します。）
+
+**プレーンな HTML フォームからの PUT/DELETE 移行時の注意点:** `:action` ベースのルートマッチングはリクエストの*実際の* HTTP メソッドを使い、`_method` は一切参照しません。そのため、`_method=PUT`/`_method=DELETE` を使って従来の `do-put`/`do-delete` に到達していたフォームは、同じ方法では `:method :put`/`:method :delete` のアクションルートに到達できません — リクエストは実際には POST のまま届き、そのパスに対して `:post` にマッチするルートが存在しないためです。このようなフォームを移行するには、実際に PUT/DELETE を送信する（例えば `fetch`/`XMLHttpRequest`、または JavaScript で拡張したフォーム送信を使う）か、スクリプトなしの素の HTML フォームをサポートし続ける必要がある場合は、そのパス用に `:method :post` のアクションを残しておいてください。
+
+**起動時の警告:** `initialize-routing-tables` は、ルーティングテーブルのコンパイル1回につき1回だけ（たとえばアプリケーション起動時に1回、HTTP リクエストごとではありません）、`:action` が指定されておらず HTTP メソッドディスパッチにフォールバックするルートを一覧にした警告を1つ出力します。まだ移行が必要なルートを見つける助けになります。
+
+HTTP メソッドディスパッチ機構の削除時期は現時点では決まっていません。将来のリリースで明示的に削除がアナウンスされるまでは動作し続けます。
 
 ### `resources` 関数による RESTful ルーティング
 
@@ -791,6 +856,6 @@ clails の Controller は以下の特徴を持ちます。
 4. **View の統合**: `set-view` による簡単な View レンダリング
 5. **REST API サポート**: `<rest-controller>` による JSON レスポンスの返却
 6. **トランザクション対応**: Model と連携したトランザクション管理
-7. **後方互換性**: 従来の `do-get` / `do-post` 方式と新しいアクション方式が共存可能
+7. **後方互換性**: 従来の `do-get` / `do-post` 方式と新しいアクション方式が共存可能。従来方式は非推奨であり、`:action` ベースのルーティングへの移行を推奨します（[「HTTP メソッドディスパッチから `:action` ベースのルーティングへの移行」](#http-メソッドディスパッチから-action-ベースのルーティングへの移行)を参照）
 
 詳細な API リファレンスについては、各関数の docstring を参照してください。

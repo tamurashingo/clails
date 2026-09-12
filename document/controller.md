@@ -63,6 +63,8 @@ A Controller for REST APIs that return structured data such as JSON.
 
 ### Implementing HTTP Method Handlers
 
+> **Deprecated:** `do-get` / `do-post` / `do-put` / `do-delete` are clails' original, HTTP-method-based dispatch mechanism. They still work exactly as described below and are not being removed in this release, but new code should prefer [`:action`-based routing](#action-based-routing) instead. See [Migrating from HTTP-method dispatch to `:action`-based routing](#migrating-from-http-method-dispatch-to-action-based-routing) below for why and how.
+
 Override methods corresponding to each HTTP method.
 
 ```common-lisp
@@ -218,7 +220,70 @@ In the corresponding Controller, define action-named methods instead of `do-get`
 2. Routes where only the path matches and `:method` is not specified
 3. No match → 404
 
-**Backward compatibility:** Routes without `:action` continue to dispatch to `do-get`, `do-post`, etc. as before.
+**Backward compatibility:** Routes without `:action` continue to dispatch to `do-get`, `do-post`, etc. as before. This HTTP-method dispatch mechanism is deprecated (see below) but is not being removed in this release.
+
+### Migrating from HTTP-method dispatch to `:action`-based routing
+
+clails currently supports two ways for a route to decide which controller method runs:
+
+1. **HTTP-method dispatch** (the original mechanism): the route only specifies `:path` and `:controller`, and the middleware (`clails/middleware/clails-middleware`) picks `do-get`, `do-post`, `do-put`, or `do-delete` based on the request's HTTP method, including a `_method` parameter check for POST requests (see below).
+2. **`:action`-based routing** (described above): the route specifies `:path`, `:method`, `:controller`, and `:action`, and the framework calls the method named by `:action` directly.
+
+Both keep working side by side today. **`:action`-based routing is the preferred mechanism for new code**, and existing HTTP-method-dispatch routes should be migrated over time:
+
+- **Single source of truth for the path → method mapping.** With HTTP-method dispatch, which controller method actually runs for a request is decided in two separate places: the routing table (which controller handles the path) and the middleware's HTTP-method `cond` (which of `do-get`/`do-post`/`do-put`/`do-delete` is called, plus the `_method` override). With `:action`-based routing, the `:path`, `:method`, and `:action` on a single route entry are the *only* place that mapping is declared.
+- **No `_method` spoofing needed to reach the right dispatch path.** `path-controller` matches `:action` routes directly against the request's real HTTP method and never inspects the `_method` parameter — that check exists only in the middleware's legacy fallback branch. Adding a new action to a controller therefore never requires wiring up an additional `_method` case.
+- **Multiple actions per controller without overloading a single method.** `do-get` can mean only one thing per controller. With `:action`, `index`, `show`, `new`, `edit`, etc. are each their own method on the same controller class, as the `resources` function already relies on.
+
+**Before (HTTP-method dispatch):**
+
+```common-lisp
+;; routes
+(setf clails/environment:*routing-tables*
+  '((:path "/todos"     :controller "your-app/controllers/todo-controller::<todo-controller>")
+    (:path "/todos/:id" :controller "your-app/controllers/todo-controller::<todo-controller>")))
+
+;; controller
+(defclass <todo-controller> (<web-controller>) ())
+
+(defmethod do-get ((controller <todo-controller>))
+  (set-view controller "todos/index.html" `(:todos ,(find-all))))
+
+(defmethod do-put ((controller <todo-controller>))
+  (mark-as-done (find-by-id (param controller "id")))
+  (set-redirect controller "/todos"))
+```
+
+An HTML `<form>` can only reach `do-put` above by POSTing with a hidden `_method=PUT` field, since `<form>` cannot send PUT natively.
+
+**After (`:action`-based routing):**
+
+```common-lisp
+;; routes
+(setf clails/environment:*routing-tables*
+  '((:path "/todos"     :controller "your-app/controllers/todo-controller::<todo-controller>"
+     :action "index" :method :get)
+    (:path "/todos/:id" :controller "your-app/controllers/todo-controller::<todo-controller>"
+     :action "update" :method :put)))
+
+;; controller
+(defclass <todo-controller> (<web-controller>) ())
+
+(defmethod index ((controller <todo-controller>))
+  (set-view controller "todos/index.html" `(:todos ,(find-all))))
+
+(defmethod update ((controller <todo-controller>))
+  (mark-as-done (find-by-id (param controller "id")))
+  (set-redirect controller "/todos"))
+```
+
+(The `resources` function generates exactly this shape of route table for a full set of CRUD actions — see below.)
+
+**Migration caveat for PUT/DELETE from plain HTML forms:** because `:action`-based route matching uses the request's *real* HTTP method and does not consult `_method` at all, a form that used `_method=PUT`/`_method=DELETE` to reach a legacy `do-put`/`do-delete` cannot reach a `:method :put`/`:method :delete` action route the same way — the request still arrives as a real POST, and no route in the table matches `:post` at that path. To migrate such a form, either send the request with a real PUT/DELETE (e.g. via `fetch`/`XMLHttpRequest`, or a JS-enhanced form submission), or keep a `:method :post` action for that path if you must keep supporting plain, unscripted HTML forms.
+
+**Startup warning for remaining legacy routes:** `initialize-routing-tables` emits a single warning (once per routing-table compile, e.g. at application startup — never per HTTP request) listing any routes that still lack `:action` and will fall back to HTTP-method dispatch, to help you find routes that still need migrating.
+
+No removal date has been set for the HTTP-method dispatch mechanism; it will keep working until a future release explicitly announces its removal.
 
 ### RESTful Routing with the `resources` Function
 
@@ -783,6 +848,6 @@ clails Controllers have the following features:
 4. **View Integration**: Easy view rendering with `set-view`
 5. **REST API Support**: Return JSON responses with `<rest-controller>`
 6. **Transaction Support**: Transaction management in coordination with Models
-7. **Backward Compatibility**: Traditional `do-get` / `do-post` style and new action-based style can coexist
+7. **Backward Compatibility**: Traditional `do-get` / `do-post` style and new action-based style can coexist; the traditional style is deprecated in favor of `:action`-based routing (see [Migrating from HTTP-method dispatch to `:action`-based routing](#migrating-from-http-method-dispatch-to-action-based-routing))
 
 For detailed API reference, please refer to the docstring of each function.

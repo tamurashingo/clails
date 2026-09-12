@@ -418,3 +418,49 @@
 
       ;; GET /nonexistent -> nil
       (ok (null (clails/controller/base-controller::path-controller "/nonexistent" :get))))))
+
+
+(defclass <test-action-only-controller> (<base-controller>)
+  ())
+
+(defclass <test-legacy-only-controller> (<base-controller>)
+  ())
+
+(deftest legacy-dispatch-deprecation-warning-test
+  (testing "a route table using only :action-based routes produces no deprecation warning"
+    (let* ((test-tables '((:path "/action-only"
+                           :controller "clails-test/controller/base-controller::<test-action-only-controller>"
+                           :action "index"
+                           :method :get)))
+           (*routing-tables* test-tables)
+           (warning-output (make-string-output-stream)))
+      (let ((*error-output* warning-output))
+        (initialize-routing-tables))
+      (ok (string= (get-output-stream-string warning-output) ""))))
+
+  (testing "a route relying on HTTP-method dispatch (no :action) produces a deprecation warning"
+    (let* ((test-tables '((:path "/legacy-only"
+                           :controller "clails-test/controller/base-controller::<test-legacy-only-controller>")))
+           (*routing-tables* test-tables)
+           (warning-output (make-string-output-stream)))
+      (let ((*error-output* warning-output))
+        (initialize-routing-tables))
+      (let ((warning-text (get-output-stream-string warning-output)))
+        (ok (ppcre:scan "deprecated" warning-text))
+        (ok (ppcre:scan "/legacy-only" warning-text)))))
+
+  (testing "the warning fires at most once per routing-table compile, regardless of request volume"
+    (let* ((test-tables '((:path "/legacy-only"
+                           :controller "clails-test/controller/base-controller::<test-legacy-only-controller>")))
+           (*routing-tables* test-tables)
+           (warning-output (make-string-output-stream)))
+      (let ((*error-output* warning-output))
+        (initialize-routing-tables)
+        ;; Simulate a burst of request-time route lookups; none of these
+        ;; should emit additional warnings, since the warning is tied to
+        ;; compiling the routing table, not to dispatching a request.
+        (dotimes (i 100)
+          (clails/controller/base-controller::path-controller "/legacy-only" :get)))
+      (let* ((warning-text (get-output-stream-string warning-output))
+             (occurrences (length (ppcre:all-matches-as-strings "deprecated" warning-text))))
+        (ok (= occurrences 1))))))
