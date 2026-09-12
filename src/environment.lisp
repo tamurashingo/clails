@@ -26,7 +26,8 @@
            #:<database-type-dummy>
            #:set-environment
            #:add-startup-hook
-           #:add-shutdown-hook))
+           #:add-shutdown-hook
+           #:resolve-project-environment))
 (in-package #:clails/environment)
 
 (defclass <database-type> ()
@@ -277,3 +278,42 @@
    @return [list] The updated *shutdown-hooks* list
    "
   (setf *shutdown-hooks* (append *shutdown-hooks* (list hook))))
+
+(defun resolve-project-environment (&key env-var forced)
+  "Resolve the effective *project-environment* from its layered inputs and
+   log which source determined the final value.
+
+   *project-environment* is decided by up to three layered inputs, listed
+   here from lowest to highest precedence:
+
+   1. default  - whatever *project-environment* already holds when this
+                 function is called (normally set in the project's
+                 app/config/environment.lisp, e.g. :develop).
+   2. env-var  - the value of the CLAILS_ENV environment variable, passed
+                 in via the ENV-VAR argument (e.g. from clails.boot).
+   3. forced   - a forced override, passed in via the FORCED argument
+                 (e.g. the \"test\" command always forcing :test).
+
+   The highest-precedence non-nil input wins; *project-environment* is
+   updated only when ENV-VAR or FORCED is supplied. Each call is
+   independent, so this function can be invoked more than once as inputs
+   become available at different points during startup (default first,
+   then env-var, then a possible forced override) without changing when
+   each input becomes available.
+
+   @param env-var [string or null] Value of CLAILS_ENV, if any
+   @param forced [string or null] A forced environment name override, if any
+   @return [keyword] The resolved *project-environment* value
+   "
+  (let ((source
+          (cond
+            (forced
+             (set-environment forced)
+             "forced override")
+            (env-var
+             (set-environment env-var)
+             "CLAILS_ENV")
+            (t
+             "default"))))
+    (format t "project environment resolved to ~A (source: ~A)~%" *project-environment* source)
+    *project-environment*))

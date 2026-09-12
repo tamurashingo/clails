@@ -11,8 +11,6 @@
   (setf clails/environment:*migration-base-dir* clails/environment:*project-dir*)
   (setf clails/environment:*task-base-dir* clails/environment:*project-dir*))
 
-(let ((envname (uiop:getenv "CLAILS_ENV")))
-  (when envname
-    (clails/environment:set-environment envname)))
+(clails/environment:resolve-project-environment :env-var (uiop:getenv "CLAILS_ENV"))
 
 (<%= (@ project-name) %>/config/database:initialize-database-config)

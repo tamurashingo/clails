@@ -338,6 +338,43 @@ clails/environment:*project-environment*
    (format t "Production mode~%")))
 ```
 
+**Resolution**:
+
+The final value of `*project-environment*` is decided by layering up to three inputs, listed from lowest to highest precedence:
+
+1. **default** - the value set directly in the project's `app/config/environment.lisp` (normally `:develop`).
+2. **env-var** - the `CLAILS_ENV` environment variable, applied when the project boots (`clails.boot`).
+3. **forced override** - a command that always forces a specific environment, e.g. the `test` command, which always forces `:test`.
+
+This layering is consolidated into a single function, `clails/environment:resolve-project-environment`, instead of being duplicated at each of the call sites above. Every call logs which source determined the resulting value, e.g.:
+
+```
+project environment resolved to TEST (source: forced override)
+```
+
+#### `resolve-project-environment` Function
+
+Resolves `*project-environment*` from whatever inputs are available at the call site and logs which source won.
+
+```lisp
+;; Called from clails.boot after the project's default is already set
+(clails/environment:resolve-project-environment :env-var (uiop:getenv "CLAILS_ENV"))
+;; => :develop, or the CLAILS_ENV value if it is set and valid
+
+;; Called later by the `test` command to force the test environment
+(clails/environment:resolve-project-environment :forced "test")
+;; => :test, regardless of the default or CLAILS_ENV
+```
+
+**Parameters**:
+- `env-var` [string or nil] - Optional value to resolve against (typically read from `CLAILS_ENV`). Overrides the current default when present and valid.
+- `forced` [string or nil] - Optional forced override (e.g. `"test"`). Overrides both the default and `env-var` when present and valid.
+
+**Return value**:
+- [keyword] - The resolved `*project-environment*` value.
+
+**Note**: This function only decides *which* value wins; it does not change *when* each input becomes available during startup. The default is still set while the project loads, `env-var` is still resolved in `clails.boot`, and a forced override (if any) still happens at its usual point in a command's execution.
+
 ### Database-related
 
 #### `*database-type*`
