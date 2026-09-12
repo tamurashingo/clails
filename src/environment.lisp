@@ -15,10 +15,10 @@
            #:*default-lock-mode*
            #:*sqlite3-busy-timeout*
            #:*sqlite3-lock-retry-count*
-           #:*sqlite3-transaction-mode*
-           #:*sqlite3-lock-module-loaded*
-           #:*table-information-initialized*
-           #:*query-initialization-callbacks*
+           #:*%sqlite3-transaction-mode*
+           #:*%sqlite3-lock-module-loaded*
+           #:*%table-information-initialized*
+           #:*%query-initialization-callbacks*
            #:<database-type>
            #:<database-type-mysql>
            #:<database-type-postgresql>
@@ -180,7 +180,7 @@
 
    This can be overridden in <project>/app/config/environment.lisp")
 
-(defvar *sqlite3-transaction-mode* nil
+(defvar *%sqlite3-transaction-mode* nil
   "SQLite3 transaction mode for the current dynamic context.
 
    This is a special variable used to pass the transaction mode
@@ -192,29 +192,45 @@
    - :exclusive   - Exclusive lock (BEGIN EXCLUSIVE)
 
    This variable is set by with-locked-transaction macro and should not
-   be set directly by user code.")
+   be set directly by user code.
 
-(defvar *sqlite3-lock-module-loaded* nil
+   NOTE: The leading % in the name marks this as an internal-only control
+   variable (per clails' naming convention for such variables). Do not read
+   or set it from application code.")
+
+(defvar *%sqlite3-lock-module-loaded* nil
   "Flag indicating whether sqlite3-lock module has been loaded.
 
    Set to T after src/model/impl/sqlite3-lock.lisp is successfully loaded.
-   Used to ensure the module is loaded only once.")
+   Used to ensure the module is loaded only once.
 
-(defvar *table-information-initialized* nil
+   NOTE: The leading % in the name marks this as an internal-only control
+   variable (per clails' naming convention for such variables). Do not read
+   or set it from application code.")
+
+(defvar *%table-information-initialized* nil
   "Flag indicating whether initialize-table-information has been executed.
 
    Set to T after initialize-table-information completes successfully.
    Used by query macro to determine whether to create actual query instances
-   or placeholder instances for lazy initialization.")
+   or placeholder instances for lazy initialization.
 
-(defvar *query-initialization-callbacks* nil
+   NOTE: The leading % in the name marks this as an internal-only control
+   variable (per clails' naming convention for such variables). Do not read
+   or set it from application code.")
+
+(defvar *%query-initialization-callbacks* nil
   "List of callback functions to initialize query placeholders.
 
    When query macro is expanded before initialize-table-information is called,
    callback functions are registered here to initialize query placeholders later.
    Each callback takes no arguments and sets the actual query instance to the
    corresponding placeholder's actual-query slot.
-   Cleared after initialize-table-information executes all callbacks.")
+   Cleared after initialize-table-information executes all callbacks.
+
+   NOTE: The leading % in the name marks this as an internal-only control
+   variable (per clails' naming convention for such variables). Do not read
+   or set it from application code.")
 
 (defparameter +ENVIRONMENT-NAMES+ '("DEVELOP" "TEST" "PRODUCTION")
   "List of valid environment names.")

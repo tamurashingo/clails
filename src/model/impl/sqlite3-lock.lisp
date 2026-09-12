@@ -2,7 +2,7 @@
 (defpackage #:clails/model/impl/sqlite3-lock
   (:use #:cl)
   (:import-from #:clails/environment
-                #:*sqlite3-transaction-mode*)
+                #:*%sqlite3-transaction-mode*)
   (:import-from #:clails/logger
                 #:log-level-enabled-p
                 #:log.sql)
@@ -17,7 +17,7 @@
 (defmethod dbi:begin-transaction ((conn dbd.sqlite3:dbd-sqlite3-connection))
   "Override begin-transaction for SQLite3 to support lock modes.
    
-   Checks *sqlite3-transaction-mode* to determine which BEGIN statement to use.
+   Checks *%sqlite3-transaction-mode* to determine which BEGIN statement to use.
    This allows with-locked-transaction to control the transaction lock level
    while maintaining compatibility with regular with-transaction usage.
 
@@ -28,7 +28,7 @@
 
    @param conn [dbd-sqlite3-connection] SQLite3 database connection
    "
-  (let* ((tx-mode clails/environment:*sqlite3-transaction-mode*)
+  (let* ((tx-mode clails/environment:*%sqlite3-transaction-mode*)
          (begin-sql (case tx-mode
                       (:immediate "BEGIN IMMEDIATE")
                       (:exclusive "BEGIN EXCLUSIVE")

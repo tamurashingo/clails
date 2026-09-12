@@ -18,8 +18,8 @@
   (clrhash clails/model/base-model::*table-information*)
   
   ;; Reset initialization state
-  (setf clails/environment:*table-information-initialized* nil)
-  (setf clails/environment:*query-initialization-callbacks* nil)
+  (setf clails/environment:*%table-information-initialized* nil)
+  (setf clails/environment:*%query-initialization-callbacks* nil)
   
   ;; define models
   (defmodel <blog> (<base-model>)
@@ -46,15 +46,15 @@
   (clails/model/connection:shutdown-connection-pool)
   
   ;; Reset initialization state
-  (setf clails/environment:*table-information-initialized* nil)
-  (setf clails/environment:*query-initialization-callbacks* nil))
+  (setf clails/environment:*%table-information-initialized* nil)
+  (setf clails/environment:*%query-initialization-callbacks* nil))
 
 
 (deftest test-query-before-initialization
   (testing "query macro before initialize-table-information should create placeholder"
     ;; Ensure we're in uninitialized state
-    (setf clails/environment:*table-information-initialized* nil)
-    (setf clails/environment:*query-initialization-callbacks* nil)
+    (setf clails/environment:*%table-information-initialized* nil)
+    (setf clails/environment:*%query-initialization-callbacks* nil)
     
     ;; Create query before initialization
     (let ((q (query <blog>
@@ -66,7 +66,7 @@
       (ok (typep q 'clails/model/query::<query-placeholder>))
       
       ;; Callback should be registered
-      (ok (= 1 (length clails/environment:*query-initialization-callbacks*)))
+      (ok (= 1 (length clails/environment:*%query-initialization-callbacks*)))
       
       ;; actual-query should be nil
       (ok (null (slot-value q 'clails/model/query::actual-query)))
@@ -92,14 +92,14 @@
       (ok (typep q 'clails/model/query::<query>))
       
       ;; No new callback should be registered
-      (ok (= 0 (length clails/environment:*query-initialization-callbacks*))))))
+      (ok (= 0 (length clails/environment:*%query-initialization-callbacks*))))))
 
 
 (deftest test-placeholder-initialization
   (testing "placeholder should be initialized after initialize-table-information"
     ;; Reset initialization state
-    (setf clails/environment:*table-information-initialized* nil)
-    (setf clails/environment:*query-initialization-callbacks* nil)
+    (setf clails/environment:*%table-information-initialized* nil)
+    (setf clails/environment:*%query-initialization-callbacks* nil)
     
     ;; Create query before initialization
     (let ((q (query <blog>
@@ -121,14 +121,14 @@
                  'clails/model/query::<query>))
       
       ;; Callbacks should be cleared
-      (ok (= 0 (length clails/environment:*query-initialization-callbacks*))))))
+      (ok (= 0 (length clails/environment:*%query-initialization-callbacks*))))))
 
 
 (deftest test-placeholder-delegation
   (testing "placeholder should delegate method calls to actual query"
     ;; Reset initialization state
-    (setf clails/environment:*table-information-initialized* nil)
-    (setf clails/environment:*query-initialization-callbacks* nil)
+    (setf clails/environment:*%table-information-initialized* nil)
+    (setf clails/environment:*%query-initialization-callbacks* nil)
     
     ;; Create query before initialization
     (let ((q (query <blog>
@@ -159,8 +159,8 @@
 (deftest test-multiple-placeholders
   (testing "multiple query placeholders should all be initialized"
     ;; Reset initialization state
-    (setf clails/environment:*table-information-initialized* nil)
-    (setf clails/environment:*query-initialization-callbacks* nil)
+    (setf clails/environment:*%table-information-initialized* nil)
+    (setf clails/environment:*%query-initialization-callbacks* nil)
     
     ;; Create multiple queries before initialization
     (let ((q1 (query <blog>
@@ -181,7 +181,7 @@
       (ok (typep q3 'clails/model/query::<query-placeholder>))
       
       ;; Three callbacks should be registered
-      (ok (= 3 (length clails/environment:*query-initialization-callbacks*)))
+      (ok (= 3 (length clails/environment:*%query-initialization-callbacks*)))
       
       ;; Initialize
       (clails/model/base-model:initialize-table-information)
@@ -197,4 +197,4 @@
       (ok (typep (slot-value q3 'clails/model/query::actual-query) 'clails/model/query::<query>))
       
       ;; Callbacks should be cleared
-      (ok (= 0 (length clails/environment:*query-initialization-callbacks*))))))
+      (ok (= 0 (length clails/environment:*%query-initialization-callbacks*))))))

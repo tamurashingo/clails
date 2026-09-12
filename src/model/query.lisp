@@ -12,8 +12,8 @@
                 #:optimistic-lock-error)
   (:import-from #:clails/environment
                 #:*database-type*
-                #:*table-information-initialized*
-                #:*query-initialization-callbacks*)
+                #:*%table-information-initialized*
+                #:*%query-initialization-callbacks*)
   (:import-from #:clails/model/base-model
                 #:<base-model>
                 #:validate
@@ -457,7 +457,7 @@
                    :order-by order-by
                    :limit limit
                    :offset offset)))
-    `(if clails/environment:*table-information-initialized*
+    `(if clails/environment:*%table-information-initialized*
          ;; Table information initialized: create actual query instance
          (let ((q (make-instance '<query>
                                  :model ',model
@@ -493,7 +493,7 @@
                                            :offset ',offset)))
                      (setf (slot-value q 'query-source-info) ',(make-source-info))
                      (setf (actual-query placeholder) q)))
-                 clails/environment:*query-initialization-callbacks*)
+                 clails/environment:*%query-initialization-callbacks*)
            placeholder))))
 
 

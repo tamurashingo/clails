@@ -4,7 +4,7 @@
   (:import-from #:clails/environment
                 #:*database-type*
                 #:*connection-pool*
-                #:*sqlite3-lock-module-loaded*)
+                #:*%sqlite3-lock-module-loaded*)
   (:export #:startup-connection-pool
            #:shutdown-connection-pool
            #:create-connection-pool-impl
@@ -91,10 +91,10 @@
 
     ;; Load SQLite3 lock module if using SQLite3
     (when (and (typep *database-type* 'clails/environment:<database-type-sqlite3>)
-               (not clails/environment:*sqlite3-lock-module-loaded*))
+               (not clails/environment:*%sqlite3-lock-module-loaded*))
       (load (merge-pathnames "src/model/impl/sqlite3-lock.lisp"
                              (asdf:system-source-directory :clails)))
-      (setf clails/environment:*sqlite3-lock-module-loaded* t))))
+      (setf clails/environment:*%sqlite3-lock-module-loaded* t))))
 
 (defun shutdown-connection-pool ()
   "Shutdown the database connection pool.
