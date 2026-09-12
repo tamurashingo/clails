@@ -711,6 +711,16 @@ You can create a dedicated Controller to display error pages.
 
 ---
 
+## Sessions & `current-user`
+
+clails also provides an opt-in cookie session (and a `current-user`
+extension point built on top of it) that controllers can use via
+`(session controller)` and `(current-user controller)`. This is covered in
+detail, including a full login/logout example, in the
+**[Session & Authentication Guide](session.md)**.
+
+---
+
 ## 12. Best Practices
 
 ### Controller Responsibilities

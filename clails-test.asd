@@ -22,6 +22,7 @@
                #:clails-test/model/query/mysql
                #:clails-test/model/query/postgresql
                #:clails-test/controller/base-controller
+               #:clails-test/middleware/session-middleware
                #:clails-test/helper/date-helper
                #:clails-test/model/join-query
                #:clails-test/model/save

@@ -418,3 +418,68 @@
 
       ;; GET /nonexistent -> nil
       (ok (null (clails/controller/base-controller::path-controller "/nonexistent" :get))))))
+
+
+(deftest session-test
+  (testing "session signals an error when session middleware is not enabled"
+    (let ((controller (make-instance '<base-controller>)))
+      (setf (slot-value controller 'clails/controller/base-controller::env)
+            '(:path-info "/"))
+      (ok (signals (session controller) 'error))))
+
+  (testing "session returns the hash table stored in env under :lack.session"
+    (let* ((session-table (make-hash-table :test 'equal))
+           (controller (make-instance '<base-controller>)))
+      (setf (slot-value controller 'clails/controller/base-controller::env)
+            (list :path-info "/" :lack.session session-table))
+      (ok (eq (session controller) session-table))))
+
+  (testing "session data can be read and written through the returned hash table"
+    (let* ((session-table (make-hash-table :test 'equal))
+           (controller (make-instance '<base-controller>)))
+      (setf (slot-value controller 'clails/controller/base-controller::env)
+            (list :path-info "/" :lack.session session-table))
+      (setf (gethash "visits" (session controller)) 1)
+      (ok (= (gethash "visits" (session controller)) 1))
+      (incf (gethash "visits" (session controller)))
+      (ok (= (gethash "visits" (session controller)) 2))
+      ;; Same underlying hash-table is shared across calls to (session controller)
+      (ok (= (gethash "visits" session-table) 2)))))
+
+
+(deftest current-user-test
+  (testing "current-user is NIL by default"
+    (let* ((session-table (make-hash-table :test 'equal))
+           (controller (make-instance '<base-controller>)))
+      (setf (slot-value controller 'clails/controller/base-controller::env)
+            (list :path-info "/" :lack.session session-table))
+      (ok (null (current-user controller)))))
+
+  (testing "(setf current-user) stores the user in the session, current-user reads it back"
+    (let* ((session-table (make-hash-table :test 'equal))
+           (controller (make-instance '<base-controller>))
+           (user '(:id 42 :name "alice")))
+      (setf (slot-value controller 'clails/controller/base-controller::env)
+            (list :path-info "/" :lack.session session-table))
+      (setf (current-user controller) user)
+      (ok (equal (current-user controller) user))
+      ;; current-user is backed by the session, under a dedicated key
+      (ok (equal (gethash clails/controller/base-controller::+current-user-session-key+
+                          session-table)
+                 user))))
+
+  (testing "setting current-user to NIL logs the user out"
+    (let* ((session-table (make-hash-table :test 'equal))
+           (controller (make-instance '<base-controller>)))
+      (setf (slot-value controller 'clails/controller/base-controller::env)
+            (list :path-info "/" :lack.session session-table))
+      (setf (current-user controller) '(:id 1))
+      (ok (current-user controller))
+      (setf (current-user controller) nil)
+      (ok (null (current-user controller)))))
+
+  (testing "current-user requires session middleware to be enabled"
+    (let ((controller (make-instance '<base-controller>)))
+      (setf (slot-value controller 'clails/controller/base-controller::env)
+            '(:path-info "/"))
+      (ok (signals (current-user controller) 'error)))))

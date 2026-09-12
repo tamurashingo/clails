@@ -7,6 +7,8 @@
                 #:*lack-middleware-clails-controller*)
   (:import-from #:clails/middleware/transaction-middleware
                 #:*lack-middleware-transaction*)
+  (:import-from #:clails/middleware/session-middleware
+                #:*lack-middleware-clails-session*)
   (:export #:*clails-middleware-stack*
            #:add-middleware-before
            #:add-middleware-after
@@ -14,6 +16,7 @@
 (in-package #:clails/middleware/core)
 
 (defvar *clails-middleware-stack* (list
+                                          *lack-middleware-clails-session*
                                           *lack-middleware-transaction*
                                           *lack-middleware-clails-controller*
                                           #'(lambda (app)

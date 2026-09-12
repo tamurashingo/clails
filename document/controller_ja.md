@@ -719,6 +719,16 @@ Controller インスタンスには以下のスロットがあります。
 
 ---
 
+## セッションと `current-user`
+
+clails には、オプトイン方式の Cookie セッションと、その上に構築された
+`current-user` 拡張ポイントも用意されています。コントローラからは
+`(session controller)` と `(current-user controller)` で利用できます。
+ログイン/ログアウトの完全な例を含む詳細は
+**[セッション・認証ガイド](session_ja.md)** を参照してください。
+
+---
+
 ## 12. ベストプラクティス
 
 ### Controller の責務
