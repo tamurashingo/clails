@@ -74,6 +74,7 @@
                #:clails-test/task/runner
                #:clails-test/task/core
                #:clails-test/project/generate
+               #:clails-test/environment
                #:clails-test/cmd)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
