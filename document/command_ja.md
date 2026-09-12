@@ -1004,13 +1004,14 @@ clails server -p 8080
 
 ```common-lisp
 ;; config/environment.lisp などで定義
-(setf clails/environment:*startup-hooks*
-      (list #'(lambda ()
-                (format t "Server starting...~%"))))
+;; add-startup-hook/add-shutdown-hook は末尾に追加するため、登録した順に実行される
+(clails/environment:add-startup-hook
+  #'(lambda ()
+      (format t "Server starting...~%")))
 
-(setf clails/environment:*shutdown-hooks*
-      (list #'(lambda ()
-                (format t "Server stopping...~%"))))
+(clails/environment:add-shutdown-hook
+  #'(lambda ()
+      (format t "Server stopping...~%")))
 ```
 
 ### Swankサーバーを使った開発

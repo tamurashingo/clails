@@ -25,6 +25,8 @@
            #:<database-type-sqlite3>
            #:<database-type-dummy>
            #:set-environment
+           #:add-startup-hook
+           #:add-shutdown-hook
            #:clails-framework-version
            #:warn-if-framework-version-mismatch))
 (in-package #:clails/environment)
@@ -146,10 +148,20 @@
    Set in app/config/environment.lisp.")
 
 (defvar *startup-hooks*
-  '("clails/model/connection:startup-connection-pool"))
+  '("clails/model/connection:startup-connection-pool")
+  "List of functions (or function-name strings) to run at application startup,
+   in list order. Use add-startup-hook to append to this list so registration
+   order matches execution order; do not push onto it directly, since push
+   prepends and would run the newly added hook before the framework's own
+   default hooks (and before any hook registered earlier).")
 
 (defvar *shutdown-hooks*
-  '("clails/model/connection:shutdown-connection-pool"))
+  '("clails/model/connection:shutdown-connection-pool")
+  "List of functions (or function-name strings) to run at application shutdown,
+   in list order. Use add-shutdown-hook to append to this list so registration
+   order matches execution order; do not push onto it directly, since push
+   prepends and would run the newly added hook before the framework's own
+   default hooks (and before any hook registered earlier).")
 
 (defvar *default-lock-mode* :for-update
   "Default lock mode for with-locked-transaction macro.
@@ -241,6 +253,32 @@
   (let ((env (string-upcase env-name)))
     (when (check-environment-name env)
       (setf *project-environment* (intern env :KEYWORD)))))
+
+(defun add-startup-hook (hook)
+  "Register a hook to run at application startup.
+
+   Appends to *startup-hooks*, so hooks run in the order they were
+   registered (after any hook already present, including the framework's
+   own default). Prefer this over pushing onto *startup-hooks* directly,
+   which would reverse the intended execution order.
+
+   @param hook [string or function] Function name (e.g. \"package:function-name\") or a function object
+   @return [list] The updated *startup-hooks* list
+   "
+  (setf *startup-hooks* (append *startup-hooks* (list hook))))
+
+(defun add-shutdown-hook (hook)
+  "Register a hook to run at application shutdown.
+
+   Appends to *shutdown-hooks*, so hooks run in the order they were
+   registered (after any hook already present, including the framework's
+   own default). Prefer this over pushing onto *shutdown-hooks* directly,
+   which would reverse the intended execution order.
+
+   @param hook [string or function] Function name (e.g. \"package:function-name\") or a function object
+   @return [list] The updated *shutdown-hooks* list
+   "
+  (setf *shutdown-hooks* (append *shutdown-hooks* (list hook))))
 
 (defun clails-framework-version ()
   "Return the version of the currently loaded clails framework.
