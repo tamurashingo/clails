@@ -7,6 +7,10 @@ This guide explains environment variables and global variables available to appl
 
 ## Table of Contents
 
+- [Initialization Stages](#initialization-stages)
+  - The three stages
+  - Which stage each CLI command reaches
+  - Practical implication
 1. [Environment Variables](#1-environment-variables)
    - Database-related
    - Environment Variable Utility Functions
@@ -25,6 +29,56 @@ This guide explains environment variables and global variables available to appl
 6. [Best Practices](#6-best-practices)
 7. [Troubleshooting](#7-troubleshooting)
 8. [Contributing: Adding New Configuration Variables](#8-contributing-adding-new-configuration-variables)
+
+---
+
+## Initialization Stages
+
+Before application code relies on a value in `clails/environment`, it helps to know *when* that value actually becomes populated. clails initializes state in three stages, and which stages a given `clails` CLI command reaches depends on the command. This is why code that assumes a later-stage variable is available -- most notably `*connection-pool*` -- can work fine under `clails server` but fail unexpectedly under `clails db:seed`, `clails task ...`, or other commands.
+
+### The three stages
+
+**Stage 1 -- File-load time**
+
+Reached simply by loading the `clails` system itself; every invocation of the `clails` CLI (including `--help`) loads `clails`. At this point only the framework's built-in defaults from `src/environment.lisp` are in effect: `*project-environment*` defaults to `:develop`, `*connection-pool*` is `nil`, `*routing-tables*` holds the single built-in default route, `*startup-hooks*`/`*shutdown-hooks*` hold only the framework's own defaults, and so on. No project has been loaded yet.
+
+**Stage 2 -- `clails.boot` execution ("project load") time**
+
+Reached by every command except `new` (and running `clails` with no command / `--help`). Triggered by `roswell/clails.ros`'s `load-project`, which loads the project's `clails.boot`. In order, this:
+
+1. Runs `(ql:quickload :<project>)`, which walks the ASDF package-inferred-system dependency graph rooted at `app/application-loader.lisp` and runs every file's top-level forms. This is where project config files run: `app/config/environment.lisp` sets `*project-name*` and `*routing-tables*`, and pushes onto `*startup-hooks*`/`*shutdown-hooks*`; `app/config/database.lisp` sets `*database-type*`; `app/models/package.lisp` registers models.
+2. Sets `*project-dir*`, `*migration-base-dir*`, and `*task-base-dir*` explicitly.
+3. Applies `CLAILS_ENV` (via `set-environment`), setting `*project-environment*`.
+4. Calls `<project>/config/database:initialize-database-config`, which sets `*database-config*`.
+
+After Stage 2, every `clails/environment` variable is populated **except** the ones the connection pool is responsible for: `*connection-pool*`, the internal `*thread-connection-pool*`, and anything a startup hook would otherwise set up (e.g. `*table-information-initialized*`, unless something calls `initialize-table-information` directly).
+
+**Stage 3 -- runtime startup (`call-startup-hooks`)**
+
+This is where `*connection-pool*` gets created, by running every function in `*startup-hooks*` in order (default: `clails/model/connection:startup-connection-pool`; generated projects also push `initialize-table-information` and a logger initializer onto the front of this list in `app/config/environment.lisp`). **Only `clails server` reaches this stage** -- `call-startup-hooks` is called once, right before the server starts accepting requests, from `clails/cmd:server` (`src/cmd.lisp`). There is a corresponding shutdown stage (`call-shutdown-hooks`, running `*shutdown-hooks*`), reached only by `clails stop` / when the running server is interrupted.
+
+> **`db:seed` and `test` are a special case.** Neither calls `call-startup-hooks`, but both call `clails/model/connection:startup-connection-pool` (and `initialize-table-information`) directly -- hard-coded in `src/cmd.lisp` -- before doing their real work, and shut the pool back down (`shutdown-connection-pool`) afterward. So `*connection-pool*` **is** populated while `db:seed`/`test` run, but any *additional* custom startup hooks a project has added to `*startup-hooks*` (beyond the default connection-pool startup) do **not** run for these two commands, since they bypass `call-startup-hooks` entirely.
+>
+> `db:create`, `db:migrate`, `db:migrate:up`, `db:migrate:down`, and `db:rollback` don't need the pool at all -- they talk to the database through short-lived direct connections (`with-db-connection-direct`), never through `*connection-pool*`.
+
+### Which stage each CLI command reaches
+
+| Command | Reaches Stage 2 (project loaded)? | Reaches Stage 3 (`*connection-pool*` populated)? | Notes |
+|---|---|---|---|
+| `new` | No | No | Creates a project on disk; there is no project to load yet. |
+| `environment` | Yes | No | Just prints `*project-environment*`. |
+| `generate:model` / `:migration` / `:view` / `:controller` / `:scaffold` / `:task` | Yes | No | File generation only; these never touch the database. |
+| `db:create` | Yes | No (direct connection) | Uses `with-db-connection-direct`, not the pool. |
+| `db:migrate`, `db:migrate:up`, `db:migrate:down`, `db:rollback`, `db:status` | Yes | No (direct connection) | Migrations run over direct connections, not the pool. |
+| `db:seed` | Yes | **Yes**, via a direct call to `startup-connection-pool` / `initialize-table-information` (not `call-startup-hooks`) | Custom startup hooks beyond the default pool startup are skipped. Pool is shut down again once seeding finishes. |
+| `test` | Yes (environment forced to `:test`) | **Yes**, same direct-call caveat as `db:seed` | Pool is shut down again after the test run. |
+| `task` (custom tasks via `clails task ...`) | Yes | No, unless the task itself calls `startup-connection-pool` | The framework does not start the pool for tasks; a task that needs pooled DB access must start (and ideally shut down) the pool itself. |
+| `server` | Yes | **Yes**, via `call-startup-hooks` | The only command that runs the full, user-configurable `*startup-hooks*` list. |
+| `stop` | Yes | N/A | Only meaningful within the same running server process; a standalone invocation has nothing running to stop. |
+
+### Practical implication
+
+Code that reads `clails/environment:*connection-pool*` -- directly, or indirectly via `clails/model/connection:get-connection` / `with-db-connection` -- must not assume it has been populated just because the project has loaded (Stage 2). It is guaranteed only under `server`, `db:seed`, and `test`. If you write a custom task, migration helper, or other code path that needs a pooled database connection, call `clails/model/connection:startup-connection-pool` yourself first (and `shutdown-connection-pool` when done), or use a direct connection (`with-db-connection-direct`) instead. `clails/model/connection:get-connection` raises a clear error naming the missing initialization step instead of failing with an obscure error from inside the connection-pool library when `*connection-pool*` is `nil`.
 
 ---
 

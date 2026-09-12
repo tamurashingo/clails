@@ -7,6 +7,10 @@ clails アプリケーションは、環境変数を通じて動作をカスタ�
 
 ## 目次
 
+- [初期化ステージ](#初期化ステージ)
+  - 3つのステージ
+  - CLIコマンドごとに到達するステージ
+  - 実務上の意味
 1. [環境変数](#1-環境変数)
    - データベース関連
    - 環境変数の取得ユーティリティ
@@ -26,6 +30,56 @@ clails アプリケーションは、環境変数を通じて動作をカスタ�
 6. [ベストプラクティス](#6-ベストプラクティス)
 7. [トラブルシューティング](#7-トラブルシューティング)
 8. [コントリビューション: 新しい設定変数を追加するには](#8-コントリビューション-新しい設定変数を追加するには)
+
+---
+
+## 初期化ステージ
+
+アプリケーションコードが `clails/environment` の値に依存する前に、その値が実際に「いつ」設定されるのかを把握しておく必要があります。clails は3つのステージで状態を初期化しますが、どのステージまで到達するかは実行する `clails` CLI コマンドによって異なります。これが原因で、より後のステージで設定される変数（特に `*connection-pool*`）が既に利用可能だと仮定したコードが、`clails server` では問題なく動いても `clails db:seed` やその他のコマンドでは予期せず失敗することがあります。
+
+### 3つのステージ
+
+**ステージ1 -- ファイルロード時**
+
+`clails` システム自体がロードされた時点で到達します。`--help` を含め、`clails` CLI のすべての呼び出しはこの時点に到達します。この段階では `src/environment.lisp` に定義されたフレームワークの組み込みデフォルト値のみが有効です。例えば `*project-environment*` は `:develop`、`*connection-pool*` は `nil`、`*routing-tables*` は組み込みのデフォルトルート1件のみ、`*startup-hooks*`/`*shutdown-hooks*` もフレームワーク自身のデフォルトのみです。この時点ではまだプロジェクトはロードされていません。
+
+**ステージ2 -- `clails.boot` 実行（プロジェクトロード）時**
+
+`new` コマンド（およびコマンドなし/`--help` での実行）以外のすべてのコマンドで到達します。`roswell/clails.ros` の `load-project` がプロジェクトの `clails.boot` をロードすることで発生します。順を追うと以下のようになります。
+
+1. `(ql:quickload :<project>)` を実行します。これは `app/application-loader.lisp` を起点とする ASDF package-inferred-system の依存グラフをたどり、各ファイルのトップレベルフォームを実行します。プロジェクトの設定ファイルが実行されるのはこの時点です。`app/config/environment.lisp` が `*project-name*` と `*routing-tables*` を設定し、`*startup-hooks*`/`*shutdown-hooks*` に要素を push します。`app/config/database.lisp` が `*database-type*` を設定します。`app/models/package.lisp` がモデルを登録します。
+2. `*project-dir*`、`*migration-base-dir*`、`*task-base-dir*` を明示的に設定します。
+3. `CLAILS_ENV`（`set-environment` 経由）を適用し、`*project-environment*` を設定します。
+4. `<project>/config/database:initialize-database-config` を呼び出し、`*database-config*` を設定します。
+
+ステージ2が終わった時点で、コネクションプールが担当する変数（`*connection-pool*`、内部の `*thread-connection-pool*`、および `initialize-table-information` を直接呼ばない限り設定されない `*table-information-initialized*` など）を**除く**すべての `clails/environment` 変数が設定済みになります。
+
+**ステージ3 -- ランタイム起動（`call-startup-hooks`）**
+
+`*connection-pool*` が実際に作られるのはこの段階です。`*startup-hooks*` に登録された関数を順に実行します（デフォルトは `clails/model/connection:startup-connection-pool` のみ。生成されたプロジェクトでは `app/config/environment.lisp` でこのリストの先頭に `initialize-table-information` とロガー初期化処理も push されます）。**このステージに到達するのは `clails server` のみ**です。`call-startup-hooks` はサーバーがリクエストの受付を開始する直前に、`clails/cmd:server`（`src/cmd.lisp`）から一度だけ呼び出されます。対応するシャットダウンステージ（`*shutdown-hooks*` を実行する `call-shutdown-hooks`）は `clails stop` 実行時、あるいは稼働中のサーバーが割り込まれたときにのみ到達します。
+
+> **`db:seed` と `test` は特殊なケースです。** どちらも `call-startup-hooks` は呼びませんが、実際の処理を行う前に `clails/model/connection:startup-connection-pool`（および `initialize-table-information`）を `src/cmd.lisp` 内で直接（ハードコードされた形で）呼び出し、処理後にプールをシャットダウン（`shutdown-connection-pool`）します。そのため `db:seed`/`test` の実行中は `*connection-pool*` が**設定されています**が、プロジェクトが `*startup-hooks*` に追加したデフォルト以外のカスタムフックは、`call-startup-hooks` を経由しないためこの2つのコマンドでは実行**されません**。
+>
+> `db:create`、`db:migrate`、`db:migrate:up`、`db:migrate:down`、`db:rollback` はそもそもプールを必要としません。これらは短命な直接接続（`with-db-connection-direct`）でデータベースとやり取りしており、`*connection-pool*` は一切使いません。
+
+### CLIコマンドごとに到達するステージ
+
+| コマンド | ステージ2（プロジェクトロード）に到達するか | ステージ3（`*connection-pool*` 設定済み）に到達するか | 備考 |
+|---|---|---|---|
+| `new` | しない | しない | ディスク上にプロジェクトを作成するだけで、まだロードするプロジェクトが存在しない |
+| `environment` | する | しない | `*project-environment*` を表示するだけ |
+| `generate:model` / `:migration` / `:view` / `:controller` / `:scaffold` / `:task` | する | しない | ファイル生成のみで、データベースには一切触れない |
+| `db:create` | する | しない（直接接続） | `with-db-connection-direct` を使用し、プールは使わない |
+| `db:migrate`、`db:migrate:up`、`db:migrate:down`、`db:rollback`、`db:status` | する | しない（直接接続） | マイグレーションはプールではなく直接接続で実行される |
+| `db:seed` | する | **する**（`call-startup-hooks` ではなく `startup-connection-pool`/`initialize-table-information` の直接呼び出し経由） | デフォルトのプール起動以外のカスタム起動フックはスキップされる。シード完了後にプールは再びシャットダウンされる |
+| `test` | する（環境は強制的に `:test` になる） | **する**（`db:seed` と同様の直接呼び出しの注意点あり） | テスト実行後にプールは再びシャットダウンされる |
+| `task`（`clails task ...` によるカスタムタスク） | する | しない（タスク自身が `startup-connection-pool` を呼ばない限り） | フレームワークはタスクのためにプールを起動しない。プール経由のDBアクセスが必要なタスクは自分でプールを起動する必要がある |
+| `server` | する | **する**（`call-startup-hooks` 経由） | ユーザーが設定可能な `*startup-hooks*` リスト全体を実行する唯一のコマンド |
+| `stop` | する | 該当なし | 同一プロセス内で稼働中のサーバーに対してのみ意味を持つ。単独で実行しても停止対象は存在しない |
+
+### 実務上の意味
+
+`clails/environment:*connection-pool*` を読むコード（直接、あるいは `clails/model/connection:get-connection`/`with-db-connection` 経由での間接的な参照を含む）は、プロジェクトがロードされている（ステージ2に到達している）というだけでプールが設定済みだと仮定してはいけません。これが保証されるのは `server`、`db:seed`、`test` の実行中だけです。プール経由のデータベース接続が必要なカスタムタスクやその他のコード経路を書く場合は、自分で `clails/model/connection:startup-connection-pool` を呼び出す（処理後に `shutdown-connection-pool` も呼ぶ）か、代わりに直接接続（`with-db-connection-direct`）を使ってください。`*connection-pool*` が `nil` の場合、`clails/model/connection:get-connection` はコネクションプールライブラリ内部から発生する分かりにくいエラーの代わりに、何が初期化されていないかを明示したエラーを送出します。
 
 ---
 
