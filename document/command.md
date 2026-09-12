@@ -72,6 +72,7 @@ clails --help
 | `clails new` | Create a new project |
 | `clails server` | Start web server |
 | `clails stop` | Stop web server |
+| `clails console` | Start an interactive console (REPL) |
 
 ### Code Generation
 
@@ -237,6 +238,64 @@ clails stop
 ```bash
 clails stop
 ```
+
+### `clails console` - Start an Interactive Console
+
+Boots the project's environment (configuration, DB connection, models -- the
+same `load-project` initialization path used by `server`/`db:*`/`test`) and
+then drops you into an interactive Lisp REPL, similar to `rails console`.
+
+#### Syntax
+
+```bash
+clails console
+```
+
+#### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--help` | `-h` | Show this help message |
+
+#### What's available in the REPL
+
+- The REPL runs in the project's `<project>-DB` package -- the same package
+  `db/seeds.lisp` and migration files run in. It already `:use`s
+  `clails/model` and imports every model package registered in
+  `app/models/package.lisp`, so registered models can be referenced the same
+  way `db/seeds.lisp` does:
+
+  ```common-lisp
+  todoapp-DB> (save (make-record 'todoapp/models/user:<user> :name "alice" :email "alice@example.com"))
+  todoapp-DB> (execute-query (query todoapp/models/user:<user> :as :user) nil)
+  ```
+
+- The database connection pool is started before the REPL begins and shut
+  down automatically when you leave, so model queries and saves work exactly
+  as they do inside a running server.
+- The REPL supports the standard `*`, `**`, `***` history variables for the
+  last few results.
+
+#### Examples
+
+```bash
+# Start an interactive console
+clails console
+
+# Leave the console
+todoapp-DB> (quit)
+todoapp-DB> (exit)
+# or press Ctrl-D
+```
+
+#### Behavior
+
+1. Load the project environment via `load-project` (config, DB settings) and
+   `load-db-package` (the `<project>-DB` package), exactly as `db:*` commands do
+2. Start the DB connection pool and load table metadata
+3. Read, evaluate, and print Lisp forms from standard input in a loop until
+   `(quit)`, `(exit)`, `:quit`, `:exit`, or end-of-input (Ctrl-D)
+4. Shut down the DB connection pool on the way out
 
 ---
 

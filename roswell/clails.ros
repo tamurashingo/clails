@@ -35,6 +35,7 @@ exec ros -Q -- $0 "$@"
   (format t "  test [packages...]                Run tests~%")
   (format t "  server                            Start web server~%")
   (format t "  stop                              Stop web server~%")
+  (format t "  console                           Start an interactive console~%")
   (format t "~%")
   (format t "Run 'clails COMMAND --help' for more information on a command.~%"))
 
@@ -149,6 +150,19 @@ exec ros -Q -- $0 "$@"
   (format t "~%")
   (format t "Examples:~%")
   (format t "  clails stop~%"))
+
+(defun help/console ()
+  (format t "Usage: clails console~%~%")
+  (format t "Start an interactive console (REPL) for the application.~%~%")
+  (format t "Boots the project environment (config, DB connection, models) the same~%")
+  (format t "way 'clails server' does, then drops you into a Lisp REPL running in the~%")
+  (format t "project's <project>-DB package, so registered models are available the~%")
+  (format t "same way db/seeds.lisp uses them.~%~%")
+  (format t "Options:~%")
+  (format t "  -h, --help                Show this help message~%")
+  (format t "~%")
+  (format t "Examples:~%")
+  (format t "  clails console~%"))
 
 (defun help/task ()
   (format t "Usage: clails task [TASK] [OPTIONS]~%~%")
@@ -554,6 +568,16 @@ exec ros -Q -- $0 "$@"
     (uiop:quit 0))
   (load-project)
   (clails/cmd:stop))
+
+(define-command "console" (&key (help :short-option "h"
+                                      :long-option "help"))
+  (:help-function #'help/console)
+  (when help
+    (help/console)
+    (uiop:quit 0))
+  (load-project)
+  (load-db-package)
+  (clails/cmd:console))
 
 (define-command "task" (args &key (list :short-option "l"
                                         :long-option "list")

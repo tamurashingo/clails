@@ -243,14 +243,95 @@
     (shutdown-connection-pool)))
 
 
+(defparameter +console-quit-symbols+ '("QUIT" "EXIT")
+  "Symbol names that end the interactive console when read as a bare symbol
+   or as a zero-argument call, e.g. QUIT, (QUIT), :QUIT, EXIT, (EXIT), :EXIT.
+   Matched by name rather than by symbol identity so it works no matter which
+   package the console's *package* happens to be bound to.")
+
+(defun console-quit-form-p (form)
+  "Return T when FORM should end the console's read-eval-print loop.
+
+   @param form [t] Form read from the console's input stream
+   @return [boolean] T if FORM is a quit/exit request
+   "
+  (flet ((quit-symbol-p (x)
+           (and (symbolp x)
+                (member (symbol-name x) +console-quit-symbols+ :test #'string=))))
+    (or (quit-symbol-p form)
+        (and (consp form)
+             (null (cdr form))
+             (quit-symbol-p (car form))))))
+
+(defun console-repl-package ()
+  "Determine which package the interactive console should read/eval forms in.
+
+   Prefers <project>-DB: the package db/seeds.lisp and migration files run
+   in, which already :use's clails/model and imports every model package
+   registered in app/models/package.lisp (see load-db-package in
+   roswell/clails.ros, which loads db/package.lisp before calling console).
+   Falls back to CL-USER if that package is not present for some reason.
+
+   @return [package] Package to bind *package* to for the console session
+   "
+  (or (find-package (string-upcase (format nil "~A-DB" *project-name*)))
+      (find-package :cl-user)))
+
 (defun console ()
   "Start an interactive console for the application.
 
-   Not yet implemented.
+   Assumes the project environment (config, DB settings, models) has already
+   been booted via the same load-project path used by server/db:*/test --
+   see roswell/clails.ros, which calls load-project (and load-db-package)
+   before invoking this function. Starts the DB connection pool and loads
+   table metadata, then hands control to a simple read-eval-print loop
+   running in the project's <project>-DB package, so registered models can
+   be referenced the same way db/seeds.lisp does, e.g.:
 
-   @condition error Not yet implemented
+     (save (make-record '<project>/models/user:<user> :name \"a\"))
+
+   Type (quit), (exit), :quit, :exit, or send EOF (Ctrl-D) to leave the
+   console; the DB connection pool is shut down on the way out either way.
+
+   @return [t] Always returns t once the console session ends
    "
-  (error "Not yet implemented"))
+  (startup-connection-pool)
+  (initialize-table-information)
+  (unwind-protect
+      (let ((*package* (console-repl-package))
+            (eof-marker (list :eof))
+            (skip-marker (list :skip)))
+        (format t "~&clails console (project: ~A, package: ~A)~%"
+                *project-name* (package-name *package*))
+        (format t "Type (quit), (exit), or Ctrl-D to leave the console.~%~%")
+        (loop
+          (format t "~&~A> " (package-name *package*))
+          (force-output)
+          (let ((form (handler-case (read *standard-input* nil eof-marker)
+                        (end-of-file () eof-marker)
+                        (reader-error (e)
+                          (format t "~&; Read error: ~A~%" e)
+                          (ignore-errors (read-line *standard-input* nil ""))
+                          skip-marker))))
+            (cond
+              ((eq form eof-marker)
+               (format t "~%")
+               (return t))
+              ((eq form skip-marker)
+               nil)
+              ((console-quit-form-p form)
+               (return t))
+              (t
+               (handler-case
+                   (let ((results (multiple-value-list (eval form))))
+                     (setf *** ** ** * * (first results))
+                     (if results
+                         (dolist (r results)
+                           (format t "~&~S~%" r))
+                         (format t "~&; No value~%")))
+                 (error (e)
+                   (format t "~&; Error: ~A~%" e))))))))
+    (shutdown-connection-pool)))
 
 (defparameter +clack-handler-prefix+ "clack-handler-"
   "Prefix shared by every Clack handler backend's ASDF system name.")
