@@ -85,6 +85,7 @@ clails --help
 | `clails generate:controller` | Generate Controller file |
 | `clails generate:scaffold` | Generate Model, View, and Controller together |
 | `clails generate:task` | Generate Task file |
+| `clails generate:job-queue-setup` | Generate the migration for the job queue's `clails_jobs` table |
 
 ### Database
 
@@ -103,6 +104,12 @@ clails --help
 | Command | Description |
 |---------|-------------|
 | `clails task` | Execute custom tasks |
+
+### Job Queue
+
+| Command | Description |
+|---------|-------------|
+| `clails job:work` | Run the background job worker (see [Job Queue Guide](job-queue.md)) |
 
 ### Testing
 
@@ -611,6 +618,31 @@ Example: `app/tasks/maintenance/cleanup.lisp`
                 ))
 ```
 
+### `clails generate:job-queue-setup` - Generate the Job Queue Migration
+
+Generates the migration that creates the `clails_jobs` table used by the
+[background job queue](job-queue.md). This is a one-time setup step, not a
+per-job generator -- run it once per project, then `clails db:migrate`.
+
+#### Syntax
+
+```bash
+clails generate:job-queue-setup
+```
+
+#### Examples
+
+```bash
+clails generate:job-queue-setup
+clails db:migrate
+```
+
+#### Generated File
+
+```
+db/migrate/YYYYMMDDHHMMSS_create-clails-jobs-table.lisp
+```
+
 ### `clails generate:scaffold` - Generate Scaffold
 
 Generates Model, View, Controller, and Migration files together.
@@ -854,7 +886,40 @@ clails task maintenance:cleanup
 
 ---
 
-## 5. Testing Commands
+## 5. Job Queue Commands
+
+### `clails job:work` - Run the Background Job Worker
+
+Polls the `clails_jobs` table (see [`clails generate:job-queue-setup`](#clails-generatejob-queue-setup---generate-the-job-queue-migration)
+and the [Job Queue Guide](job-queue.md)) and executes due jobs, retrying
+failures with exponential backoff up to each job's `max-attempts`. Blocks
+until interrupted (Ctrl-C).
+
+#### Syntax
+
+```bash
+clails job:work [OPTIONS]
+```
+
+#### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--poll-interval SECONDS` | None | Seconds to sleep between polls that found no due job (default: 1) |
+
+#### Examples
+
+```bash
+# Run the worker (default poll interval)
+clails job:work
+
+# Poll less aggressively
+clails job:work --poll-interval 5
+```
+
+---
+
+## 6. Testing Commands
 
 ### `clails test` - Run Tests
 
@@ -904,7 +969,7 @@ clails test todoapp/models/user
 
 ---
 
-## 6. Common Usage Patterns
+## 7. Common Usage Patterns
 
 ### Starting a New Project
 
@@ -1003,7 +1068,7 @@ clails test --tag model --exclude slow
 
 ---
 
-## 7. Command Options
+## 8. Command Options
 
 ### Common Options
 
@@ -1026,7 +1091,7 @@ clails generate:model user --no-overwrite
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### Command Not Found
 
@@ -1080,7 +1145,7 @@ clails server -p 8080
 
 ---
 
-## 9. Advanced Usage
+## 10. Advanced Usage
 
 ### Startup and Shutdown Hooks
 

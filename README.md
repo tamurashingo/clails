@@ -165,6 +165,7 @@ Comprehensive guides for developing with clails:
 - **[Model Guide](document/model.md)** ([日本語](document/model_ja.md)) - Database operations, queries, transactions, and pessimistic locking
 - **[Logging Guide](document/logging.md)** ([日本語](document/logging_ja.md)) - Flexible logging system with hierarchical loggers
 - **[Task Guide](document/task.md)** ([日本語](document/task_ja.md)) - Custom task system with dependency management
+- **[Job Queue Guide](document/job-queue.md)** ([日本語](document/job-queue_ja.md)) - DB-persisted background job queue with retry/backoff
 - **[View Guide](document/view.md)** ([日本語](document/view_ja.md)) - Template engine and rendering (coming soon)
 - **[Controller Guide](document/controller.md)** ([日本語](document/controller_ja.md)) - Request handling and routing (coming soon)
 - **[Session & Authentication Guide](document/session.md)** ([日本語](document/session_ja.md)) - Opt-in cookie sessions and the `current-user` extension point

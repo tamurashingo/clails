@@ -25,6 +25,7 @@ exec ros -Q -- $0 "$@"
   (format t "  generate:controller <name>        Generate controller file~%")
   (format t "  generate:scaffold <name>          Generate scaffold~%")
   (format t "  generate:task <name>              Generate task file~%")
+  (format t "  generate:job-queue-setup          Generate the job queue migration~%")
   (format t "  db:create                         Create database~%")
   (format t "  db:migrate                        Run migrations~%")
   (format t "  db:migrate:up <version>           Migrate up to version~%")
@@ -32,6 +33,7 @@ exec ros -Q -- $0 "$@"
   (format t "  db:rollback                       Rollback migrations~%")
   (format t "  db:status                         Show migration status~%")
   (format t "  task [TASK] [OPTIONS]             Execute custom tasks~%")
+  (format t "  job:work [OPTIONS]                Run the background job worker~%")
   (format t "  test [packages...]                Run tests~%")
   (format t "  routes                            List configured routes~%")
   (format t "  server                            Start web server~%")
@@ -63,6 +65,7 @@ exec ros -Q -- $0 "$@"
   (format t "  generate:controller <name>        Generate controller file~%")
   (format t "  generate:scaffold <name>          Generate model, view, and controller~%")
   (format t "  generate:task <name>              Generate task file~%")
+  (format t "  generate:job-queue-setup          Generate the migration for the clails_jobs table~%")
   (format t "~%")
   (format t "Options:~%")
   (format t "  --no-overwrite            Do not overwrite existing files (not available for migration)~%")
@@ -72,7 +75,8 @@ exec ros -Q -- $0 "$@"
   (format t "Examples:~%")
   (format t "  clails generate:task cleanup~%")
   (format t "  clails generate:task import --namespace data~%")
-  (format t "  clails generate:task cleanup -ns maintenance~%"))
+  (format t "  clails generate:task cleanup -ns maintenance~%")
+  (format t "  clails generate:job-queue-setup    # then: clails db:migrate~%"))
 
 (defun help/db ()
   (format t "Usage: clails db:COMMAND [OPTIONS]~%~%")
@@ -186,6 +190,19 @@ exec ros -Q -- $0 "$@"
   (format t "  clails task --list db                     # List tasks in 'db' namespace~%")
   (format t "  clails task --info maintenance:cleanup    # Show info about db:migrate task~%")
   (format t "  clails task maintenance:cleanup           # Run custom task~%"))
+
+(defun help/job ()
+  (format t "Usage: clails job:work [OPTIONS]~%~%")
+  (format t "Run the background job worker: polls the clails_jobs table (see~%")
+  (format t "'clails generate:job-queue-setup') and executes due jobs defined with~%")
+  (format t "defjob/enqueued with enqueue-job, retrying failed jobs with exponential~%")
+  (format t "backoff up to each job's max-attempts.~%~%")
+  (format t "Options:~%")
+  (format t "  --poll-interval SECONDS   Seconds to sleep between polls that found no due job (default: 1)~%")
+  (format t "  -h, --help                Show this help message~%~%")
+  (format t "Examples:~%")
+  (format t "  clails job:work~%")
+  (format t "  clails job:work --poll-interval 5~%"))
 
 ;; Utility functions
 (defun load-project ()
@@ -426,6 +443,15 @@ exec ros -Q -- $0 "$@"
     (load-project)
     (clails/cmd:generate/migration migration-name)))
 
+(define-command "generate:job-queue-setup" (&key (help :short-option "h"
+                                                        :long-option "help"))
+  (:help-function #'help/generate)
+  (when help
+    (help/generate)
+    (uiop:quit 0))
+  (load-project)
+  (clails/cmd:generate/job-queue-setup))
+
 (define-command "generate:view" (args &key (no-overwrite :long-option "no-overwrite")
                                            (help :short-option "h"
                                                  :long-option "help"))
@@ -643,6 +669,20 @@ exec ros -Q -- $0 "$@"
     (t
      (help/task)
      (uiop:quit 0))))
+
+(define-command "job:work" (&key (poll-interval :long-option "poll-interval"
+                                                :consume t)
+                                 (help :short-option "h"
+                                       :long-option "help"))
+  (:help-function #'help/job)
+  (when help
+    (help/job)
+    (uiop:quit 0))
+  (load-project)
+  (load-db-package)
+  (if poll-interval
+      (clails/cmd:job/work :poll-interval (read-from-string poll-interval))
+      (clails/cmd:job/work)))
 
 
 (defun main (&rest argv)

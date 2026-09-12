@@ -76,6 +76,10 @@
                #:clails-test/task/registry
                #:clails-test/task/runner
                #:clails-test/task/core
+               #:clails-test/job/registry
+               #:clails-test/job/core
+               #:clails-test/job/queue
+               #:clails-test/job/worker
                #:clails-test/project/generate
                #:clails-test/cmd)
   :perform (test-op (o c)
