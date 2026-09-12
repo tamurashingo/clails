@@ -18,6 +18,7 @@
   (:import-from #:clails/logger)
   (:import-from #:clails/datetime)
   (:import-from #:clails/task)
+  (:import-from #:clails/job)
   (:export #:create-project
            #:generate/model
            #:generate/migration

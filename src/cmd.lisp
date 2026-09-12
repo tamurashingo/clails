@@ -9,6 +9,7 @@
   (:import-from #:clails/project/generate
                 #:gen/model
                 #:gen/migration
+                #:gen/job-queue-migration
                 #:gen/view
                 #:gen/controller
                 #:gen/scaffold
@@ -46,9 +47,12 @@
   (:import-from #:clails/task
                 #:initialize-task-system
                 #:run-task)
+  (:import-from #:clails/job
+                #:run-worker-loop)
   (:export #:create-project
            #:generate/model
            #:generate/migration
+           #:generate/job-queue-setup
            #:generate/view
            #:generate/controller
            #:generate/scaffold
@@ -66,7 +70,8 @@
            #:test
            #:task/run
            #:task/list
-           #:task/info))
+           #:task/info
+           #:job/work))
 (in-package #:clails/cmd)
 
 (defparameter *app* nil
@@ -134,6 +139,15 @@
    @return [t] Generation result
    "
   (gen/migration migration-name))
+
+(defun generate/job-queue-setup ()
+  "Generate the migration that creates the clails_jobs table used by the
+   background job queue (clails/job:enqueue-job). Run 'clails db:migrate'
+   afterwards to apply it. See document/job-queue.md.
+
+   @return [t] Generation result
+   "
+  (gen/job-queue-migration))
 
 (defun generate/view (view-name &key (no-overwrite T))
   "Generate a view template file.
@@ -528,3 +542,23 @@
           (progn
             (format *error-output* "Error: Task not found: ~A~%" task-name-str)
             (uiop:quit 1))))))
+
+(defun job/work (&key (poll-interval 1) max-iterations)
+  "Run the background job worker, claiming and executing due jobs from the
+   clails_jobs table (see clails/job:enqueue-job) until stopped.
+
+   Requires the clails_jobs table to already exist -- see
+   'clails generate:job-queue-setup' and document/job-queue.md. Blocks until
+   interrupted (Ctrl-C) unless max-iterations is given.
+
+   @param poll-interval [number] Seconds to sleep between polls that found no
+                                 due job (default: 1)
+   @param max-iterations [integer or nil] Stop after this many poll
+                                          iterations (nil = run forever)
+   @return [nil]
+   "
+  (startup-connection-pool)
+  (initialize-table-information)
+  (unwind-protect
+      (run-worker-loop :poll-interval poll-interval :max-iterations max-iterations)
+    (shutdown-connection-pool)))

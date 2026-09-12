@@ -6,6 +6,7 @@
                 #:*project-dir*)
   (:export #:gen/model
            #:gen/migration
+           #:gen/job-queue-migration
            #:gen/view
            #:gen/controller
            #:gen/scaffold
@@ -218,6 +219,25 @@
   (let* ((unique-name (gen-unique-name migration-name))
          (filename (format nil "~A.lisp" unique-name)))
     (gen/template unique-name filename "/db/migrate/" "template/generate/migration.lisp.tmpl" overwrite)))
+
+(defun gen/job-queue-migration (&key (overwrite T))
+  "Generate the framework-provided migration that creates the clails_jobs
+   table backing the DB-persisted job queue (see clails/job:enqueue-job and
+   document/job-queue.md).
+
+   Generates a migration file the same way 'clails generate:migration' does
+   (unique timestamp prefix, under db/migrate/), just pre-filled with the
+   clails_jobs table definition instead of an empty skeleton, so the table
+   is created and rolled back through the normal db:migrate/db:rollback
+   flow like any other migration.
+
+   @param overwrite [boolean] Whether to overwrite existing file
+   @return [t]
+   "
+  (let* ((migration-name "create-clails-jobs-table")
+         (unique-name (gen-unique-name migration-name))
+         (filename (format nil "~A.lisp" unique-name)))
+    (gen/template unique-name filename "/db/migrate/" "template/generate/job-queue-migration.lisp.tmpl" overwrite)))
 
 
 ;; ----------------------------------------
