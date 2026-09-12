@@ -5,7 +5,8 @@
                 #:flatten)
   (:import-from #:clails/environment
                 #:*project-name*
-                #:*project-dir*)
+                #:*project-dir*
+                #:*routing-tables*)
   (:import-from #:clails/project/generate
                 #:gen/model
                 #:gen/migration
@@ -61,6 +62,7 @@
            #:db/seed
            #:db/status
            #:console
+           #:routes
            #:server
            #:stop
            #:test
@@ -332,6 +334,31 @@
                  (error (e)
                    (format t "~&; Error: ~A~%" e))))))))
     (shutdown-connection-pool)))
+
+(defun routes ()
+  "Display the configured routing table.
+
+   Walks *routing-tables* (as configured in app/config/environment.lisp)
+   and prints each route's path pattern and controller class, along with
+   any custom :scanner/:keys entries when present. Prints the raw,
+   pre-compile route entries rather than the compiled regex scanners
+   built by initialize-routing-tables, since the source :path pattern is
+   more human-readable than a compiled scanner object and this command
+   does not require the server to have been started.
+
+   @return [t] Always returns t
+   "
+  (format t "~A~40T~A~%" "PATH" "CONTROLLER")
+  (format t "~A~%" (make-string 78 :initial-element #\-))
+  (dolist (route *routing-tables*)
+    (format t "~A~40T~A~%"
+            (getf route :path)
+            (getf route :controller))
+    (when (getf route :scanner)
+      (format t "  scanner: ~A~%" (getf route :scanner)))
+    (when (getf route :keys)
+      (format t "  keys: ~A~%" (getf route :keys))))
+  t)
 
 (defparameter +clack-handler-prefix+ "clack-handler-"
   "Prefix shared by every Clack handler backend's ASDF system name.")

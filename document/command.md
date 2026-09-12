@@ -70,6 +70,7 @@ clails --help
 | Command | Description |
 |---------|-------------|
 | `clails new` | Create a new project |
+| `clails routes` | List configured routes |
 | `clails server` | Start web server |
 | `clails stop` | Stop web server |
 | `clails console` | Start an interactive console (REPL) |
@@ -166,6 +167,30 @@ myapp/
 ```
 
 `clails.boot` is generated once from clails' own template at `clails new` time and records the clails framework version used to generate it. It is not automatically updated when you upgrade the clails framework. Each time it runs, it compares the recorded version against the currently installed clails version and prints a non-fatal warning to stderr if they differ, so you know the boot sequence may be out of date. If you see this warning, compare your project's `clails.boot` against `template/project/clails.boot.tmpl` in the installed clails source to see what changed.
+
+### `clails routes` - List Configured Routes
+
+Prints the routing table configured in `app/config/environment.lisp` (the `*routing-tables*` list), showing each route's path pattern, controller, and any custom `:scanner`/`:keys` entries.
+
+#### Syntax
+
+```bash
+clails routes
+```
+
+#### Examples
+
+```bash
+clails routes
+# => PATH                                    CONTROLLER
+# => ------------------------------------------------------------------------------
+# => /                                       myapp/controllers/application-controller:<application-controller>
+# => /users/:id                              myapp/controllers/users-controller:<users-controller>
+```
+
+#### Notes
+
+This command prints the raw route entries exactly as configured (before `initialize-routing-tables` compiles them into regex scanners at server startup). The source `:path` pattern is more readable than a compiled scanner object, and printing the raw entries means this command works without starting the server.
 
 ### `clails server` - Start Web Server
 
