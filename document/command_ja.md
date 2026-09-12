@@ -72,6 +72,7 @@ clails --help
 | `clails new` | 新しいプロジェクトを作成 |
 | `clails server` | Web サーバーを起動 |
 | `clails stop` | Web サーバーを停止 |
+| `clails console` | インタラクティブコンソール（REPL）を起動 |
 
 ### コード生成
 
@@ -239,6 +240,65 @@ clails stop
 ```bash
 clails stop
 ```
+
+### `clails console` - インタラクティブコンソールを起動
+
+プロジェクトの環境（設定、DB 接続、Model）を `server`/`db:*`/`test` と同じ
+`load-project` 初期化パスで読み込んだ後、`rails console` と同様にインタラク
+ティブな Lisp REPL を起動します。
+
+#### 書式
+
+```bash
+clails console
+```
+
+#### オプション
+
+| オプション | 短縮形 | 説明 |
+|-----------|-------|------|
+| `--help` | `-h` | このヘルプメッセージを表示 |
+
+#### REPL で使えるもの
+
+- REPL はプロジェクトの `<project>-DB` パッケージ上で動作します。これは
+  `db/seeds.lisp` や Migration ファイルが実行されるのと同じパッケージで、
+  すでに `clails/model` を `:use` しており、`app/models/package.lisp` に
+  登録済みの Model パッケージもすべて import 済みです。そのため、
+  `db/seeds.lisp` と同じ書き方で登録済みの Model を参照できます。
+
+  ```common-lisp
+  todoapp-DB> (save (make-record 'todoapp/models/user:<user> :name "alice" :email "alice@example.com"))
+  todoapp-DB> (execute-query (query todoapp/models/user:<user> :as :user) nil)
+  ```
+
+- REPL を開始する前に DB コネクションプールが起動され、終了時に自動的に
+  シャットダウンされるため、実行中のサーバーと同じように Model の
+  検索・保存が行えます。
+- `*`、`**`、`***` という、直前の実行結果を参照する標準的な REPL の
+  履歴変数も利用できます。
+
+#### 使用例
+
+```bash
+# インタラクティブコンソールを起動
+clails console
+
+# コンソールを終了する
+todoapp-DB> (quit)
+todoapp-DB> (exit)
+# または Ctrl-D を押す
+```
+
+#### 動作
+
+1. `load-project`（設定、DB 設定）と `load-db-package`（`<project>-DB`
+   パッケージ）でプロジェクトの環境を読み込む（`db:*` 系コマンドと同様）
+2. DB コネクションプールを起動し、テーブルのメタ情報を読み込む
+3. 標準入力から Lisp の式を読み取り、評価し、結果を表示するループを、
+   `(quit)`、`(exit)`、`:quit`、`:exit`、または入力終了（Ctrl-D）まで
+   繰り返す
+4. 終了時に DB コネクションプールをシャットダウンする
 
 ---
 
