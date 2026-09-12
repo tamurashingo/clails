@@ -24,6 +24,7 @@ This guide explains environment variables and global variables available to appl
 5. [Configuration File Examples](#5-configuration-file-examples)
 6. [Best Practices](#6-best-practices)
 7. [Troubleshooting](#7-troubleshooting)
+8. [Contributing: Adding New Configuration Variables](#8-contributing-adding-new-configuration-variables)
 
 ---
 
@@ -1043,3 +1044,42 @@ clails environment configuration has the following features:
 4. **Lifecycle Management**: Initialization and cleanup via startup/shutdown hooks
 
 Proper environment variable configuration enables building secure and maintainable applications.
+
+---
+
+## 8. Contributing: Adding New Configuration Variables
+
+If you are adding a new global variable to `src/environment.lisp` (or any other variable that a
+project's `app/config/*.lisp` files are expected to set or override), always define it with
+`defvar`, **never** with `defparameter`.
+
+### Why this matters
+
+`defparameter` unconditionally re-initializes the variable's value every time the containing
+file is loaded, while `defvar` only sets the initial value if the variable is not already bound.
+In a typical development workflow the application is started with the Swank server
+(`--swank`) attached, and source files are reloaded from the REPL as you iterate. If a
+configuration variable were defined with `defparameter`, every reload of `environment.lisp`
+would silently reset it to its hard-coded default, discarding whatever value the project's
+`app/config/database.lisp` or `app/config/environment.lisp` had set (for example
+`*database-config*` or `*project-name*`). This exact bug happened in practice and was fixed by
+switching the affected variable to `defvar`.
+
+### Rule of thumb
+
+- **Use `defvar`** for anything that a project's `app/config/*.lisp` files are expected to read,
+  set, or override at startup (e.g. `*project-name*`, `*database-config*`, `*routing-tables*`,
+  `*default-lock-mode*`). These represent user-facing configuration and must survive file
+  reloads.
+- **`defparameter` is still appropriate** for values that are genuinely internal and are never
+  meant to be configured by a project — for example fixed constant tables (`+ENVIRONMENT-NAMES+`),
+  internal caches that are safe (or even desirable) to reset on reload, or closures/data that are
+  fully reconstructed from source and never touched by `app/config/*.lisp`.
+- When in doubt, ask: "could a project's config file have already set this before the defining
+  file gets reloaded?" If yes, use `defvar`.
+
+This convention was adopted after an audit for [issue #156](https://github.com/tamurashingo/clails/issues/156)
+confirmed all current variables in `src/environment.lisp` already follow it. As a possible
+future improvement, introducing an explicit configuration-context object for major subsystems
+(instead of relying on special variables at all) has been suggested, but is out of scope for
+this guideline.
