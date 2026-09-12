@@ -29,6 +29,7 @@
                #:clails-test/model/optimistic-lock
                #:clails-test/model/default-value
                #:clails-test/model/migration
+               #:clails-test/model/migration-filename-validation
                #:clails-test/model/transaction
                #:clails-test/model/transaction/transaction-sqlite3
                #:clails-test/model/transaction/transaction-mysql

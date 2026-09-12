@@ -34,6 +34,7 @@
            #:migrate-down-version
            #:db-rollback
            #:check-type-valid
+           #:valid-migration-filename-p
            #:db-seed))
 (in-package #:clails/model/migration)
 
@@ -266,9 +267,31 @@
   (with-db-connection-direct (connection)
     (ensure-migration-table-impl *database-type* connection)))
 
+(defparameter *migration-filename-scanner*
+  (cl-ppcre:create-scanner "^\\d{8}-?\\d{6}[-_].+\\.lisp$")
+  "Scanner for the expected migration filename convention: an 8-digit date,
+   optionally followed by a hyphen, then a 6-digit time, a separator
+   (- or _), and a name, e.g. \"20250612-093015-create-users-table.lisp\"
+   or \"20250612093015_create-users-table.lisp\".")
+
+(defun valid-migration-filename-p (filename)
+  "Check whether FILENAME follows the expected timestamp-prefixed migration
+   filename convention.
+
+   @param filename [string] Basename to check, e.g. \"20250612-093015-create-users-table.lisp\"
+   @return [boolean] T if filename matches the expected pattern, NIL otherwise
+   "
+  (not (null (cl-ppcre:scan *migration-filename-scanner* filename))))
+
 (defun load-migration-files ()
   (let ((files (directory (format NIL "~A/db/migrate/**/*.lisp" *migration-base-dir*))))
     (dolist (file files)
+      (let ((filename (file-namestring file)))
+        (unless (valid-migration-filename-p filename)
+          (format t "WARNING: migration file ~A does not match the expected naming convention.~%" filename)
+          (format t "         Expected a timestamp prefix, e.g. 20250612-093015-description.lisp~%")
+          (format t "         or 20250612093015_description.lisp.~%")
+          (format t "         Loading it anyway, but its position in migration load order is not guaranteed.~%")))
       (format t "loading migration file: ~A" file)
       (load file)
       (format t " ... done~%"))))

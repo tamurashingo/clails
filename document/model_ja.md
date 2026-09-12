@@ -27,6 +27,14 @@ YYYYmmdd-HHMMSS-description.lisp
 
 例: `20240101-120000-create-users-table.lisp`
 
+Migration ファイルはファイル名順にロードされるため、タイムスタンプ部分が
+Migration の適用順序を決定します。`db:migrate` 実行時、`db/migrate/` 配下の
+各ファイル名は期待されるタイムスタンプ形式(8桁の日付と6桁の時刻を `-` または
+`_` で区切り、その後に名前が続く形式。例: `20240101-120000-create-users-table.lisp`
+や `20240101120000_create-users-table.lisp`)と照合されます。一致しないファイルは
+ファイル名と期待される形式を示す警告が表示されますが、そのままロードは続行され
+ます。ただし、他の Migration との読み込み順序は保証されません。
+
 ### テーブル作成
 
 ```common-lisp
