@@ -24,6 +24,7 @@
                #:clails-test/controller/base-controller
                #:clails-test/helper/date-helper
                #:clails-test/model/join-query
+               #:clails-test/model/eager-loading
                #:clails-test/model/save
                #:clails-test/model/optimistic-lock
                #:clails-test/model/default-value

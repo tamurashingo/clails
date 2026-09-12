@@ -23,6 +23,8 @@
                 #:<query-placeholder>
                 #:ensure-initialized
                 #:generate-query
+                #:query-builder
+                #:set-where
                 #:relation
                 #:through)
   (:import-from #:clails/util
@@ -78,7 +80,7 @@
                     (dbi-cp:execute
                      (dbi-cp:prepare connection sql)
                      params))))
-      (build-model-instances query result))))
+      (apply-includes query (build-model-instances query result)))))
 
 (defmethod execute-query ((placeholder <query-placeholder>) named-values &key connection (convert-types t))
   "Execute the query via placeholder delegation.
@@ -628,6 +630,108 @@
     (let ((final-results (loop for inst being the hash-value of main-instances collect inst)))
       ;; Post-process to ensure has-many slots are initialized
       (finalize-has-many-relations final-results))))
+
+
+;;;; ----------------------------------------
+;;;; eager loading (N+1 prevention)
+;;;;
+;;;; :includes names one or more relation aliases (declared via :has-many /
+;;;; :belongs-to on the query's model) to load in batch. Unlike :joins, the
+;;;; related rows are not part of the primary SELECT: after the primary query
+;;;; produces its main-instances, we issue exactly ONE additional query PER
+;;;; named relation -- e.g. "WHERE company_id IN (<all loaded company ids>)"
+;;;; -- instead of one query per parent record. Results are then attached to
+;;;; each instance through the *existing* ref/(setf ref) relation storage
+;;;; (the same hash-table already used to hold JOIN-populated relation data),
+;;;; so no new per-instance bookkeeping mechanism is needed and relation
+;;;; accessors (`ref`) need no changes at all: they already just return
+;;;; whatever has been stored for that relation key.
+
+(defun apply-includes (query main-instances)
+  "Eagerly load the relations named in QUERY's :includes clause.
+
+   For each relation alias, issues one additional batched query (regardless
+   of how many MAIN-INSTANCES there are) and attaches the results to each
+   instance via (setf ref). A no-op when :includes is empty or there are no
+   MAIN-INSTANCES to load relations for.
+
+   @param query [<query>] Query specification (may declare :includes)
+   @param main-instances [list] List of model instances from the primary query
+   @return [list] The same MAIN-INSTANCES list, with included relations populated
+   @condition error Signaled when an :includes entry is not a declared relation
+   "
+  (let ((includes (slot-value query 'clails/model/query::includes)))
+    (when (and includes main-instances)
+      (let* ((base-model (slot-value query 'clails/model/query::model))
+             (relations (getf (gethash base-model clails/model/base-model::*table-information*) :relations)))
+        (dolist (relation-alias includes)
+          (let ((rel-info (and relations (gethash relation-alias relations))))
+            (unless rel-info
+              (error "Relation `~A` not found for model `~A' (used in :includes)~A"
+                     relation-alias base-model (clails/model/query::format-query-source-info query)))
+            (ecase (getf rel-info :type)
+              (:has-many (apply-include-has-many rel-info relation-alias main-instances))
+              (:belongs-to (apply-include-belongs-to rel-info relation-alias main-instances))))))))
+  main-instances)
+
+(defun apply-include-has-many (rel-info relation-alias main-instances)
+  "Eagerly load a :has-many relation for a batch of parent instances.
+
+   Collects the ids of all MAIN-INSTANCES and issues ONE query selecting every
+   child row whose foreign key matches any of them
+   (WHERE <foreign-key> IN (id1, id2, ...)), then groups the children by
+   foreign key value and assigns each parent's relation list -- instead of
+   one query per parent. Parents with no matching children get NIL, exactly
+   as an unpopulated :has-many relation already reads via `ref`
+   (see finalize-has-many-relations).
+
+   @param rel-info [plist] Relation metadata for a :has-many relation (:model :foreign-key ...)
+   @param relation-alias [keyword] Relation alias on the parent model (e.g. :departments)
+   @param main-instances [list] List of parent model instances already loaded by the primary query
+   "
+  (let* ((target-model (getf rel-info :model))
+         (foreign-key (getf rel-info :foreign-key))
+         (parent-ids (remove-duplicates (mapcar #'(lambda (i) (ref i :id)) main-instances))))
+    (when parent-ids
+      (let* ((q (query-builder target-model :as relation-alias))
+             (children (progn
+                         (set-where q (list :in (list relation-alias foreign-key) :ids))
+                         (execute-query q (list :ids parent-ids))))
+             (groups (make-hash-table :test #'eql)))
+        (dolist (child children)
+          (push child (gethash (ref child foreign-key) groups)))
+        (dolist (parent main-instances)
+          (setf (ref parent relation-alias)
+                (nreverse (gethash (ref parent :id) groups))))))))
+
+(defun apply-include-belongs-to (rel-info relation-alias main-instances)
+  "Eagerly load a :belongs-to relation for a batch of child instances.
+
+   Collects the distinct foreign key values held by all MAIN-INSTANCES and
+   issues ONE query selecting every parent row whose id matches any of them
+   (WHERE id IN (fk1, fk2, ...)), then assigns each child's relation to the
+   matching parent instance -- instead of one query per child. Children whose
+   foreign key is NULL, or that have no matching parent, get NIL.
+
+   @param rel-info [plist] Relation metadata for a :belongs-to relation (:model :key ...)
+   @param relation-alias [keyword] Relation alias on the child model (e.g. :company)
+   @param main-instances [list] List of child model instances already loaded by the primary query
+   "
+  (let* ((target-model (getf rel-info :model))
+         (foreign-key (getf rel-info :key))
+         (fk-values (remove-duplicates
+                     (remove nil (mapcar #'(lambda (i) (ref i foreign-key)) main-instances)))))
+    (when fk-values
+      (let* ((q (query-builder target-model :as relation-alias))
+             (parents (progn
+                        (set-where q (list :in (list relation-alias :id) :ids))
+                        (execute-query q (list :ids fk-values))))
+             (by-id (make-hash-table :test #'eql)))
+        (dolist (parent parents)
+          (setf (gethash (ref parent :id) by-id) parent))
+        (dolist (child main-instances)
+          (setf (ref child relation-alias)
+                (gethash (ref child foreign-key) by-id)))))))
 
 
 ;;;; ----------------------------------------

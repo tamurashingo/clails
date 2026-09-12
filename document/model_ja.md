@@ -239,6 +239,65 @@ YYYYmmdd-HHMMSS-description.lisp
 - `:column` - 親にアクセスするためのエイリアス（キーワード）
 - `:key` - 自テーブルが持つ外部キー（キーワード）
 
+### Eager Loading（N+1問題の回避）
+
+`ref` でリレーションにアクセスしたとき返ってくるのは、`:joins` または `:includes`（後述）で
+あらかじめ読み込んでおいたデータだけです。どちらも使わずに、親レコードごとに子レコードを
+1件ずつ手動で問い合わせると、いわゆる N+1 問題が発生します。
+
+```common-lisp
+;; N+1問題: company を取得するクエリが1回 + company の数だけ department を取得するクエリ
+(defvar *companies* (execute-query (query <company> :as :company) '()))
+
+(dolist (company *companies*)
+  (let ((departments (execute-query
+                        (query <department>
+                               :as :department
+                               :where (:= (:department :company-id) :company-id))
+                        (list :company-id (ref company :id)))))
+    (format t "~A has ~A departments~%" (ref company :name) (length departments))))
+```
+
+クエリに `:includes` を追加すると、この問題を解消できます。メインのクエリを実行した後、
+指定したリレーションごとに追加のクエリを「1回だけ」まとめて発行し（例えば読み込んだ全ての
+company の id をまとめた `WHERE company_id IN (...)`）、レコード1件ごとにクエリを発行する
+代わりに済ませます。結果は `:joins` のときと同じ方法で各インスタンスに格納されるため、
+`ref` はそのまま値を返し、追加のクエリは発生しません。
+
+```common-lisp
+;; company が何件あっても、クエリは合計2回だけ:
+;; company を取得するクエリ1回 + すべての department をまとめて取得するクエリ1回
+(defvar *companies* (execute-query
+                      (query <company> :as :company :includes (:departments))
+                      '()))
+
+(dolist (company *companies*)
+  (format t "~A has ~A departments~%" (ref company :name) (length (ref company :departments))))
+```
+
+`:includes` は `:belongs-to` にも使えますし、複数のリレーションを指定することもできます
+（それぞれについて1回ずつクエリがまとめられます）。
+
+```common-lisp
+;; クエリ2回: department を取得するクエリ1回 + それらの company をまとめて取得するクエリ1回
+(execute-query (query <department> :as :department :includes (:company)) '())
+
+;; クエリ3回: company 1回 + department 1回 + office 1回
+(execute-query (query <company> :as :company :includes (:departments :offices)) '())
+```
+
+補足:
+
+- `:includes` は、問い合わせているモデルに直接定義されたリレーションのみを読み込みます
+  （1階層のみ）。リレーションのさらに先（例: department の employees）を同じ呼び出しで
+  まとめて読み込むことはまだサポートしていません。その階層が必要な場合は、その階層に対して
+  改めて `:includes` を使ったクエリを実行するか、同じ結果セットに含めたい場合は `:joins` を
+  使ってください。
+- `:joins` と異なり、include したリレーションはメインの `SELECT` には含まれず、親の行が
+  重複することもありません。そのため、メインクエリの `:limit`/`:offset` と問題なく組み合わ
+  せられます。
+- `query-builder` を使った動的なクエリ構築でも、`set-includes` で同じことができます。
+
 ---
 
 ## 4. データの作成 (make-record)

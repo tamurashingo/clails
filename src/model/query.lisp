@@ -41,6 +41,7 @@
            #:set-order-by
            #:set-limit
            #:set-offset
+           #:set-includes
            #:generate-query
            #:generate-values))
 (in-package #:clails/model/query)
@@ -84,6 +85,14 @@
     (lock-clause :initarg :lock-clause
                  :initform nil
                  :documentation "Lock clause for pessimistic locking")
+   (includes :initarg :includes
+             :initform nil
+             :documentation "List of relation alias keywords to eagerly load in a single
+                             batched query per relation (N+1 prevention), instead of one
+                             query per record. Unlike :joins, an included relation is not
+                             part of the primary SELECT -- it is loaded via additional
+                             queries after the primary query executes. See
+                             clails/model/query/crud:execute-query.")
    (inst :type <base-model>
          :documentation "Model instance")
    (alias->model :initform (make-hash-table)
@@ -158,6 +167,9 @@
    (offset :initarg :offset
            :initform nil
            :documentation "OFFSET value")
+   (includes :initarg :includes
+             :initform nil
+             :documentation "List of relation alias keywords to eagerly load. See <query>.")
    (actual-query :initform nil
                  :accessor actual-query
                  :documentation "Actual <query> instance after initialization")
@@ -185,11 +197,11 @@
 ;;;; ========================================
 ;;;; export macro
 
-(defmacro query (model &key as columns joins where order-by limit offset)
+(defmacro query (model &key as columns joins where order-by limit offset includes)
   "Create a query builder instance for the specified model.
 
    Provides a DSL for constructing SQL queries with support for joins,
-   where clauses, ordering, and pagination.
+   where clauses, ordering, pagination, and eager-loading of relations.
 
    @param model [symbol] Model class name (e.g., <blog>)
    @param as [keyword] Required alias for the model (e.g., :blog)
@@ -199,6 +211,12 @@
    @param order-by [list] ORDER BY specifications
    @param limit [integer] LIMIT value
    @param offset [integer] OFFSET value
+   @param includes [list] List of relation alias keywords (:has-many/:belongs-to, as declared
+                          in the model's :relations) to eagerly load. After the primary query
+                          executes, ONE additional batched query is issued per named relation
+                          (e.g. WHERE company_id IN (...)) instead of one query per record --
+                          see clails/model/query/crud:execute-query. Only relations declared
+                          directly on `model` are supported (one level, not nested).
    @return [<query>] Query builder instance
    @return [<query-placeholder>] Query placeholder instance (if table information not initialized)
    @condition error Signaled when :as is missing or not a keyword
@@ -209,6 +227,11 @@
      :columns ((blog :id :title))
      :joins ((:inner-join :account))
      :where (:> (:blog :star) 0))
+
+   Example (eager-loading to avoid N+1):
+   (query <company>
+     :as :company
+     :includes (:departments))
    "
   (unless as
     (error ":as keyword is required for query macro."))
@@ -244,7 +267,8 @@
                    :where where
                    :order-by order-by
                    :limit limit
-                   :offset offset)))
+                   :offset offset
+                   :includes includes)))
     `(if clails/environment:*table-information-initialized*
          ;; Table information initialized: create actual query instance
          (let ((q (make-instance '<query>
@@ -255,7 +279,8 @@
                                  :where ',where
                                  :order-by ',order-by
                                  :limit ',limit
-                                 :offset ',offset)))
+                                 :offset ',offset
+                                 :includes ',includes)))
            (setf (slot-value q 'query-source-info) ',(make-source-info))
            q)
          ;; Not initialized: create placeholder and register callback
@@ -267,7 +292,8 @@
                                            :where ',where
                                            :order-by ',order-by
                                            :limit ',limit
-                                           :offset ',offset)))
+                                           :offset ',offset
+                                           :includes ',includes)))
            (setf (slot-value placeholder 'query-source-info) ',(make-source-info))
            (push (lambda ()
                    (let ((q (make-instance '<query>
@@ -278,7 +304,8 @@
                                            :where ',where
                                            :order-by ',order-by
                                            :limit ',limit
-                                           :offset ',offset)))
+                                           :offset ',offset
+                                           :includes ',includes)))
                      (setf (slot-value q 'query-source-info) ',(make-source-info))
                      (setf (actual-query placeholder) q)))
                  clails/environment:*query-initialization-callbacks*)
@@ -490,6 +517,39 @@
   (set-offset (ensure-initialized placeholder) offset))
 
 
+(defgeneric set-includes (query includes)
+  (:documentation "Set the list of relations to eagerly load in the query."))
+
+(defmethod set-includes ((query <query>) includes)
+  "Set the relations to eagerly load (N+1 prevention) in the query.
+
+   Replaces any previously set includes. Each entry must be a relation alias
+   keyword declared on the query's model via :has-many/:belongs-to. After the
+   primary query executes, ONE additional batched query is issued per named
+   relation instead of one query per record -- see
+   clails/model/query/crud:execute-query.
+
+   @param query [<query>] Query builder instance
+   @param includes [list] List of relation alias keywords (e.g., '(:departments))
+   @return [<query>] The query instance (for method chaining)
+
+   Example:
+   (set-includes q '(:departments))
+   "
+  (setf (slot-value query 'includes) includes)
+  query)
+
+(defmethod set-includes ((placeholder <query-placeholder>) includes)
+  "Set the relations to eagerly load via placeholder delegation.
+
+   @param placeholder [<query-placeholder>] Query placeholder instance
+   @param includes [list] List of relation alias keywords
+   @return [<query>] The actual query instance (for method chaining)
+   @condition error Signaled when placeholder has not been initialized
+   "
+  (set-includes (ensure-initialized placeholder) includes))
+
+
 ;;;; ========================================
 ;;;; internals
 
@@ -587,6 +647,8 @@
             (format s "~%    :limit ~S" (getf source-info :limit)))
           (when (getf source-info :offset)
             (format s "~%    :offset ~S" (getf source-info :offset)))
+          (when (getf source-info :includes)
+            (format s "~%    :includes ~S" (getf source-info :includes)))
           (format s ")"))
         "")))
 
