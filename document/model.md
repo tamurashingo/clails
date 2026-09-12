@@ -248,6 +248,64 @@ overwritten (`generate:model` has no safe "register an existing file" mode).
 - `:column` - Alias for accessing the parent (keyword)
 - `:key` - Foreign key held by this table (keyword)
 
+### Eager Loading (Avoiding N+1 Queries)
+
+Accessing a relation via `ref` only returns data that has already been loaded onto
+the instance -- either by `:joins` or by `:includes` (below). Without either, if you
+manually query the children of each parent one by one, you end up with an N+1 query
+pattern:
+
+```common-lisp
+;; N+1: 1 query for companies, then 1 more query PER company
+(defvar *companies* (execute-query (query <company> :as :company) '()))
+
+(dolist (company *companies*)
+  (let ((departments (execute-query
+                        (query <department>
+                               :as :department
+                               :where (:= (:department :company-id) :company-id))
+                        (list :company-id (ref company :id)))))
+    (format t "~A has ~A departments~%" (ref company :name) (length departments))))
+```
+
+Add `:includes` to the query to fix this. After the primary query runs, clails issues
+exactly ONE additional batched query per named relation (e.g. `WHERE company_id IN
+(...)` covering every loaded company id) instead of one query per record, and stores
+the result on each instance the same way `:joins` does -- so `ref` returns it directly,
+with no further queries:
+
+```common-lisp
+;; 2 queries total, no matter how many companies there are:
+;; 1 for companies, 1 for ALL of their departments
+(defvar *companies* (execute-query
+                      (query <company> :as :company :includes (:departments))
+                      '()))
+
+(dolist (company *companies*)
+  (format t "~A has ~A departments~%" (ref company :name) (length (ref company :departments))))
+```
+
+`:includes` also works for `:belongs-to`, and accepts more than one relation (each
+gets its own batched query):
+
+```common-lisp
+;; 2 queries: 1 for departments, 1 for ALL of their companies
+(execute-query (query <department> :as :department :includes (:company)) '())
+
+;; 3 queries: 1 for companies, 1 for departments, 1 for offices
+(execute-query (query <company> :as :company :includes (:departments :offices)) '())
+```
+
+Notes:
+
+- `:includes` only loads relations declared directly on the queried model (one level).
+  Loading a relation-of-a-relation (e.g. departments' employees) in the same call is
+  not supported yet -- run a second `:includes` query for that level, or `:joins` if you
+  need it in the same result set.
+- Unlike `:joins`, an included relation is not part of the primary `SELECT` and does not
+  duplicate parent rows, so it composes cleanly with `:limit`/`:offset` on the primary query.
+- `query-builder` supports the same thing dynamically via `set-includes`.
+
 ---
 
 ## 4. Creating Data (make-record)
