@@ -70,6 +70,7 @@ clails --help
 | コマンド | 説明 |
 |---------|------|
 | `clails new` | 新しいプロジェクトを作成 |
+| `clails routes` | 設定されているルーティングを一覧表示 |
 | `clails server` | Web サーバーを起動 |
 | `clails stop` | Web サーバーを停止 |
 
@@ -237,6 +238,30 @@ clails stop
 ```bash
 clails stop
 ```
+
+### `clails routes` - 設定されているルーティングを一覧表示
+
+`app/config/environment.lisp` で設定されているルーティングテーブル（`*routing-tables*`）の内容を表示します。各ルートのパスパターン、コントローラ、および設定されていればカスタムの `:scanner`/`:keys` も表示します。
+
+#### 書式
+
+```bash
+clails routes
+```
+
+#### 使用例
+
+```bash
+clails routes
+# => PATH                                    CONTROLLER
+# => ------------------------------------------------------------------------------
+# => /                                       myapp/controllers/application-controller:<application-controller>
+# => /users/:id                              myapp/controllers/users-controller:<users-controller>
+```
+
+#### 補足
+
+このコマンドは、`initialize-routing-tables` によってサーバー起動時に正規表現スキャナへコンパイルされる前の、設定ファイルそのままのルートエントリを表示します。コンパイル済みのスキャナオブジェクトよりも元の `:path` パターンの方が人間にとって読みやすく、また生のエントリを表示することでサーバーを起動しなくてもこのコマンドを実行できます。
 
 ---
 

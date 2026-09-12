@@ -33,6 +33,7 @@ exec ros -Q -- $0 "$@"
   (format t "  db:status                         Show migration status~%")
   (format t "  task [TASK] [OPTIONS]             Execute custom tasks~%")
   (format t "  test [packages...]                Run tests~%")
+  (format t "  routes                            List configured routes~%")
   (format t "  server                            Start web server~%")
   (format t "  stop                              Stop web server~%")
   (format t "~%")
@@ -122,6 +123,15 @@ exec ros -Q -- $0 "$@"
   (format t "  clails test --exclude slow                  Exclude slow tests~%")
   (format t "  clails test --list-tags                     List all available tags~%")
   (format t "  clails test todoapp/models/user             Test specific package~%"))
+
+(defun help/routes ()
+  (format t "Usage: clails routes~%~%")
+  (format t "List the configured routes (path -> controller).~%~%")
+  (format t "Options:~%")
+  (format t "  -h, --help                Show this help message~%")
+  (format t "~%")
+  (format t "Examples:~%")
+  (format t "  clails routes~%"))
 
 (defun help/server ()
   (format t "Usage: clails server [OPTIONS]~%~%")
@@ -515,6 +525,15 @@ exec ros -Q -- $0 "$@"
       (if test-result
           (uiop:quit 0)
           (uiop:quit 1)))))
+
+(define-command "routes" (&key (help :short-option "h"
+                                     :long-option "help"))
+  (:help-function #'help/routes)
+  (when help
+    (help/routes)
+    (uiop:quit 0))
+  (load-project)
+  (clails/cmd:routes))
 
 (define-command "server" (&key (port :default "5000"
                                      :short-option "p"
