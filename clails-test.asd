@@ -10,6 +10,7 @@
                #:clails
                #:rove
                #:clails-test/util
+               #:clails-test/environment
                #:clails-test/model/impl/sqlite3
                #:clails-test/model/impl/mysql
                #:clails-test/model/impl/postgresql
