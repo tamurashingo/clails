@@ -12,8 +12,9 @@
                 #:set-order-by
                 #:set-limit
                 #:set-offset
-                #:execute-query
                 #:generate-query)
+  (:import-from #:clails/model/query/crud
+                #:execute-query)
   (:import-from #:clails/model/connection
                 #:startup-connection-pool
                 #:shutdown-connection-pool

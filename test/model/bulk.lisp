@@ -8,7 +8,7 @@
                 #:format-sql-with-params
                 #:escape-sql-string
                 #:show-query-sql)
-  (:import-from #:clails/model/query
+  (:import-from #:clails/model/query/crud
                 #:make-record)
   (:import-from #:clails/model/base-model
                 #:ref))

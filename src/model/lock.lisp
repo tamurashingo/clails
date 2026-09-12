@@ -9,6 +9,8 @@
                 #:*%sqlite3-transaction-mode*
                 #:*%sqlite3-lock-module-loaded*)
   (:import-from #:clails/model/query
+                #:<query>)
+  (:import-from #:clails/model/query/crud
                 #:execute-query)
   (:import-from #:clails/model/connection
                 #:get-connection)
