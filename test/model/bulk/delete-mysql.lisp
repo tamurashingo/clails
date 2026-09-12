@@ -15,7 +15,7 @@
                 #:insert-all
                 #:delete-all
                 #:delete-bulk)
-  (:import-from #:clails/model/query
+  (:import-from #:clails/model/query/crud
                 #:make-record)
   (:import-from #:clails/model/migration
                 #:create-table

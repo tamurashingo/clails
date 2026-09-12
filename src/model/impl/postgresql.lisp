@@ -21,8 +21,18 @@
   (:import-from #:clails/model/connection
                 #:get-connection-direct-impl
                 #:create-connection-pool-impl)
-  (:import-from #:clails/model/query
+  (:import-from #:clails/model/query/crud
                 #:get-last-id-impl)
+  (:import-from #:clails/model/query/type-conversion
+                #:to-string-impl
+                #:to-text-impl
+                #:to-integer-impl
+                #:to-float-impl
+                #:to-decimal-impl
+                #:to-datetime-impl
+                #:to-date-impl
+                #:to-time-impl
+                #:to-boolean-impl)
   (:import-from #:clails/model/util
                 #:get-cl-db-fn-by-type)
   (:import-from #:clails/logger
@@ -438,39 +448,39 @@
 ;;; ----------------------------------------
 ;;; type conversion implementations
 
-(defmethod clails/model/query:to-string-impl ((database-type <database-type-postgresql>) value)
+(defmethod to-string-impl ((database-type <database-type-postgresql>) value)
   (declare (ignore database-type))
   (funcall (get-cl-db-fn-by-type *postgresql-type-convert-functions* :string) value))
 
-(defmethod clails/model/query:to-text-impl ((database-type <database-type-postgresql>) value)
+(defmethod to-text-impl ((database-type <database-type-postgresql>) value)
   (declare (ignore database-type))
   (funcall (get-cl-db-fn-by-type *postgresql-type-convert-functions* :text) value))
 
-(defmethod clails/model/query:to-integer-impl ((database-type <database-type-postgresql>) value)
+(defmethod to-integer-impl ((database-type <database-type-postgresql>) value)
   (declare (ignore database-type))
   (funcall (get-cl-db-fn-by-type *postgresql-type-convert-functions* :integer) value))
 
-(defmethod clails/model/query:to-float-impl ((database-type <database-type-postgresql>) value)
+(defmethod to-float-impl ((database-type <database-type-postgresql>) value)
   (declare (ignore database-type))
   (funcall (get-cl-db-fn-by-type *postgresql-type-convert-functions* :float) value))
 
-(defmethod clails/model/query:to-decimal-impl ((database-type <database-type-postgresql>) value)
+(defmethod to-decimal-impl ((database-type <database-type-postgresql>) value)
   (declare (ignore database-type))
   (funcall (get-cl-db-fn-by-type *postgresql-type-convert-functions* :decimal) value))
 
-(defmethod clails/model/query:to-datetime-impl ((database-type <database-type-postgresql>) value)
+(defmethod to-datetime-impl ((database-type <database-type-postgresql>) value)
   (declare (ignore database-type))
   (funcall (get-cl-db-fn-by-type *postgresql-type-convert-functions* :datetime) value))
 
-(defmethod clails/model/query:to-date-impl ((database-type <database-type-postgresql>) value)
+(defmethod to-date-impl ((database-type <database-type-postgresql>) value)
   (declare (ignore database-type))
   (funcall (get-cl-db-fn-by-type *postgresql-type-convert-functions* :date) value))
 
-(defmethod clails/model/query:to-time-impl ((database-type <database-type-postgresql>) value)
+(defmethod to-time-impl ((database-type <database-type-postgresql>) value)
   (declare (ignore database-type))
   (funcall (get-cl-db-fn-by-type *postgresql-type-convert-functions* :time) value))
 
-(defmethod clails/model/query:to-boolean-impl ((database-type <database-type-postgresql>) value)
+(defmethod to-boolean-impl ((database-type <database-type-postgresql>) value)
   (declare (ignore database-type))
   (funcall (get-cl-db-fn-by-type *postgresql-type-convert-functions* :boolean) value))
 
