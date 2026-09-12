@@ -160,12 +160,23 @@
 
 (defun get-connection ()
   "Get database connection for the current thread.
-   
+
    If a connection is already associated with the thread, returns it.
    Otherwise, acquires a new connection from the pool and associates it with the thread.
-   
+
    @return [dbi-cp.proxy::<dbi-connection-proxy>] Database connection
+   @condition error Signaled with a clear message when *connection-pool* has not
+     been initialized yet (e.g. this is called from a CLI command that never
+     reaches the runtime-startup stage that creates the pool -- see
+     document/environment.md's \"Initialization Stages\" section).
    "
+  (when (null *connection-pool*)
+    (error "Database connection pool is not initialized (clails/environment:*connection-pool* is NIL). ~
+This code path requires the connection pool to have been started via ~
+clails/model/connection:startup-connection-pool (this happens automatically for the `server` command's ~
+runtime-startup stage, and is called directly by `db:seed` and `test`). If you are calling this from a ~
+different command or a custom task, call startup-connection-pool yourself before using the database. ~
+See document/environment.md's \"Initialization Stages\" section for details."))
   (let ((current-th (bt:current-thread)))
     (get-connection-by-thread current-th)))
 
