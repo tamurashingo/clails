@@ -27,6 +27,15 @@ YYYYmmdd-HHMMSS-description.lisp
 
 Example: `20240101-120000-create-users-table.lisp`
 
+Migration files are loaded in filename order, so the timestamp prefix determines
+the order in which migrations are applied. At `db:migrate` time, each filename
+under `db/migrate/` is checked against the expected timestamp-prefix pattern
+(an 8-digit date and 6-digit time, separated by `-` or `_`, followed by a name,
+e.g. `20240101-120000-create-users-table.lisp` or
+`20240101120000_create-users-table.lisp`). A file that doesn't match prints a
+warning naming the file and the expected pattern; it is still loaded, but its
+position in the load order relative to other migrations is not guaranteed.
+
 ### Creating Tables
 
 ```common-lisp
