@@ -407,6 +407,43 @@ clails アプリケーションは、`clails/environment` パッケージで定�
 (setf clails/environment:*project-environment* :production)
 ```
 
+**解決（resolution）方法**:
+
+`*project-environment*` の最終的な値は、優先度の低い順に最大3つの入力を重ね合わせて決定されます。
+
+1. **default（デフォルト）** - プロジェクトの `app/config/environment.lisp` で直接設定される値（通常は `:develop`）。
+2. **env-var（環境変数）** - プロジェクト起動時（`clails.boot`）に適用される `CLAILS_ENV` 環境変数。
+3. **forced override（強制上書き）** - 常に特定の環境を強制するコマンド。例えば `test` コマンドは常に `:test` を強制します。
+
+この重ね合わせのロジックは、各呼び出し箇所で重複させるのではなく、`clails/environment:resolve-project-environment` という単一の関数に集約されています。呼び出しごとに、どの入力が最終的な値を決定したかがログに出力されます。
+
+```
+project environment resolved to TEST (source: forced override)
+```
+
+#### `resolve-project-environment` 関数
+
+呼び出し時点で利用可能な入力から `*project-environment*` を解決し、どの入力が採用されたかをログに出力します。
+
+```lisp
+;; clails.boot からの呼び出し例（プロジェクトのデフォルト値は設定済み）
+(clails/environment:resolve-project-environment :env-var (uiop:getenv "CLAILS_ENV"))
+;; => :develop、または CLAILS_ENV が設定・有効な場合はその値
+
+;; test コマンドからの呼び出し例（テスト環境を強制）
+(clails/environment:resolve-project-environment :forced "test")
+;; => :test （デフォルト値や CLAILS_ENV の値に関わらず）
+```
+
+**パラメータ**:
+- `env-var` [string または nil] - 解決対象の値（通常は `CLAILS_ENV` から取得）。指定され有効な場合、現在のデフォルト値より優先されます。
+- `forced` [string または nil] - 強制上書きする値（例: `"test"`）。指定され有効な場合、デフォルト値と `env-var` の両方より優先されます。
+
+**戻り値**:
+- [keyword] - 解決された `*project-environment*` の値。
+
+**補足**: この関数が決定するのは「どの値が優先されるか」のみであり、各入力が「いつ利用可能になるか」は変更しません。デフォルト値はプロジェクトのロード時に、`env-var` は引き続き `clails.boot` 内で、強制上書き（ある場合）は各コマンドの実行における従来通りのタイミングで設定されます。
+
 ### データベース関連
 
 #### `*database-config*`

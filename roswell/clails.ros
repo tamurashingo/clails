@@ -482,7 +482,7 @@ exec ros -Q -- $0 "$@"
   (load-project)
 
   ;; Set environment to test after loading project
-  (clails/environment:set-environment "test")
+  (clails/environment:resolve-project-environment :forced "test")
 
   ;; Convert args (list of package names) to uppercase
   (let* ((package-names (mapcar #'string-upcase args))

@@ -18,8 +18,6 @@
 ;;; currently installed, since the boot sequence itself may have drifted since then.
 (clails/environment:warn-if-framework-version-mismatch "<%= (asdf:component-version (asdf:find-system :clails)) %>")
 
-(let ((envname (uiop:getenv "CLAILS_ENV")))
-  (when envname
-    (clails/environment:set-environment envname)))
+(clails/environment:resolve-project-environment :env-var (uiop:getenv "CLAILS_ENV"))
 
 (<%= (@ project-name) %>/config/database:initialize-database-config)
