@@ -25,6 +25,7 @@
                "getcmd"
                "jonathan"
                "lack"
+               "lack-middleware-session"
                "lack/middleware/static"
                "local-time"
                "str"
