@@ -27,13 +27,13 @@
                 #:<database-type-mysql>
                 #:<database-type-postgresql>
                 #:<database-type-sqlite3>
-                #:*sqlite3-transaction-mode*)
+                #:*%sqlite3-transaction-mode*)
   (:import-from #:clails/model/connection
                 #:get-connection
                 #:with-db-connection)
   (:import-from #:clails/model/transaction
                 #:with-transaction)
-  (:import-from #:clails/model/query
+  (:import-from #:clails/model/query/crud
                 #:get-last-id-impl)
   (:import-from #:clails/job/registry
                 #:find-job
@@ -274,7 +274,7 @@
                             :attempt (job-plist-attempts job))
                    job))))))
     (if (typep *database-type* '<database-type-sqlite3>)
-        (let ((*sqlite3-transaction-mode* :immediate))
+        (let ((*%sqlite3-transaction-mode* :immediate))
           (with-transaction (do-claim)))
         (with-transaction (do-claim)))))
 
