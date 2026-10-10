@@ -19,6 +19,7 @@
            #:log.web-access
            #:log.audit
            #:log.task
+           #:log.job
            #:set-logger-level
            #:add-appender
            #:clear-loggers
@@ -395,6 +396,19 @@
      (log.task \"Task completed\" :task-name \"cleanup\" :duration 1.234 :status :success)
    "
   `(clails/logger/core::log-message-to :task :info ,message ,@context))
+
+(defmacro log.job (message &rest context)
+  "Log a background job event to the :job logger with :info level.
+
+   Used for logging job enqueue, claim, retry, and completion events.
+
+   @param message [string] Job event message
+   @param context [plist] Additional context (e.g., :job-name, :job-id, :attempts, :status)
+   @example
+     (log.job \"Job enqueued\" :job-name :send-email :job-id 1)
+     (log.job \"Job failed\" :job-name :send-email :job-id 1 :attempts 3 :status :failed)
+   "
+  `(clails/logger/core::log-message-to :job :info ,message ,@context))
 
 ;;; ------------------------------------------------------------------
 ;;; Log Level Check API

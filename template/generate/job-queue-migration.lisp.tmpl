@@ -1,0 +1,30 @@
+; -*- mode: lisp -*-
+(in-package #:<%= (@ project-name ) %>-db)
+
+;; Creates the table backing clails' DB-persisted job queue
+;; (clails/job:enqueue-job / clails/job/worker). See document/job-queue.md.
+(defmigration "<%= (@ name ) %>"
+  (:up #'(lambda (connection)
+           (create-table connection :table "clails_jobs"
+                                    :columns '(("job-name" :type :string
+                                                          :not-null T)
+                                               ("arguments" :type :text
+                                                           :not-null T)
+                                               ("status" :type :string
+                                                        :not-null T
+                                                        :default-value "pending")
+                                               ("attempts" :type :integer
+                                                          :not-null T
+                                                          :default-value 0)
+                                               ("max-attempts" :type :integer
+                                                              :not-null T
+                                                              :default-value 25)
+                                               ("available-at" :type :datetime
+                                                              :not-null T)
+                                               ("last-error" :type :text
+                                                            :not-null NIL)))
+           (add-index connection :table "clails_jobs"
+                                 :index "idx-clails-jobs-status-available-at"
+                                 :columns '("status" "available-at")))
+   :down #'(lambda (connection)
+             (drop-table connection :table "clails_jobs"))))

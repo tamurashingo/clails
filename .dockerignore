@@ -1,0 +1,7 @@
+.git
+tmp
+.dev_image_build
+.test_image_built
+.e2e_image_build
+clails-design-review.md
+clails-issue.md

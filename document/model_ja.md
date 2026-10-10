@@ -27,6 +27,14 @@ YYYYmmdd-HHMMSS-description.lisp
 
 例: `20240101-120000-create-users-table.lisp`
 
+Migration ファイルはファイル名順にロードされるため、タイムスタンプ部分が
+Migration の適用順序を決定します。`db:migrate` 実行時、`db/migrate/` 配下の
+各ファイル名は期待されるタイムスタンプ形式(8桁の日付と6桁の時刻を `-` または
+`_` で区切り、その後に名前が続く形式。例: `20240101-120000-create-users-table.lisp`
+や `20240101120000_create-users-table.lisp`)と照合されます。一致しないファイルは
+ファイル名と期待される形式を示す警告が表示されますが、そのままロードは続行され
+ます。ただし、他の Migration との読み込み順序は保証されません。
+
 ### テーブル作成
 
 ```common-lisp
@@ -171,6 +179,24 @@ YYYYmmdd-HHMMSS-description.lisp
 ```common-lisp
 (clails/model/base-model:initialize-table-information)
 ```
+
+### モデルファイルの読み込みと app/models/package.lisp
+
+`clails` は ASDF の package-inferred-system を採用しており、`app/application-loader.lisp` の
+`defpackage` から辿れる `:import-from` の依存グラフに載っているファイルだけが自動的にロードされます。
+`clails generate:model`（`generate:scaffold` 経由も含む）でモデルを生成すると、そのモデルのパッケージが
+自動的に `app/models/package.lisp` の `defpackage` に `:import-from` として追記され、
+`app/application-loader.lisp` はこの `app/models/package.lisp` を一度だけ `:import-from` することで、
+生成済みの全モデルをまとめて読み込みます。
+
+手書きで `app/models/` にモデルファイルを追加した場合など、この登録から漏れているモデルがあると、
+そのモデルのパッケージ／シンボルはロードされず、`db:migrate` や `db:seed` の実行時に
+`package/symbol not found` のようなエラーになります。`clails db:migrate` / `clails db:seed` は
+実行前に `app/models/` 配下の全ファイルを走査し、対応するパッケージがロードされていないモデルがあれば
+警告を出力します（`clails/project/generate:check-unregistered-models`）。警告が出た場合は
+`app/models/package.lisp` に手動で `:import-from` を追記してください。この時点でモデルファイル自体は
+既に存在しているため、`clails generate:model <name>` を実行して解決しようとしないでください
+（`generate:model` には「既存ファイルを登録だけする」安全なモードはなく、単に上書きされてしまいます）。
 
 ---
 

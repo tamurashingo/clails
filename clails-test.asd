@@ -10,6 +10,7 @@
                #:clails
                #:rove
                #:clails-test/util
+               #:clails-test/environment
                #:clails-test/model/impl/sqlite3
                #:clails-test/model/impl/mysql
                #:clails-test/model/impl/postgresql
@@ -22,12 +23,14 @@
                #:clails-test/model/query/mysql
                #:clails-test/model/query/postgresql
                #:clails-test/controller/base-controller
+               #:clails-test/middleware/session-middleware
                #:clails-test/helper/date-helper
                #:clails-test/model/join-query
                #:clails-test/model/save
                #:clails-test/model/optimistic-lock
                #:clails-test/model/default-value
                #:clails-test/model/migration
+               #:clails-test/model/migration-filename-validation
                #:clails-test/model/transaction
                #:clails-test/model/transaction/transaction-sqlite3
                #:clails-test/model/transaction/transaction-mysql
@@ -72,7 +75,13 @@
                #:clails-test/model/todo-tag-junction-query
                #:clails-test/task/registry
                #:clails-test/task/runner
-               #:clails-test/task/core)
+               #:clails-test/task/core
+               #:clails-test/job/registry
+               #:clails-test/job/core
+               #:clails-test/job/queue
+               #:clails-test/job/worker
+               #:clails-test/project/generate
+               #:clails-test/cmd)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))
 

@@ -3,8 +3,8 @@
   (:use #:cl)
   (:import-from #:clails/environment
                 #:*database-type*
-                #:*table-information-initialized*
-                #:*query-initialization-callbacks*)
+                #:*%table-information-initialized*
+                #:*%query-initialization-callbacks*)
   (:import-from #:clails/model/connection
                 #:with-db-connection-direct)
   (:import-from #:clails/util
@@ -390,14 +390,14 @@ Example: ((:name :id
                (format t "done~%"))))
 
   ;; Mark table information as initialized
-  (setf *table-information-initialized* t)
+  (setf *%table-information-initialized* t)
 
   ;; Execute all query initialization callbacks
-  (dolist (callback *query-initialization-callbacks*)
+  (dolist (callback *%query-initialization-callbacks*)
     (funcall callback))
 
   ;; Clear callbacks list
-  (setf *query-initialization-callbacks* nil))
+  (setf *%query-initialization-callbacks* nil))
 
 (defun debug-table-information ()
   "Display all table metadata for debugging purposes.

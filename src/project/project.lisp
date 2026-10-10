@@ -153,6 +153,13 @@
                                (read-template "app/controllers/application-controller.lisp.tmpl"))
 
 
+    ;; model package
+    (create-file-with-template "app/models/package.lisp"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "app/models/package.lisp.tmpl"))
+
     ;; view package
     (create-file-with-template "app/views/package.lisp"
                                project-name

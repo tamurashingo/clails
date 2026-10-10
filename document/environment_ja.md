@@ -7,6 +7,10 @@ clails アプリケーションは、環境変数を通じて動作をカスタ�
 
 ## 目次
 
+- [初期化ステージ](#初期化ステージ)
+  - 3つのステージ
+  - CLIコマンドごとに到達するステージ
+  - 実務上の意味
 1. [環境変数](#1-環境変数)
    - データベース関連
    - 環境変数の取得ユーティリティ
@@ -25,6 +29,57 @@ clails アプリケーションは、環境変数を通じて動作をカスタ�
 5. [設定ファイルの例](#5-設定ファイルの例)
 6. [ベストプラクティス](#6-ベストプラクティス)
 7. [トラブルシューティング](#7-トラブルシューティング)
+8. [コントリビューション: 新しい設定変数を追加するには](#8-コントリビューション-新しい設定変数を追加するには)
+
+---
+
+## 初期化ステージ
+
+アプリケーションコードが `clails/environment` の値に依存する前に、その値が実際に「いつ」設定されるのかを把握しておく必要があります。clails は3つのステージで状態を初期化しますが、どのステージまで到達するかは実行する `clails` CLI コマンドによって異なります。これが原因で、より後のステージで設定される変数（特に `*connection-pool*`）が既に利用可能だと仮定したコードが、`clails server` では問題なく動いても `clails db:seed` やその他のコマンドでは予期せず失敗することがあります。
+
+### 3つのステージ
+
+**ステージ1 -- ファイルロード時**
+
+`clails` システム自体がロードされた時点で到達します。`--help` を含め、`clails` CLI のすべての呼び出しはこの時点に到達します。この段階では `src/environment.lisp` に定義されたフレームワークの組み込みデフォルト値のみが有効です。例えば `*project-environment*` は `:develop`、`*connection-pool*` は `nil`、`*routing-tables*` は組み込みのデフォルトルート1件のみ、`*startup-hooks*`/`*shutdown-hooks*` もフレームワーク自身のデフォルトのみです。この時点ではまだプロジェクトはロードされていません。
+
+**ステージ2 -- `clails.boot` 実行（プロジェクトロード）時**
+
+`new` コマンド（およびコマンドなし/`--help` での実行）以外のすべてのコマンドで到達します。`roswell/clails.ros` の `load-project` がプロジェクトの `clails.boot` をロードすることで発生します。順を追うと以下のようになります。
+
+1. `(ql:quickload :<project>)` を実行します。これは `app/application-loader.lisp` を起点とする ASDF package-inferred-system の依存グラフをたどり、各ファイルのトップレベルフォームを実行します。プロジェクトの設定ファイルが実行されるのはこの時点です。`app/config/environment.lisp` が `*project-name*` と `*routing-tables*` を設定し、`*startup-hooks*`/`*shutdown-hooks*` に要素を push します。`app/config/database.lisp` が `*database-type*` を設定します。`app/models/package.lisp` がモデルを登録します。
+2. `*project-dir*`、`*migration-base-dir*`、`*task-base-dir*` を明示的に設定します。
+3. `CLAILS_ENV`（`set-environment` 経由）を適用し、`*project-environment*` を設定します。
+4. `<project>/config/database:initialize-database-config` を呼び出し、`*database-config*` を設定します。
+
+ステージ2が終わった時点で、コネクションプールが担当する変数（`*connection-pool*`、内部の `*thread-connection-pool*`、および `initialize-table-information` を直接呼ばない限り設定されない `*table-information-initialized*` など）を**除く**すべての `clails/environment` 変数が設定済みになります。
+
+**ステージ3 -- ランタイム起動（`call-startup-hooks`）**
+
+`*connection-pool*` が実際に作られるのはこの段階です。`*startup-hooks*` に登録された関数を順に実行します（デフォルトは `clails/model/connection:startup-connection-pool` のみ。生成されたプロジェクトでは `app/config/environment.lisp` でこのリストの先頭に `initialize-table-information` とロガー初期化処理も push されます）。**このステージに到達するのは `clails server` のみ**です。`call-startup-hooks` はサーバーがリクエストの受付を開始する直前に、`clails/cmd:server`（`src/cmd.lisp`）から一度だけ呼び出されます。対応するシャットダウンステージ（`*shutdown-hooks*` を実行する `call-shutdown-hooks`）は `clails stop` 実行時、あるいは稼働中のサーバーが割り込まれたときにのみ到達します。
+
+> **`db:seed` と `test` は特殊なケースです。** どちらも `call-startup-hooks` は呼びませんが、実際の処理を行う前に `clails/model/connection:startup-connection-pool`（および `initialize-table-information`）を `src/cmd.lisp` 内で直接（ハードコードされた形で）呼び出し、処理後にプールをシャットダウン（`shutdown-connection-pool`）します。そのため `db:seed`/`test` の実行中は `*connection-pool*` が**設定されています**が、プロジェクトが `*startup-hooks*` に追加したデフォルト以外のカスタムフックは、`call-startup-hooks` を経由しないためこの2つのコマンドでは実行**されません**。
+>
+> `db:create`、`db:migrate`、`db:migrate:up`、`db:migrate:down`、`db:rollback` はそもそもプールを必要としません。これらは短命な直接接続（`with-db-connection-direct`）でデータベースとやり取りしており、`*connection-pool*` は一切使いません。
+
+### CLIコマンドごとに到達するステージ
+
+| コマンド | ステージ2（プロジェクトロード）に到達するか | ステージ3（`*connection-pool*` 設定済み）に到達するか | 備考 |
+|---|---|---|---|
+| `new` | しない | しない | ディスク上にプロジェクトを作成するだけで、まだロードするプロジェクトが存在しない |
+| `environment` | する | しない | `*project-environment*` を表示するだけ |
+| `generate:model` / `:migration` / `:view` / `:controller` / `:scaffold` / `:task` | する | しない | ファイル生成のみで、データベースには一切触れない |
+| `db:create` | する | しない（直接接続） | `with-db-connection-direct` を使用し、プールは使わない |
+| `db:migrate`、`db:migrate:up`、`db:migrate:down`、`db:rollback`、`db:status` | する | しない（直接接続） | マイグレーションはプールではなく直接接続で実行される |
+| `db:seed` | する | **する**（`call-startup-hooks` ではなく `startup-connection-pool`/`initialize-table-information` の直接呼び出し経由） | デフォルトのプール起動以外のカスタム起動フックはスキップされる。シード完了後にプールは再びシャットダウンされる |
+| `test` | する（環境は強制的に `:test` になる） | **する**（`db:seed` と同様の直接呼び出しの注意点あり） | テスト実行後にプールは再びシャットダウンされる |
+| `task`（`clails task ...` によるカスタムタスク） | する | しない（タスク自身が `startup-connection-pool` を呼ばない限り） | フレームワークはタスクのためにプールを起動しない。プール経由のDBアクセスが必要なタスクは自分でプールを起動する必要がある |
+| `server` | する | **する**（`call-startup-hooks` 経由） | ユーザーが設定可能な `*startup-hooks*` リスト全体を実行する唯一のコマンド |
+| `stop` | する | 該当なし | 同一プロセス内で稼働中のサーバーに対してのみ意味を持つ。単独で実行しても停止対象は存在しない |
+
+### 実務上の意味
+
+`clails/environment:*connection-pool*` を読むコード（直接、あるいは `clails/model/connection:get-connection`/`with-db-connection` 経由での間接的な参照を含む）は、プロジェクトがロードされている（ステージ2に到達している）というだけでプールが設定済みだと仮定してはいけません。これが保証されるのは `server`、`db:seed`、`test` の実行中だけです。プール経由のデータベース接続が必要なカスタムタスクやその他のコード経路を書く場合は、自分で `clails/model/connection:startup-connection-pool` を呼び出す（処理後に `shutdown-connection-pool` も呼ぶ）か、代わりに直接接続（`with-db-connection-direct`）を使ってください。`*connection-pool*` が `nil` の場合、`clails/model/connection:get-connection` はコネクションプールライブラリ内部から発生する分かりにくいエラーの代わりに、何が初期化されていないかを明示したエラーを送出します。
 
 ---
 
@@ -352,6 +407,43 @@ clails アプリケーションは、`clails/environment` パッケージで定�
 (setf clails/environment:*project-environment* :production)
 ```
 
+**解決（resolution）方法**:
+
+`*project-environment*` の最終的な値は、優先度の低い順に最大3つの入力を重ね合わせて決定されます。
+
+1. **default（デフォルト）** - プロジェクトの `app/config/environment.lisp` で直接設定される値（通常は `:develop`）。
+2. **env-var（環境変数）** - プロジェクト起動時（`clails.boot`）に適用される `CLAILS_ENV` 環境変数。
+3. **forced override（強制上書き）** - 常に特定の環境を強制するコマンド。例えば `test` コマンドは常に `:test` を強制します。
+
+この重ね合わせのロジックは、各呼び出し箇所で重複させるのではなく、`clails/environment:resolve-project-environment` という単一の関数に集約されています。呼び出しごとに、どの入力が最終的な値を決定したかがログに出力されます。
+
+```
+project environment resolved to TEST (source: forced override)
+```
+
+#### `resolve-project-environment` 関数
+
+呼び出し時点で利用可能な入力から `*project-environment*` を解決し、どの入力が採用されたかをログに出力します。
+
+```lisp
+;; clails.boot からの呼び出し例（プロジェクトのデフォルト値は設定済み）
+(clails/environment:resolve-project-environment :env-var (uiop:getenv "CLAILS_ENV"))
+;; => :develop、または CLAILS_ENV が設定・有効な場合はその値
+
+;; test コマンドからの呼び出し例（テスト環境を強制）
+(clails/environment:resolve-project-environment :forced "test")
+;; => :test （デフォルト値や CLAILS_ENV の値に関わらず）
+```
+
+**パラメータ**:
+- `env-var` [string または nil] - 解決対象の値（通常は `CLAILS_ENV` から取得）。指定され有効な場合、現在のデフォルト値より優先されます。
+- `forced` [string または nil] - 強制上書きする値（例: `"test"`）。指定され有効な場合、デフォルト値と `env-var` の両方より優先されます。
+
+**戻り値**:
+- [keyword] - 解決された `*project-environment*` の値。
+
+**補足**: この関数が決定するのは「どの値が優先されるか」のみであり、各入力が「いつ利用可能になるか」は変更しません。デフォルト値はプロジェクトのロード時に、`env-var` は引き続き `clails.boot` 内で、強制上書き（ある場合）は各コマンドの実行における従来通りのタイミングで設定されます。
+
 ### データベース関連
 
 #### `*database-config*`
@@ -554,76 +646,67 @@ URL パスと Controller の対応を定義するルーティングテーブル�
 
 #### `*startup-hooks*`
 
-アプリケーション起動時に実行される関数のリストです。
+アプリケーション起動時に、**リストの並び順どおりに**実行される関数のリストです。
+フレームワーク既定のフック(`clails/model/connection:startup-connection-pool`)が
+あらかじめ登録されているため、自分で登録したフックはその後に実行されます。
 
-**型**: list of strings or symbols
+**型**: list of strings or functions
 
 **デフォルト値**: `'("clails/model/connection:startup-connection-pool")`
 
 **設定場所**: `app/config/environment.lisp`
 
 **指定方法**:
-- 文字列: `"package-name:function-name"` の形式で指定
-- シンボル: 関数名のシンボルで指定
+- 文字列: `"package-name:function-name"` の形式で指定（循環参照を避けたい場合はこちら）
+- 関数オブジェクト: `#'function-name` や `(lambda () ...)` で指定
 
-循環参照が発生する場合は、文字列で指定してください。
+（注意: シンボル単体 `'function-name` は受け付けません。関数呼び出し時に
+`etypecase` で `string`/`function` 以外は型エラーになります。）
+
+`add-startup-hook` でフックを登録してください。この関数はリストの**末尾に追加**するため、
+登録した順番がそのまま実行順になります。`*startup-hooks*` に対して直接 `push` するのは
+避けてください。`push` は先頭に追加するため、登録したフックがフレームワーク既定のフック
+（や、より前に登録した他のフック）より先に実行されてしまいます。
 
 **設定例**:
 ```lisp
-;; 文字列で指定（推奨: 循環参照を避けるため）
-(setf clails/environment:*startup-hooks*
-  '("clails/model/connection:startup-connection-pool"
-    "myapp/initializer:setup-logger"
-    "myapp/initializer:load-cache"))
+;; 登録順 = 実行順
+(clails/environment:add-startup-hook "myapp/initializer:setup-logger")
+(clails/environment:add-startup-hook "myapp/initializer:load-cache")
 
-;; シンボルで指定（循環参照がない場合のみ）
-(setf clails/environment:*startup-hooks*
-  '(clails/model/connection:startup-connection-pool
-    myapp/initializer:setup-logger
-    myapp/initializer:load-cache))
-
-;; 混在も可能
-(setf clails/environment:*startup-hooks*
-  '("clails/model/connection:startup-connection-pool"
-    myapp/initializer:setup-logger
-    "myapp/initializer:load-cache"))
+;; 関数オブジェクトでも指定可能
+(clails/environment:add-startup-hook
+  #'(lambda ()
+      (format t "starting...~%")))
 ```
 
 #### `*shutdown-hooks*`
 
-アプリケーション終了時に実行される関数のリストです。
+アプリケーション終了時に、**リストの並び順どおりに**実行される関数のリストです。
+フレームワーク既定のフック(`clails/model/connection:shutdown-connection-pool`)が
+あらかじめ登録されているため、自分で登録したフックはその後に実行されます。
 
-**型**: list of strings or symbols
+**型**: list of strings or functions
 
 **デフォルト値**: `'("clails/model/connection:shutdown-connection-pool")`
 
 **設定場所**: `app/config/environment.lisp`
 
 **指定方法**:
-- 文字列: `"package-name:function-name"` の形式で指定
-- シンボル: 関数名のシンボルで指定
+- 文字列: `"package-name:function-name"` の形式で指定（循環参照を避けたい場合はこちら）
+- 関数オブジェクト: `#'function-name` や `(lambda () ...)` で指定
 
-循環参照が発生する場合は、文字列で指定してください。
+（注意: シンボル単体 `'function-name` は受け付けません。関数呼び出し時に
+`etypecase` で `string`/`function` 以外は型エラーになります。）
+
+`add-shutdown-hook` でフックを登録してください。挙動は `add-startup-hook` と同様、
+末尾追加(登録順=実行順)です。
 
 **設定例**:
 ```lisp
-;; 文字列で指定（推奨: 循環参照を避けるため）
-(setf clails/environment:*shutdown-hooks*
-  '("clails/model/connection:shutdown-connection-pool"
-    "myapp/finalizer:cleanup-cache"
-    "myapp/finalizer:save-statistics"))
-
-;; シンボルで指定（循環参照がない場合のみ）
-(setf clails/environment:*shutdown-hooks*
-  '(clails/model/connection:shutdown-connection-pool
-    myapp/finalizer:cleanup-cache
-    myapp/finalizer:save-statistics))
-
-;; 混在も可能
-(setf clails/environment:*shutdown-hooks*
-  '("clails/model/connection:shutdown-connection-pool"
-    myapp/finalizer:cleanup-cache
-    "myapp/finalizer:save-statistics"))
+;; 登録順 = 実行順
+(clails/environment:add-shutdown-hook "myapp/finalizer:cleanup-cache")
+(clails/environment:add-shutdown-hook "myapp/finalizer:save-statistics")
 ```
 
 ---
@@ -957,16 +1040,14 @@ qlot exec rove myapp-test.asd
 (clails/environment:set-environment 
   (clails/util:env-or-default "APP_ENV" "DEVELOP"))
 
-;; スタートアップフックの設定
-(setf clails/environment:*startup-hooks*
-  '("clails/model/connection:startup-connection-pool"
-    "myapp/initializer:initialize-table-information"
-    "myapp/initializer:setup-logger"))
+;; スタートアップフックの追加（フレームワーク既定の
+;; clails/model/connection:startup-connection-pool の後、登録した順に実行される）
+(clails/environment:add-startup-hook "myapp/initializer:initialize-table-information")
+(clails/environment:add-startup-hook "myapp/initializer:setup-logger")
 
-;; シャットダウンフックの設定
-(setf clails/environment:*shutdown-hooks*
-  '("myapp/finalizer:cleanup-resources"
-    "clails/model/connection:shutdown-connection-pool"))
+;; シャットダウンフックの追加（フレームワーク既定の
+;; clails/model/connection:shutdown-connection-pool の後、登録した順に実行される）
+(clails/environment:add-shutdown-hook "myapp/finalizer:cleanup-resources")
 ```
 
 ### app/config/database.lisp
@@ -1063,6 +1144,21 @@ qlot exec rove myapp-test.asd
 2. **環境に依存しない設定**: 設定ファイルに直接記述
 3. **複雑な設定**: 専用の初期化関数を作成
 
+### 内部専用の制御変数
+
+`clails/environment` パッケージには、`*%sqlite3-transaction-mode*` や
+`*%sqlite3-lock-module-loaded*`、`*%table-information-initialized*`、
+`*%query-initialization-callbacks*` のように、clails 自身が内部的に使用する
+制御・管理用の特殊変数がいくつか存在します。これらは `with-locked-transaction`
+などのマクロや内部関数によって再束縛・変更されるものであり、アプリケーション
+コードから直接参照したり設定したりすることを意図していません。
+
+これらの変数名には先頭に `%` を付けることで、`*routing-tables*` や
+`*sqlite3-busy-timeout*` のような通常のユーザー向け設定変数と、技術的には
+同じパッケージからエクスポートされていても明確に区別できるようにしています。
+clails 自体にコントリビュートする際、新たに内部専用の制御変数を追加する
+場合は、今後もこの `%` プレフィックスの命名規則に従ってください。
+
 ---
 
 ## 7. トラブルシューティング
@@ -1125,3 +1221,41 @@ clails の環境設定は以下の特徴を持ちます:
 4. **ライフサイクル管理**: スタートアップ/シャットダウンフックによる初期化・終了処理
 
 適切な環境変数の設定により、安全で保守性の高いアプリケーションを構築できます。
+
+---
+
+## 8. コントリビューション: 新しい設定変数を追加するには
+
+`src/environment.lisp` に新しいグローバル変数を追加する場合（あるいは、プロジェクトの
+`app/config/*.lisp` から設定・上書きされることが想定されている他の変数を追加する場合）は、
+必ず `defvar` で定義してください。**`defparameter` は使わないでください。**
+
+### 理由
+
+`defparameter` は、定義されているファイルがロードされるたびに変数の値を無条件に初期値へ
+再設定します。一方 `defvar` は、変数がまだ束縛されていない場合にのみ初期値を設定します。
+典型的な開発ワークフローでは、Swank サーバー（`--swank`）を接続した状態でアプリケーションを
+起動し、REPL からソースファイルを再ロードしながら開発を進めます。もし設定用の変数が
+`defparameter` で定義されていた場合、`environment.lisp` を再ロードするたびに、プロジェクトの
+`app/config/database.lisp` や `app/config/environment.lisp` が設定した値
+（たとえば `*database-config*` や `*project-name*`）が黙って初期値に巻き戻されてしまいます。
+実際にこの不具合が発生し、該当する変数を `defvar` に変更することで修正されました。
+
+### 判断基準
+
+- プロジェクトの `app/config/*.lisp` が起動時に読み取り・設定・上書きすることを想定している
+  変数（`*project-name*`、`*database-config*`、`*routing-tables*`、`*default-lock-mode*` など）
+  には **`defvar` を使ってください**。これらはユーザー向けの設定であり、ファイルの再ロードを
+  越えて値が維持される必要があります。
+- 純粋に内部的で、プロジェクトから設定されることを想定していない値については、引き続き
+  `defparameter` で問題ありません。たとえば固定の定数テーブル（`+ENVIRONMENT-NAMES+`）、
+  再ロード時にリセットしても安全（むしろ望ましい）な内部キャッシュ、ソースから完全に再構築され
+  `app/config/*.lisp` から一切触れられないクロージャやデータなどです。
+- 迷った場合は「このファイルが再ロードされる前に、プロジェクトの設定ファイルがこの変数を
+  すでに設定している可能性があるか？」を自問してください。あり得るなら `defvar` を使います。
+
+この規約は、[issue #156](https://github.com/tamurashingo/clails/issues/156) の監査の結果、
+`src/environment.lisp` 内の現行のすべての変数がすでにこの方針に従っていることを確認した上で
+採用されました。将来的な改善案として、特殊変数に頼るのではなく主要なサブシステムに対して
+明示的な設定コンテキストオブジェクトを導入することが提案されていますが、本ガイドラインの
+スコープ外です。

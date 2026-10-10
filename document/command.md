@@ -70,8 +70,10 @@ clails --help
 | Command | Description |
 |---------|-------------|
 | `clails new` | Create a new project |
+| `clails routes` | List configured routes |
 | `clails server` | Start web server |
 | `clails stop` | Stop web server |
+| `clails console` | Start an interactive console (REPL) |
 
 ### Code Generation
 
@@ -83,6 +85,7 @@ clails --help
 | `clails generate:controller` | Generate Controller file |
 | `clails generate:scaffold` | Generate Model, View, and Controller together |
 | `clails generate:task` | Generate Task file |
+| `clails generate:job-queue-setup` | Generate the migration for the job queue's `clails_jobs` table |
 
 ### Database
 
@@ -101,6 +104,12 @@ clails --help
 | Command | Description |
 |---------|-------------|
 | `clails task` | Execute custom tasks |
+
+### Job Queue
+
+| Command | Description |
+|---------|-------------|
+| `clails job:work` | Run the background job worker (see [Job Queue Guide](job-queue.md)) |
 
 ### Testing
 
@@ -163,6 +172,32 @@ myapp/
 ├── myapp.asd
 └── README.md
 ```
+
+`clails.boot` is generated once from clails' own template at `clails new` time and records the clails framework version used to generate it. It is not automatically updated when you upgrade the clails framework. Each time it runs, it compares the recorded version against the currently installed clails version and prints a non-fatal warning to stderr if they differ, so you know the boot sequence may be out of date. If you see this warning, compare your project's `clails.boot` against `template/project/clails.boot.tmpl` in the installed clails source to see what changed.
+
+### `clails routes` - List Configured Routes
+
+Prints the routing table configured in `app/config/environment.lisp` (the `*routing-tables*` list), showing each route's path pattern, controller, and any custom `:scanner`/`:keys` entries.
+
+#### Syntax
+
+```bash
+clails routes
+```
+
+#### Examples
+
+```bash
+clails routes
+# => PATH                                    CONTROLLER
+# => ------------------------------------------------------------------------------
+# => /                                       myapp/controllers/application-controller:<application-controller>
+# => /users/:id                              myapp/controllers/users-controller:<users-controller>
+```
+
+#### Notes
+
+This command prints the raw route entries exactly as configured (before `initialize-routing-tables` compiles them into regex scanners at server startup). The source `:path` pattern is more readable than a compiled scanner object, and printing the raw entries means this command works without starting the server.
 
 ### `clails server` - Start Web Server
 
@@ -237,6 +272,64 @@ clails stop
 ```bash
 clails stop
 ```
+
+### `clails console` - Start an Interactive Console
+
+Boots the project's environment (configuration, DB connection, models -- the
+same `load-project` initialization path used by `server`/`db:*`/`test`) and
+then drops you into an interactive Lisp REPL, similar to `rails console`.
+
+#### Syntax
+
+```bash
+clails console
+```
+
+#### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--help` | `-h` | Show this help message |
+
+#### What's available in the REPL
+
+- The REPL runs in the project's `<project>-DB` package -- the same package
+  `db/seeds.lisp` and migration files run in. It already `:use`s
+  `clails/model` and imports every model package registered in
+  `app/models/package.lisp`, so registered models can be referenced the same
+  way `db/seeds.lisp` does:
+
+  ```common-lisp
+  todoapp-DB> (save (make-record 'todoapp/models/user:<user> :name "alice" :email "alice@example.com"))
+  todoapp-DB> (execute-query (query todoapp/models/user:<user> :as :user) nil)
+  ```
+
+- The database connection pool is started before the REPL begins and shut
+  down automatically when you leave, so model queries and saves work exactly
+  as they do inside a running server.
+- The REPL supports the standard `*`, `**`, `***` history variables for the
+  last few results.
+
+#### Examples
+
+```bash
+# Start an interactive console
+clails console
+
+# Leave the console
+todoapp-DB> (quit)
+todoapp-DB> (exit)
+# or press Ctrl-D
+```
+
+#### Behavior
+
+1. Load the project environment via `load-project` (config, DB settings) and
+   `load-db-package` (the `<project>-DB` package), exactly as `db:*` commands do
+2. Start the DB connection pool and load table metadata
+3. Read, evaluate, and print Lisp forms from standard input in a loop until
+   `(quit)`, `(exit)`, `:quit`, `:exit`, or end-of-input (Ctrl-D)
+4. Shut down the DB connection pool on the way out
 
 ---
 
@@ -525,6 +618,31 @@ Example: `app/tasks/maintenance/cleanup.lisp`
                 ))
 ```
 
+### `clails generate:job-queue-setup` - Generate the Job Queue Migration
+
+Generates the migration that creates the `clails_jobs` table used by the
+[background job queue](job-queue.md). This is a one-time setup step, not a
+per-job generator -- run it once per project, then `clails db:migrate`.
+
+#### Syntax
+
+```bash
+clails generate:job-queue-setup
+```
+
+#### Examples
+
+```bash
+clails generate:job-queue-setup
+clails db:migrate
+```
+
+#### Generated File
+
+```
+db/migrate/YYYYMMDDHHMMSS_create-clails-jobs-table.lisp
+```
+
 ### `clails generate:scaffold` - Generate Scaffold
 
 Generates Model, View, Controller, and Migration files together.
@@ -768,7 +886,40 @@ clails task maintenance:cleanup
 
 ---
 
-## 5. Testing Commands
+## 5. Job Queue Commands
+
+### `clails job:work` - Run the Background Job Worker
+
+Polls the `clails_jobs` table (see [`clails generate:job-queue-setup`](#clails-generatejob-queue-setup---generate-the-job-queue-migration)
+and the [Job Queue Guide](job-queue.md)) and executes due jobs, retrying
+failures with exponential backoff up to each job's `max-attempts`. Blocks
+until interrupted (Ctrl-C).
+
+#### Syntax
+
+```bash
+clails job:work [OPTIONS]
+```
+
+#### Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--poll-interval SECONDS` | None | Seconds to sleep between polls that found no due job (default: 1) |
+
+#### Examples
+
+```bash
+# Run the worker (default poll interval)
+clails job:work
+
+# Poll less aggressively
+clails job:work --poll-interval 5
+```
+
+---
+
+## 6. Testing Commands
 
 ### `clails test` - Run Tests
 
@@ -818,7 +969,7 @@ clails test todoapp/models/user
 
 ---
 
-## 6. Common Usage Patterns
+## 7. Common Usage Patterns
 
 ### Starting a New Project
 
@@ -917,7 +1068,7 @@ clails test --tag model --exclude slow
 
 ---
 
-## 7. Command Options
+## 8. Command Options
 
 ### Common Options
 
@@ -940,7 +1091,7 @@ clails generate:model user --no-overwrite
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 ### Command Not Found
 
@@ -994,7 +1145,7 @@ clails server -p 8080
 
 ---
 
-## 9. Advanced Usage
+## 10. Advanced Usage
 
 ### Startup and Shutdown Hooks
 
@@ -1002,13 +1153,15 @@ You can execute arbitrary processes when starting or stopping the server.
 
 ```common-lisp
 ;; Define in config/environment.lisp or similar
-(setf clails/environment:*startup-hooks*
-      (list #'(lambda ()
-                (format t "Server starting...~%"))))
+;; add-startup-hook/add-shutdown-hook append to the list, so hooks run in the
+;; order they were registered
+(clails/environment:add-startup-hook
+  #'(lambda ()
+      (format t "Server starting...~%")))
 
-(setf clails/environment:*shutdown-hooks*
-      (list #'(lambda ()
-                (format t "Server stopping...~%"))))
+(clails/environment:add-shutdown-hook
+  #'(lambda ()
+      (format t "Server stopping...~%")))
 ```
 
 ### Development with Swank Server

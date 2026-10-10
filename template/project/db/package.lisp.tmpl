@@ -3,6 +3,7 @@
 (defpackage #:<%= (@ project-name ) %>-db
   (:use #:cl
         #:clails/model)
+  (:import-from #:<%= (@ project-name ) %>/models/package)
   (:import-from #:clails/model/migration
                 #:defmigration
                 #:create-table

@@ -63,6 +63,42 @@ ros install tamurashingo/clails/v0.0.2
 clails --help
 ```
 
+### Using clails via Docker (no local Roswell/SBCL required)
+
+If you don't want to install Roswell/SBCL locally, you can build and run `clails`
+as a Docker image instead. Every subcommand operates on the host's current
+directory, so bind-mount it with `-v "$PWD":/workspace`:
+
+```bash
+docker build -f Dockerfile.cli -t tamurashingo/clails .
+# (once published to Docker Hub, `docker pull tamurashingo/clails` will replace the build step)
+
+docker run --rm -it -v "$PWD":/workspace tamurashingo/clails new myapp
+docker run --rm -it -v "$PWD":/workspace tamurashingo/clails new myapp --database mysql
+```
+
+`generate:*`, `db:*`, `task`, `environment`, `test` and `server` work the same way,
+but must be run **from inside the project directory** on the host (not its parent),
+since they resolve the project from the current directory just like `new` does:
+
+```bash
+cd myapp
+docker run --rm -it -v "$PWD":/workspace tamurashingo/clails generate:model todo
+docker run --rm -it -v "$PWD":/workspace tamurashingo/clails db:migrate
+
+# server needs its port published and bound to 0.0.0.0 to be reachable from the host
+docker run --rm -it -v "$PWD":/workspace -p 5000:5000 tamurashingo/clails server --bind 0.0.0.0
+```
+
+The container runs as a fixed non-root user (uid/gid `1000`), so files created
+under the bind mount are owned by that uid rather than root. If your host user's
+uid isn't `1000`, pass `--user "$(id -u):$(id -g)"` to match your own account.
+
+Note: `clails stop` only works when called in the same process as a running
+`server` (e.g. via a connected swank REPL). Since each `docker run` starts a new
+process, use Ctrl-C or `docker stop` to stop a containerized `server` instead —
+both deliver SIGINT/SIGTERM, which `clails server` already handles gracefully.
+
 ## Quick Start
 
 ### Create a New Project
@@ -129,8 +165,10 @@ Comprehensive guides for developing with clails:
 - **[Model Guide](document/model.md)** ([日本語](document/model_ja.md)) - Database operations, queries, transactions, and pessimistic locking
 - **[Logging Guide](document/logging.md)** ([日本語](document/logging_ja.md)) - Flexible logging system with hierarchical loggers
 - **[Task Guide](document/task.md)** ([日本語](document/task_ja.md)) - Custom task system with dependency management
+- **[Job Queue Guide](document/job-queue.md)** ([日本語](document/job-queue_ja.md)) - DB-persisted background job queue with retry/backoff
 - **[View Guide](document/view.md)** ([日本語](document/view_ja.md)) - Template engine and rendering (coming soon)
 - **[Controller Guide](document/controller.md)** ([日本語](document/controller_ja.md)) - Request handling and routing (coming soon)
+- **[Session & Authentication Guide](document/session.md)** ([日本語](document/session_ja.md)) - Opt-in cookie sessions and the `current-user` extension point
 - **[Environment Guide](document/environment.md)** ([日本語](document/environment_ja.md)) - Configuration management (coming soon)
 - **[Testing Guide](document/testing.md)** ([日本語](document/testing_ja.md)) - Testing framework (coming soon)
 

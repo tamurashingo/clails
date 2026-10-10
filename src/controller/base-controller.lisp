@@ -35,6 +35,8 @@
            #:do-put
            #:do-delete
            #:param
+           #:session
+           #:current-user
            #:initialize-routing-tables
            #:create-scanner-from-uri-path
            #:path-controller
@@ -119,8 +121,94 @@
    "
   (gethash key (slot-value controller 'params)))
 
+
+(defparameter +current-user-session-key+ "clails.current-user"
+  "Key under which (current-user controller) stores the authenticated user
+   inside the request's session hash table.")
+
+(defmethod session ((controller <base-controller>))
+  "Return the request-scoped session hash table for this controller.
+
+   clails does not implement session storage itself; this simply exposes
+   the hash table populated by lack-middleware-session (via
+   clails/middleware/session-middleware) under the :lack.session key of the
+   request environment. Callers can freely (gethash key (session controller))
+   and (setf (gethash key (session controller)) value) to read/write session
+   data; it is persisted (as a cookie-tracked session) after the response is
+   sent.
+
+   @param controller [<base-controller>] Controller instance
+   @return [hash-table] Session hash table
+   @condition error Signaled when session middleware is not enabled, i.e.
+     (getf (env controller) :lack.session) is NIL. Enable it by setting
+     clails/middleware/session-middleware:*enable-session-middleware* to T
+     (typically in app/config/environment.lisp).
+   "
+  (or (getf (env controller) :lack.session)
+      (error "Session is not available. Enable session middleware by setting ~
+              clails/middleware/session-middleware:*enable-session-middleware* ~
+              to T (e.g. in app/config/environment.lisp).")))
+
+(defmethod current-user ((controller <base-controller>))
+  "Return the currently authenticated user, or NIL if no user is logged in.
+
+   This is plumbing only: clails does not implement any authentication
+   scheme (no password hashing, no login/logout routes). Project code is
+   expected to implement its own login logic and call
+   (setf (current-user controller) user) once a user has been authenticated
+   (e.g. after verifying credentials), and (current-user controller) to read
+   it back on subsequent requests belonging to the same session.
+
+   Internally this value is stored in the session (see `session`), so
+   session middleware must be enabled for current-user to work.
+
+   @param controller [<base-controller>] Controller instance
+   @return [t] The value previously stored via (setf (current-user controller) ...), or NIL
+   "
+  (gethash +current-user-session-key+ (session controller)))
+
+(defmethod (setf current-user) (user (controller <base-controller>))
+  "Set the currently authenticated user for the request's session.
+
+   @param user [t] Application-defined user object/record to remember as the
+     authenticated user. Pass NIL to log the user out.
+   @param controller [<base-controller>] Controller instance
+   @return [t] user
+   "
+  (setf (gethash +current-user-session-key+ (session controller)) user))
+
+;;; ------------------------------------------------------------------
+;;; DEPRECATED: HTTP-method dispatch (do-get / do-post / do-put / do-delete)
+;;;
+;;; These four generic functions are the legacy action-dispatch mechanism:
+;;; when a route entry in *routing-tables* does not specify :action, the
+;;; controller middleware (clails/middleware/clails-middleware) falls back
+;;; to calling one of these methods based on the incoming HTTP method,
+;;; including "_method" parameter spoofing (a hidden form field) so that
+;;; HTML <form> POSTs can emulate PUT/DELETE.
+;;;
+;;; New code should prefer :action-based routing (specify :action and
+;;; :method on the route entry, and define a method named after the
+;;; action instead of do-get/do-post/do-put/do-delete). :action-based
+;;; routing keeps the path -> method mapping declared in one place (the
+;;; routing table) rather than split across the routing table and an
+;;; implicit HTTP-method convention, and it does not need the _method
+;;; spoofing hack since each action gets its own explicit :method entry.
+;;;
+;;; The do-get/do-post/do-put/do-delete mechanism is not being removed by
+;;; this change and continues to work exactly as before; it is marked here
+;;; as deprecated in favor of :action-based routing. See
+;;; document/controller.md ("Migrating from HTTP-method dispatch to
+;;; :action-based routing") for a migration guide.
+;;; ------------------------------------------------------------------
+
 (defgeneric do-get (controller)
   (:documentation "Handle HTTP GET request.
+
+   DEPRECATED: this is part of the legacy HTTP-method dispatch mechanism.
+   Prefer :action-based routing (see document/controller.md) for new code.
+   This method keeps working unchanged and is not scheduled for removal
+   in this change.
 
    Default implementation signals a 404/not-found error.
    Override this method to implement GET request handling.
@@ -137,6 +225,11 @@
 (defgeneric do-post (controller)
   (:documentation "Handle HTTP POST request.
 
+   DEPRECATED: this is part of the legacy HTTP-method dispatch mechanism.
+   Prefer :action-based routing (see document/controller.md) for new code.
+   This method keeps working unchanged and is not scheduled for removal
+   in this change.
+
    Default implementation signals a 404/not-found error.
    Override this method to implement POST request handling.
 
@@ -152,6 +245,13 @@
 (defgeneric do-put (controller)
   (:documentation "Handle HTTP PUT request.
 
+   DEPRECATED: this is part of the legacy HTTP-method dispatch mechanism.
+   Prefer :action-based routing (see document/controller.md) for new code.
+   Note that browsers cannot send PUT from an HTML <form>, so this is
+   normally reached via the \"_method\" parameter-spoofing hack on a POST
+   request; :action-based routing does not need that hack. This method
+   keeps working unchanged and is not scheduled for removal in this change.
+
    Default implementation signals a 404/not-found error.
    Override this method to implement PUT request handling.
 
@@ -166,6 +266,13 @@
 
 (defgeneric do-delete (controller)
   (:documentation "Handle HTTP DELETE request.
+
+   DEPRECATED: this is part of the legacy HTTP-method dispatch mechanism.
+   Prefer :action-based routing (see document/controller.md) for new code.
+   Note that browsers cannot send DELETE from an HTML <form>, so this is
+   normally reached via the \"_method\" parameter-spoofing hack on a POST
+   request; :action-based routing does not need that hack. This method
+   keeps working unchanged and is not scheduled for removal in this change.
 
    Default implementation signals a 404/not-found error.
    Override this method to implement DELETE request handling.
@@ -360,7 +467,32 @@
                           ;; Priority 3: Default behavior
                           (t
                            (append tbl
-                                   (create-scanner-from-uri-path path))))))))
+                                   (create-scanner-from-uri-path path)))))))
+  (warn-on-legacy-dispatch-routes))
+
+
+(defun warn-on-legacy-dispatch-routes ()
+  "Emit a single warning listing any routes that rely on the legacy
+   HTTP-method dispatch mechanism (do-get/do-post/do-put/do-delete)
+   instead of specifying :action.
+
+   This is a deprecation notice only: it does not change how routes are
+   matched or dispatched. It is emitted once per call to
+   initialize-routing-tables (i.e. once per routing-table compile, such
+   as at application startup), never per HTTP request, so it will not
+   spam logs in production.
+
+   @return [nil]
+   "
+  (let ((legacy-paths (loop for r in *router*
+                             unless (getf r :action)
+                             collect (getf r :path))))
+    (when legacy-paths
+      (format *error-output*
+              "Warning: ~D route(s) do not specify :action and will dispatch via the deprecated do-get/do-post/do-put/do-delete mechanism: ~{~A~^, ~}. Consider migrating to :action-based routing; see document/controller.md (\"Migrating from HTTP-method dispatch to :action-based routing\") for a guide.~%"
+              (length legacy-paths)
+              legacy-paths)))
+  (values))
 
 
 (defun create-scanner-from-uri-path (path)

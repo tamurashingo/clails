@@ -11,7 +11,7 @@
 
 (defsystem clails
   :class :package-inferred-system
-  :version "0.0.4"
+  :version "0.1.0"
   :author "tamura shingo"
   :license "MIT"
   :pathname "src"
@@ -25,6 +25,7 @@
                "getcmd"
                "jonathan"
                "lack"
+               "lack-middleware-session"
                "lack/middleware/static"
                "local-time"
                "str"

@@ -12,11 +12,13 @@
                 #:frozen-p
                 #:initialize-table-information)
   (:import-from #:clails/model/query
-                #:query
+                #:query)
+  (:import-from #:clails/model/query/crud
                 #:execute-query
                 #:save
                 #:make-record
-                #:destroy
+                #:destroy)
+  (:import-from #:clails/model/query/type-conversion
                 #:to-string
                 #:to-text
                 #:to-integer

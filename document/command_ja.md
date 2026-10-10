@@ -70,8 +70,10 @@ clails --help
 | コマンド | 説明 |
 |---------|------|
 | `clails new` | 新しいプロジェクトを作成 |
+| `clails routes` | 設定されているルーティングを一覧表示 |
 | `clails server` | Web サーバーを起動 |
 | `clails stop` | Web サーバーを停止 |
+| `clails console` | インタラクティブコンソール（REPL）を起動 |
 
 ### コード生成
 
@@ -164,6 +166,8 @@ myapp/
 └── README.md
 ```
 
+`clails.boot` は `clails new` 実行時に clails 本体のテンプレートから一度だけ生成され、生成時点の clails フレームワークのバージョンを記録します。clails フレームワークをアップグレードしても自動的には更新されません。実行の都度、記録されたバージョンと現在インストールされている clails のバージョンを比較し、異なる場合は警告を標準エラー出力に表示します(処理は継続されます)。この警告が出た場合は、インストール済みの clails ソースにある `template/project/clails.boot.tmpl` とプロジェクトの `clails.boot` を見比べて、変更点を確認してください。
+
 ### `clails server` - Web サーバーを起動
 
 開発用 Web サーバーを起動します。
@@ -237,6 +241,89 @@ clails stop
 ```bash
 clails stop
 ```
+
+### `clails console` - インタラクティブコンソールを起動
+
+プロジェクトの環境（設定、DB 接続、Model）を `server`/`db:*`/`test` と同じ
+`load-project` 初期化パスで読み込んだ後、`rails console` と同様にインタラク
+ティブな Lisp REPL を起動します。
+
+#### 書式
+
+```bash
+clails console
+```
+
+#### オプション
+
+| オプション | 短縮形 | 説明 |
+|-----------|-------|------|
+| `--help` | `-h` | このヘルプメッセージを表示 |
+
+#### REPL で使えるもの
+
+- REPL はプロジェクトの `<project>-DB` パッケージ上で動作します。これは
+  `db/seeds.lisp` や Migration ファイルが実行されるのと同じパッケージで、
+  すでに `clails/model` を `:use` しており、`app/models/package.lisp` に
+  登録済みの Model パッケージもすべて import 済みです。そのため、
+  `db/seeds.lisp` と同じ書き方で登録済みの Model を参照できます。
+
+  ```common-lisp
+  todoapp-DB> (save (make-record 'todoapp/models/user:<user> :name "alice" :email "alice@example.com"))
+  todoapp-DB> (execute-query (query todoapp/models/user:<user> :as :user) nil)
+  ```
+
+- REPL を開始する前に DB コネクションプールが起動され、終了時に自動的に
+  シャットダウンされるため、実行中のサーバーと同じように Model の
+  検索・保存が行えます。
+- `*`、`**`、`***` という、直前の実行結果を参照する標準的な REPL の
+  履歴変数も利用できます。
+
+#### 使用例
+
+```bash
+# インタラクティブコンソールを起動
+clails console
+
+# コンソールを終了する
+todoapp-DB> (quit)
+todoapp-DB> (exit)
+# または Ctrl-D を押す
+```
+
+#### 動作
+
+1. `load-project`（設定、DB 設定）と `load-db-package`（`<project>-DB`
+   パッケージ）でプロジェクトの環境を読み込む（`db:*` 系コマンドと同様）
+2. DB コネクションプールを起動し、テーブルのメタ情報を読み込む
+3. 標準入力から Lisp の式を読み取り、評価し、結果を表示するループを、
+   `(quit)`、`(exit)`、`:quit`、`:exit`、または入力終了（Ctrl-D）まで
+   繰り返す
+4. 終了時に DB コネクションプールをシャットダウンする
+
+### `clails routes` - 設定されているルーティングを一覧表示
+
+`app/config/environment.lisp` で設定されているルーティングテーブル（`*routing-tables*`）の内容を表示します。各ルートのパスパターン、コントローラ、および設定されていればカスタムの `:scanner`/`:keys` も表示します。
+
+#### 書式
+
+```bash
+clails routes
+```
+
+#### 使用例
+
+```bash
+clails routes
+# => PATH                                    CONTROLLER
+# => ------------------------------------------------------------------------------
+# => /                                       myapp/controllers/application-controller:<application-controller>
+# => /users/:id                              myapp/controllers/users-controller:<users-controller>
+```
+
+#### 補足
+
+このコマンドは、`initialize-routing-tables` によってサーバー起動時に正規表現スキャナへコンパイルされる前の、設定ファイルそのままのルートエントリを表示します。コンパイル済みのスキャナオブジェクトよりも元の `:path` パターンの方が人間にとって読みやすく、また生のエントリを表示することでサーバーを起動しなくてもこのコマンドを実行できます。
 
 ---
 
@@ -1002,13 +1089,14 @@ clails server -p 8080
 
 ```common-lisp
 ;; config/environment.lisp などで定義
-(setf clails/environment:*startup-hooks*
-      (list #'(lambda ()
-                (format t "Server starting...~%"))))
+;; add-startup-hook/add-shutdown-hook は末尾に追加するため、登録した順に実行される
+(clails/environment:add-startup-hook
+  #'(lambda ()
+      (format t "Server starting...~%")))
 
-(setf clails/environment:*shutdown-hooks*
-      (list #'(lambda ()
-                (format t "Server stopping...~%"))))
+(clails/environment:add-shutdown-hook
+  #'(lambda ()
+      (format t "Server stopping...~%")))
 ```
 
 ### Swankサーバーを使った開発

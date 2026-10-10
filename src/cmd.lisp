@@ -5,14 +5,17 @@
                 #:flatten)
   (:import-from #:clails/environment
                 #:*project-name*
-                #:*project-dir*)
+                #:*project-dir*
+                #:*routing-tables*)
   (:import-from #:clails/project/generate
                 #:gen/model
                 #:gen/migration
+                #:gen/job-queue-migration
                 #:gen/view
                 #:gen/controller
                 #:gen/scaffold
-                #:gen/task)
+                #:gen/task
+                #:check-unregistered-models)
   (:import-from #:clails/model/migration
                 #:db-create
                 #:db-migrate
@@ -45,9 +48,12 @@
   (:import-from #:clails/task
                 #:initialize-task-system
                 #:run-task)
+  (:import-from #:clails/job
+                #:run-worker-loop)
   (:export #:create-project
            #:generate/model
            #:generate/migration
+           #:generate/job-queue-setup
            #:generate/view
            #:generate/controller
            #:generate/scaffold
@@ -60,12 +66,14 @@
            #:db/seed
            #:db/status
            #:console
+           #:routes
            #:server
            #:stop
            #:test
            #:task/run
            #:task/list
-           #:task/info))
+           #:task/info
+           #:job/work))
 (in-package #:clails/cmd)
 
 (defparameter *app* nil
@@ -86,7 +94,9 @@
   (unless *swank-server*
     (handler-case
         (let ((swank-port (parse-integer port)))
-          (setf swank::*loopback-interface* address)
+          (ql:quickload :swank :silent t)
+          (let ((var (find-symbol "*LOOPBACK-INTERFACE*" :swank)))
+            (when var (setf (symbol-value var) address)))
           (setf *swank-server*
                 (funcall (intern "CREATE-SERVER" :swank)
                          :style :spawn
@@ -131,6 +141,15 @@
    @return [t] Generation result
    "
   (gen/migration migration-name))
+
+(defun generate/job-queue-setup ()
+  "Generate the migration that creates the clails_jobs table used by the
+   background job queue (clails/job:enqueue-job). Run 'clails db:migrate'
+   afterwards to apply it. See document/job-queue.md.
+
+   @return [t] Generation result
+   "
+  (gen/job-queue-migration))
 
 (defun generate/view (view-name &key (no-overwrite T))
   "Generate a view template file.
@@ -184,6 +203,7 @@
    @param version [string] Migration name to migrate up to (optional). If nil, runs all pending migrations.
    @return [t] Migration execution result
    "
+  (check-unregistered-models)
   (db-migrate :version version))
 
 (defun db/status ()
@@ -231,6 +251,7 @@
 
    @return [t] Seeding execution result
    "
+  (check-unregistered-models)
   (startup-connection-pool)
   (initialize-table-information)
   (unwind-protect
@@ -238,14 +259,150 @@
     (shutdown-connection-pool)))
 
 
+(defparameter +console-quit-symbols+ '("QUIT" "EXIT")
+  "Symbol names that end the interactive console when read as a bare symbol
+   or as a zero-argument call, e.g. QUIT, (QUIT), :QUIT, EXIT, (EXIT), :EXIT.
+   Matched by name rather than by symbol identity so it works no matter which
+   package the console's *package* happens to be bound to.")
+
+(defun console-quit-form-p (form)
+  "Return T when FORM should end the console's read-eval-print loop.
+
+   @param form [t] Form read from the console's input stream
+   @return [boolean] T if FORM is a quit/exit request
+   "
+  (flet ((quit-symbol-p (x)
+           (and (symbolp x)
+                (member (symbol-name x) +console-quit-symbols+ :test #'string=))))
+    (or (quit-symbol-p form)
+        (and (consp form)
+             (null (cdr form))
+             (quit-symbol-p (car form))))))
+
+(defun console-repl-package ()
+  "Determine which package the interactive console should read/eval forms in.
+
+   Prefers <project>-DB: the package db/seeds.lisp and migration files run
+   in, which already :use's clails/model and imports every model package
+   registered in app/models/package.lisp (see load-db-package in
+   roswell/clails.ros, which loads db/package.lisp before calling console).
+   Falls back to CL-USER if that package is not present for some reason.
+
+   @return [package] Package to bind *package* to for the console session
+   "
+  (or (find-package (string-upcase (format nil "~A-DB" *project-name*)))
+      (find-package :cl-user)))
+
 (defun console ()
   "Start an interactive console for the application.
 
-   Not yet implemented.
+   Assumes the project environment (config, DB settings, models) has already
+   been booted via the same load-project path used by server/db:*/test --
+   see roswell/clails.ros, which calls load-project (and load-db-package)
+   before invoking this function. Starts the DB connection pool and loads
+   table metadata, then hands control to a simple read-eval-print loop
+   running in the project's <project>-DB package, so registered models can
+   be referenced the same way db/seeds.lisp does, e.g.:
 
-   @condition error Not yet implemented
+     (save (make-record '<project>/models/user:<user> :name \"a\"))
+
+   Type (quit), (exit), :quit, :exit, or send EOF (Ctrl-D) to leave the
+   console; the DB connection pool is shut down on the way out either way.
+
+   @return [t] Always returns t once the console session ends
    "
-  (error "Not yet implemented"))
+  (startup-connection-pool)
+  (initialize-table-information)
+  (unwind-protect
+      (let ((*package* (console-repl-package))
+            (eof-marker (list :eof))
+            (skip-marker (list :skip)))
+        (format t "~&clails console (project: ~A, package: ~A)~%"
+                *project-name* (package-name *package*))
+        (format t "Type (quit), (exit), or Ctrl-D to leave the console.~%~%")
+        (loop
+          (format t "~&~A> " (package-name *package*))
+          (force-output)
+          (let ((form (handler-case (read *standard-input* nil eof-marker)
+                        (end-of-file () eof-marker)
+                        (reader-error (e)
+                          (format t "~&; Read error: ~A~%" e)
+                          (ignore-errors (read-line *standard-input* nil ""))
+                          skip-marker))))
+            (cond
+              ((eq form eof-marker)
+               (format t "~%")
+               (return t))
+              ((eq form skip-marker)
+               nil)
+              ((console-quit-form-p form)
+               (return t))
+              (t
+               (handler-case
+                   (let ((results (multiple-value-list (eval form))))
+                     (setf *** ** ** * * (first results))
+                     (if results
+                         (dolist (r results)
+                           (format t "~&~S~%" r))
+                         (format t "~&; No value~%")))
+                 (error (e)
+                   (format t "~&; Error: ~A~%" e))))))))
+    (shutdown-connection-pool)))
+
+(defun routes ()
+  "Display the configured routing table.
+
+   Walks *routing-tables* (as configured in app/config/environment.lisp)
+   and prints each route's path pattern and controller class, along with
+   any custom :scanner/:keys entries when present. Prints the raw,
+   pre-compile route entries rather than the compiled regex scanners
+   built by initialize-routing-tables, since the source :path pattern is
+   more human-readable than a compiled scanner object and this command
+   does not require the server to have been started.
+
+   @return [t] Always returns t
+   "
+  (format t "~A~40T~A~%" "PATH" "CONTROLLER")
+  (format t "~A~%" (make-string 78 :initial-element #\-))
+  (dolist (route *routing-tables*)
+    (format t "~A~40T~A~%"
+            (getf route :path)
+            (getf route :controller))
+    (when (getf route :scanner)
+      (format t "  scanner: ~A~%" (getf route :scanner)))
+    (when (getf route :keys)
+      (format t "  keys: ~A~%" (getf route :keys))))
+  t)
+
+(defparameter +clack-handler-prefix+ "clack-handler-"
+  "Prefix shared by every Clack handler backend's ASDF system name.")
+
+(defun detect-server-backend (project-name)
+  "Detect the Clack server backend from the project's ASDF :depends-on.
+
+   Scans <project-name>'s :depends-on in declaration order and returns the
+   keyword for the first dependency named \"clack-handler-<name>\" (e.g.
+   \"clack-handler-woo\" -> :woo). When more than one clack-handler-* entry
+   is present, the one declared earliest wins. Returns nil when none is
+   found, leaving clack:clackup's own default (:hunchentoot) in effect.
+
+   @param project-name [string] Project name
+   @return [keyword|nil] Clack :server backend keyword, or nil if undetected
+   "
+  (handler-case
+      (let* ((system (asdf:find-system project-name))
+             (deps (asdf/component:component-sideway-dependencies system)))
+        (loop for dep in deps
+              when (and (stringp dep)
+                        (>= (length dep) (length +clack-handler-prefix+))
+                        (string= dep +clack-handler-prefix+
+                                 :end1 (length +clack-handler-prefix+)))
+                return (intern (string-upcase
+                                (subseq dep (length +clack-handler-prefix+)))
+                               :keyword)))
+    (error (e)
+      (warn "Failed to detect clack server backend for project ~a: ~a" project-name e)
+      nil)))
 
 (defun server (&key (port "5000") (bind "127.0.0.1") swank-port (swank-address "127.0.0.1"))
   "Start the web server with the specified port and bind address.
@@ -267,12 +424,14 @@
          (builder `(lack:builder ,@args)))
     (setf *app* (eval builder)))
 
-  (setf *handler*
-        (clack:clackup *app*
-                       :debug nil
-                       :use-thread T
-                       :port (parse-integer port)
-                       :address bind))
+  (let ((backend (detect-server-backend *project-name*)))
+    (setf *handler*
+          (apply #'clack:clackup *app*
+                 :debug nil
+                 :use-thread T
+                 :port (parse-integer port)
+                 :address bind
+                 (when backend (list :server backend)))))
 
   (call-startup-hooks)
   (clack::with-handle-interrupt
@@ -491,3 +650,23 @@
           (progn
             (format *error-output* "Error: Task not found: ~A~%" task-name-str)
             (uiop:quit 1))))))
+
+(defun job/work (&key (poll-interval 1) max-iterations)
+  "Run the background job worker, claiming and executing due jobs from the
+   clails_jobs table (see clails/job:enqueue-job) until stopped.
+
+   Requires the clails_jobs table to already exist -- see
+   'clails generate:job-queue-setup' and document/job-queue.md. Blocks until
+   interrupted (Ctrl-C) unless max-iterations is given.
+
+   @param poll-interval [number] Seconds to sleep between polls that found no
+                                 due job (default: 1)
+   @param max-iterations [integer or nil] Stop after this many poll
+                                          iterations (nil = run forever)
+   @return [nil]
+   "
+  (startup-connection-pool)
+  (initialize-table-information)
+  (unwind-protect
+      (run-worker-loop :poll-interval poll-interval :max-iterations max-iterations)
+    (shutdown-connection-pool)))

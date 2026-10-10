@@ -6,9 +6,11 @@
                 #:*database-type*
                 #:*sqlite3-busy-timeout*
                 #:*sqlite3-lock-retry-count*
-                #:*sqlite3-transaction-mode*
-                #:*sqlite3-lock-module-loaded*)
+                #:*%sqlite3-transaction-mode*
+                #:*%sqlite3-lock-module-loaded*)
   (:import-from #:clails/model/query
+                #:<query>)
+  (:import-from #:clails/model/query/crud
                 #:execute-query)
   (:import-from #:clails/model/connection
                 #:get-connection)
@@ -32,7 +34,7 @@
    then executes the body. The transaction is automatically committed on success
    or rolled back on error.
 
-   For SQLite3, sets *sqlite3-transaction-mode* to control BEGIN statement type,
+   For SQLite3, sets *%sqlite3-transaction-mode* to control BEGIN statement type,
    and implements retry logic on lock errors with exponential backoff.
 
    @param variable-name [symbol] Variable to bind the retrieved record(s)
@@ -78,7 +80,7 @@
        (retry-on-lock-error *database-type*
          (lambda ()
            ;; Set transaction mode for SQLite3
-           (let ((clails/environment:*sqlite3-transaction-mode* ,mode-var))
+           (let ((clails/environment:*%sqlite3-transaction-mode* ,mode-var))
              (dbi-cp:with-transaction ,connection-var
                ;; Evaluate query and add lock clause
                (let* ((,query-var ,query-spec)
@@ -101,12 +103,12 @@
 
    @return [boolean] T if module was loaded, NIL if already loaded
    "
-  (unless clails/environment:*sqlite3-lock-module-loaded*
+  (unless clails/environment:*%sqlite3-lock-module-loaded*
     (when (log-level-enabled-p :info :sql)
       (log.sql "Loading SQLite3 lock module"))
     (load (merge-pathnames "src/model/impl/sqlite3-lock.lisp"
                            (asdf:system-source-directory :clails)))
-    (setf clails/environment:*sqlite3-lock-module-loaded* t)
+    (setf clails/environment:*%sqlite3-lock-module-loaded* t)
     t))
 
 

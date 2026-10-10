@@ -2,13 +2,13 @@
 (defpackage #:clails/model/bulk
   (:use #:cl)
   (:import-from #:clails/model/query
-                #:insert1
                 #:generate-query
                 #:generate-values
-                #:make-record
                 #:<query>)
-  (:import-from #:clails/model/query
+  (:import-from #:clails/model/query/crud
+                #:insert1
                 #:update1
+                #:make-record
                 #:destroy)
   (:import-from #:clails/model/connection
                 #:get-connection)
@@ -866,7 +866,7 @@
     (error "update-all requires a list of model instances"))
 
   (dolist (model list-of-model)
-    (let ((rows-updated (clails/model/query::update1 model :connection connection)))
+    (let ((rows-updated (update1 model :connection connection)))
       (when (= rows-updated 0)
         (error 'clails/condition:optimistic-lock-error))))
 

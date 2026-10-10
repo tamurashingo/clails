@@ -3,6 +3,7 @@
   (:use #:cl
         #:rove
         #:clails/model/query
+        #:clails/model/query/crud
         #:clails/condition)
   (:import-from #:clails/util
                 #:env-or-default)

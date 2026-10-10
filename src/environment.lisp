@@ -15,16 +15,21 @@
            #:*default-lock-mode*
            #:*sqlite3-busy-timeout*
            #:*sqlite3-lock-retry-count*
-           #:*sqlite3-transaction-mode*
-           #:*sqlite3-lock-module-loaded*
-           #:*table-information-initialized*
-           #:*query-initialization-callbacks*
+           #:*%sqlite3-transaction-mode*
+           #:*%sqlite3-lock-module-loaded*
+           #:*%table-information-initialized*
+           #:*%query-initialization-callbacks*
            #:<database-type>
            #:<database-type-mysql>
            #:<database-type-postgresql>
            #:<database-type-sqlite3>
            #:<database-type-dummy>
-           #:set-environment))
+           #:set-environment
+           #:add-startup-hook
+           #:add-shutdown-hook
+           #:clails-framework-version
+           #:warn-if-framework-version-mismatch
+           #:resolve-project-environment))
 (in-package #:clails/environment)
 
 (defclass <database-type> ()
@@ -144,10 +149,20 @@
    Set in app/config/environment.lisp.")
 
 (defvar *startup-hooks*
-  '("clails/model/connection:startup-connection-pool"))
+  '("clails/model/connection:startup-connection-pool")
+  "List of functions (or function-name strings) to run at application startup,
+   in list order. Use add-startup-hook to append to this list so registration
+   order matches execution order; do not push onto it directly, since push
+   prepends and would run the newly added hook before the framework's own
+   default hooks (and before any hook registered earlier).")
 
 (defvar *shutdown-hooks*
-  '("clails/model/connection:shutdown-connection-pool"))
+  '("clails/model/connection:shutdown-connection-pool")
+  "List of functions (or function-name strings) to run at application shutdown,
+   in list order. Use add-shutdown-hook to append to this list so registration
+   order matches execution order; do not push onto it directly, since push
+   prepends and would run the newly added hook before the framework's own
+   default hooks (and before any hook registered earlier).")
 
 (defvar *default-lock-mode* :for-update
   "Default lock mode for with-locked-transaction macro.
@@ -180,7 +195,7 @@
 
    This can be overridden in <project>/app/config/environment.lisp")
 
-(defvar *sqlite3-transaction-mode* nil
+(defvar *%sqlite3-transaction-mode* nil
   "SQLite3 transaction mode for the current dynamic context.
 
    This is a special variable used to pass the transaction mode
@@ -192,29 +207,45 @@
    - :exclusive   - Exclusive lock (BEGIN EXCLUSIVE)
 
    This variable is set by with-locked-transaction macro and should not
-   be set directly by user code.")
+   be set directly by user code.
 
-(defvar *sqlite3-lock-module-loaded* nil
+   NOTE: The leading % in the name marks this as an internal-only control
+   variable (per clails' naming convention for such variables). Do not read
+   or set it from application code.")
+
+(defvar *%sqlite3-lock-module-loaded* nil
   "Flag indicating whether sqlite3-lock module has been loaded.
 
    Set to T after src/model/impl/sqlite3-lock.lisp is successfully loaded.
-   Used to ensure the module is loaded only once.")
+   Used to ensure the module is loaded only once.
 
-(defvar *table-information-initialized* nil
+   NOTE: The leading % in the name marks this as an internal-only control
+   variable (per clails' naming convention for such variables). Do not read
+   or set it from application code.")
+
+(defvar *%table-information-initialized* nil
   "Flag indicating whether initialize-table-information has been executed.
 
    Set to T after initialize-table-information completes successfully.
    Used by query macro to determine whether to create actual query instances
-   or placeholder instances for lazy initialization.")
+   or placeholder instances for lazy initialization.
 
-(defvar *query-initialization-callbacks* nil
+   NOTE: The leading % in the name marks this as an internal-only control
+   variable (per clails' naming convention for such variables). Do not read
+   or set it from application code.")
+
+(defvar *%query-initialization-callbacks* nil
   "List of callback functions to initialize query placeholders.
 
    When query macro is expanded before initialize-table-information is called,
    callback functions are registered here to initialize query placeholders later.
    Each callback takes no arguments and sets the actual query instance to the
    corresponding placeholder's actual-query slot.
-   Cleared after initialize-table-information executes all callbacks.")
+   Cleared after initialize-table-information executes all callbacks.
+
+   NOTE: The leading % in the name marks this as an internal-only control
+   variable (per clails' naming convention for such variables). Do not read
+   or set it from application code.")
 
 (defparameter +ENVIRONMENT-NAMES+ '("DEVELOP" "TEST" "PRODUCTION")
   "List of valid environment names.")
@@ -239,3 +270,100 @@
   (let ((env (string-upcase env-name)))
     (when (check-environment-name env)
       (setf *project-environment* (intern env :KEYWORD)))))
+
+(defun add-startup-hook (hook)
+  "Register a hook to run at application startup.
+
+   Appends to *startup-hooks*, so hooks run in the order they were
+   registered (after any hook already present, including the framework's
+   own default). Prefer this over pushing onto *startup-hooks* directly,
+   which would reverse the intended execution order.
+
+   @param hook [string or function] Function name (e.g. \"package:function-name\") or a function object
+   @return [list] The updated *startup-hooks* list
+   "
+  (setf *startup-hooks* (append *startup-hooks* (list hook))))
+
+(defun add-shutdown-hook (hook)
+  "Register a hook to run at application shutdown.
+
+   Appends to *shutdown-hooks*, so hooks run in the order they were
+   registered (after any hook already present, including the framework's
+   own default). Prefer this over pushing onto *shutdown-hooks* directly,
+   which would reverse the intended execution order.
+
+   @param hook [string or function] Function name (e.g. \"package:function-name\") or a function object
+   @return [list] The updated *shutdown-hooks* list
+   "
+  (setf *shutdown-hooks* (append *shutdown-hooks* (list hook))))
+
+(defun clails-framework-version ()
+  "Return the version of the currently loaded clails framework.
+
+   This reflects the :version recorded in clails.asd for whatever clails
+   system is actually loaded in the running Lisp image -- not necessarily
+   the version a given project's clails.boot was originally generated with.
+
+   @return [string] Version string, e.g. \"0.0.4\"
+   "
+  (asdf:component-version (asdf:find-system :clails)))
+
+(defun warn-if-framework-version-mismatch (generated-version)
+  "Warn (non-fatally) when a project's clails.boot was generated by a
+   different clails framework version than the one currently running.
+
+   clails.boot is generated once from a template at `clails new` time and is
+   never automatically kept in sync with framework changes. Comparing the
+   version recorded at generation time against clails-framework-version lets
+   us surface that drift instead of silently letting it accumulate.
+
+   @param generated-version [string] The clails version recorded when this
+          project's clails.boot was generated
+   @return [boolean] T if a mismatch warning was printed, NIL if versions match
+   "
+  (let ((current-version (clails-framework-version)))
+    (unless (string= generated-version current-version)
+      (format *error-output*
+              "~&;; WARNING: this project's clails.boot was generated with clails ~A, but the clails framework currently installed is ~A.~%~
+               ;; The boot sequence may have changed since this project was created. This is not fatal, but if something looks wrong at startup, compare clails.boot against template/project/clails.boot.tmpl in the clails source for the version you have installed.~%~%"
+              generated-version current-version)
+      t)))
+
+(defun resolve-project-environment (&key env-var forced)
+  "Resolve the effective *project-environment* from its layered inputs and
+   log which source determined the final value.
+
+   *project-environment* is decided by up to three layered inputs, listed
+   here from lowest to highest precedence:
+
+   1. default  - whatever *project-environment* already holds when this
+                 function is called (normally set in the project's
+                 app/config/environment.lisp, e.g. :develop).
+   2. env-var  - the value of the CLAILS_ENV environment variable, passed
+                 in via the ENV-VAR argument (e.g. from clails.boot).
+   3. forced   - a forced override, passed in via the FORCED argument
+                 (e.g. the \"test\" command always forcing :test).
+
+   The highest-precedence non-nil input wins; *project-environment* is
+   updated only when ENV-VAR or FORCED is supplied. Each call is
+   independent, so this function can be invoked more than once as inputs
+   become available at different points during startup (default first,
+   then env-var, then a possible forced override) without changing when
+   each input becomes available.
+
+   @param env-var [string or null] Value of CLAILS_ENV, if any
+   @param forced [string or null] A forced environment name override, if any
+   @return [keyword] The resolved *project-environment* value
+   "
+  (let ((source
+          (cond
+            (forced
+             (set-environment forced)
+             "forced override")
+            (env-var
+             (set-environment env-var)
+             "CLAILS_ENV")
+            (t
+             "default"))))
+    (format t "project environment resolved to ~A (source: ~A)~%" *project-environment* source)
+    *project-environment*))

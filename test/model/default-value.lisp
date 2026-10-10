@@ -2,7 +2,8 @@
 (defpackage #:clails-test/model/default-value
   (:use #:cl
         #:rove
-        #:clails/model/query)
+        #:clails/model/query
+        #:clails/model/query/crud)
   (:import-from #:clails/util
                 #:env-or-default)
   (:import-from #:clails/model/base-model
