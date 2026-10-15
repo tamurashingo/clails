@@ -9,6 +9,15 @@
   :depends-on (#:babel
                #:clails
                #:rove
+               ;; HTTP round-trip helpers for the tests (no server, no DB).
+               ;; lack-test provides exactly one package (LACK/TEST) and
+               ;; lack.asd registers a "lack/test" system alias for it, so a
+               ;; single :import-from #:lack/test resolves cleanly from a
+               ;; package-inferred component.  lack-middleware-csrf is used by
+               ;; clails-test/middleware/middleware-stack as a real extra
+               ;; stage; the framework itself does not depend on it.
+               #:lack-test
+               #:lack-middleware-csrf
                #:clails-test/util
                #:clails-test/environment
                #:clails-test/model/impl/sqlite3
@@ -23,7 +32,12 @@
                #:clails-test/model/query/mysql
                #:clails-test/model/query/postgresql
                #:clails-test/controller/base-controller
+               #:clails-test/controller/routing-roundtrip
                #:clails-test/middleware/session-middleware
+               #:clails-test/middleware/session-http-roundtrip
+               #:clails-test/middleware/middleware-stack
+               #:clails-test/middleware/session-concurrency
+               #:clails-test/middleware/session-clock
                #:clails-test/helper/date-helper
                #:clails-test/model/join-query
                #:clails-test/model/save
