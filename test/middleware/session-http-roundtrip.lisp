@@ -100,6 +100,27 @@
         (ok (set-cookie-attribute-present-p cookie "path"))
         (ok (string= (set-cookie-attribute cookie "path") "/"))
         (ok (set-cookie-attribute-present-p cookie "expires"))
+        ;; The VALUE of expires is the point, not its presence: cookie-state's
+        ;; EXPIRES slot defaults to (get-universal-time) *at the moment the
+        ;; state is created* (lack .../state/cookie L25), and finalize-state
+        ;; emits (+ (get-universal-time) expires) (L60-L61).  The default is
+        ;; therefore not "expires at the end of the visit" but an absolute
+        ;; date roughly twice the current universal time -- a persistent
+        ;; cookie about 127 years out.  M5-T4 reads this suite as the record
+        ;; of the current defaults, so the number is asserted here; asserting
+        ;; only presence would certify a persistent cookie as the intended
+        ;; baseline.  Changing the default is M5-T4's job, not this test's.
+        (let* ((raw (set-cookie-attribute cookie "expires"))
+               (expires (and (stringp raw) (parse-http-date raw)))
+               (seconds-out (and expires (- expires (get-universal-time)))))
+          (diag (format nil "default expires: ~A (~@[~D s from now~])~%"
+                        raw seconds-out))
+          (ok (stringp raw) "expires carries a date, not just a flag")
+          (ok expires "the expires attribute is a readable HTTP-date")
+          (when seconds-out
+            (ok (> seconds-out (* 100 365 24 3600))
+                (format nil "the default expiry is ~D year(s) out, i.e. a persistent cookie"
+                        (round seconds-out (* 365 24 3600))))))
         (ok (set-cookie-attribute-present-p cookie "samesite"))
         (ok (string= (set-cookie-attribute cookie "samesite") "Lax"))
         ;; attributes that are NOT emitted today; these are the current
@@ -150,6 +171,142 @@
         (let ((third (client-request client "/")))
           (ok (null (response-header third :set-cookie)))
           (ok (string= (response-body-string third) "3")))))))
+
+
+;;; ------------------------------------------------------------------
+;;; Regression tests for the harness itself
+;;; ------------------------------------------------------------------
+
+(defun make-cookie-setting-app (inner raw-set-cookie)
+  "Wrap INNER so that its response also carries RAW-SET-COOKIE.
+
+   The extra header is appended by the application, i.e. INSIDE the session
+   stage, so lack/response:finalize-cookies appends the session cookie after
+   it -- which puts the application's cookie first, exactly where a reader
+   that stops at the first :set-cookie entry would find it."
+  (lambda (env)
+    (let ((response (funcall inner env)))
+      (list (first response)
+            (append (second response) (list :set-cookie raw-set-cookie))
+            (third response)))))
+
+(deftest session-cookie-tracking-test
+  ;; Regression test for a defect of this harness, not of the framework:
+  ;; a Lack response plist may carry :set-cookie more than once, because
+  ;; lack/response:finalize-cookies APPENDS one entry per baked cookie.  The
+  ;; helpers used to read it with GETF, so an application that set a cookie
+  ;; of its own made SESSION-CLIENT store that cookie as "the" session
+  ;; cookie: the counter below answered "1" on every request while every
+  ;; assertion stayed green.
+  (testing "an application cookie does not hide the session cookie"
+    (with-middleware-stack (app :inner (make-cookie-setting-app
+                                        (make-session-counter-app)
+                                        "flash=hello; path=/"))
+      (let* ((client (make-session-client app))
+             (first-response (client-request client "/")))
+        ;; both cookies really are on the response, application's one first
+        (ok (equal (mapcar #'set-cookie-name (response-set-cookies first-response))
+                   '("flash" "lack.session"))
+            "the response sets the application cookie first, then the session cookie")
+        (ok (string= (response-body-string first-response) "1"))
+        ;; the client learned the session cookie, not the first one it saw
+        (ok (string= (set-cookie-name (session-client-last-set-cookie client))
+                     "lack.session"))
+        (ok (= (length (set-cookie-value (session-client-last-set-cookie client))) 40))
+        ;; ... so the session continues instead of starting over
+        (ok (string= (response-body-string (client-request client "/")) "2"))
+        (ok (string= (response-body-string (client-request client "/")) "3"))
+        ;; and the application cookie is carried back as well, as a browser would
+        (let ((header (session-client-cookie client)))
+          (ok (search "flash=hello" header) "the application cookie is sent back too")
+          (ok (search "lack.session=" header) "and so is the session cookie")))))
+
+  (testing "a cookie can be picked out of a multi-cookie response by name"
+    (with-middleware-stack (app :inner (make-cookie-setting-app
+                                        (make-session-counter-app)
+                                        "flash=hello; path=/"))
+      (let ((response (call-app app "/")))
+        (ok (= (length (response-set-cookies response)) 2))
+        (ok (string= (set-cookie-value (response-set-cookie response "flash")) "hello"))
+        (ok (= (length (response-session-id response "lack.session")) 40))
+        ;; asking without a name would be a guess, so it is refused rather
+        ;; than answered about the wrong cookie
+        (ok (handler-case (progn (response-set-cookie response) nil)
+              (error () t))
+            "an ambiguous RESPONSE-SET-COOKIE signals instead of guessing")))))
+
+
+(deftest session-cookie-expiry-test
+  ;; Regression test for a defect of this harness: SESSION-CLIENT used to
+  ;; keep and resend a cookie whose Set-Cookie had already expired it.  A
+  ;; browser drops such a cookie, so a test could observe a session id being
+  ;; reused -- and a session continuing -- after the server told the client
+  ;; to forget it.  That is exactly the illusion M2's fixation tests and M5's
+  ;; expiry tests must not be built on.
+  (testing "a cookie the response expires is not sent again"
+    (let ((store (make-memory-session-store)))
+      (with-middleware-stack
+          (app :store store
+               :inner (let ((counter (make-session-counter-app)))
+                        (lambda (env)
+                          (let ((response (funcall counter env)))
+                            ;; /logout asks lack to expire the session: the
+                            ;; store entry is dropped and the Set-Cookie
+                            ;; carries expires=<now>
+                            (when (string= (getf env :path-info) "/logout")
+                              (setf (getf (getf env :lack.session.options) :expire) t))
+                            response))))
+        (let* ((client (make-session-client app))
+               (first-id (progn (client-request client "/")
+                                (set-cookie-value
+                                 (session-client-last-set-cookie client)))))
+          (ok (= (length first-id) 40))
+          (ok (string= (response-body-string (client-request client "/")) "2"))
+          (let* ((response (client-request client "/logout"))
+                 (cookie (response-set-cookie response "lack.session")))
+            (ok cookie "expiring the session re-emits the cookie")
+            (ok (string= (set-cookie-value cookie) first-id)
+                "the expiring Set-Cookie still names the old session id")
+            (ok (set-cookie-expired-p cookie)
+                "and it is expired: expires is not in the future")
+            (ok (null (session-client-jar client))
+                "so the client drops it instead of remembering it")
+            (ok (null (session-client-cookie client))
+                "and sends no Cookie header at all on the next request"))
+          ;; a browser would start a brand new session here, and so does the
+          ;; client: no resurrection of the id the server just retired
+          (let* ((response (client-request client "/"))
+                 (second-id (set-cookie-value (session-client-last-set-cookie client))))
+            (ok (string= (response-body-string response) "1")
+                "the counter starts over, so the old session was not continued")
+            (ok (= (length second-id) 40))
+            (ok (string/= second-id first-id)
+                "and the new session got a different id, not the retired one")
+            (ok (null (fetch-stored-session store first-id))
+                "the retired session is gone from the store"))))))
+
+  (testing "Max-Age and Expires are both understood"
+    (ok (set-cookie-expired-p (parse-set-cookie "a=b; Max-Age=0")))
+    (ok (set-cookie-expired-p (parse-set-cookie "a=b; Max-Age=-1")))
+    (ok (not (set-cookie-expired-p (parse-set-cookie "a=b; Max-Age=60"))))
+    (ok (set-cookie-expired-p
+         (parse-set-cookie "a=b; expires=Thu, 01 Jan 1970 00:00:00 GMT")))
+    (ok (not (set-cookie-expired-p
+              (parse-set-cookie "a=b; expires=Mon, 30 Jul 2153 21:39:38 GMT"))))
+    ;; Max-Age wins over Expires (RFC 6265 5.3)
+    (ok (set-cookie-expired-p
+         (parse-set-cookie "a=b; Max-Age=0; expires=Mon, 30 Jul 2153 21:39:38 GMT")))
+    ;; a plain session cookie never expires on its own
+    (ok (not (set-cookie-expired-p (parse-set-cookie "a=b; path=/"))))
+    ;; an Expires nobody can read means "unknown", never "expired"
+    (ok (not (set-cookie-expired-p (parse-set-cookie "a=b; expires=whenever"))))
+    ;; all three HTTP-date formats of RFC 7231
+    (ok (= (parse-http-date "Mon, 30 Jul 2153 21:39:38 GMT")
+           (parse-http-date "Mon Jul 30 21:39:38 2153")
+           (encode-universal-time 38 39 21 30 7 2153 0)))
+    (ok (= (parse-http-date "Monday, 30-Jul-53 21:39:38 GMT")
+           (encode-universal-time 38 39 21 30 7 2053 0)))
+    (ok (null (parse-http-date "not a date")))))
 
 
 (deftest request-shape-test

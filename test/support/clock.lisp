@@ -68,13 +68,28 @@
    Repeated calls to CLOCK-NOW inside BODY return exactly that value."
   `(call-with-frozen-clock ,universal-time (lambda () ,@body)))
 
-(defmacro with-clock-advanced-by ((seconds) &body body)
-  "Run BODY with the clocks frozen SECONDS after the current time.
+(defmacro with-clock-advanced-by ((seconds &key (from nil from-supplied-p)) &body body)
+  "Run BODY with the clocks frozen SECONDS after FROM, which defaults to the
+   current time.
 
    This is how a test builds the state \"this session has been idle for
-   longer than the limit\" without waiting."
+   longer than the limit\" without waiting.
+
+   FROM is what makes the result exact.  Left out, the base is read here, so
+   a test that read its own base a few forms earlier is comparing against a
+   *different* reading of the real clock: when a second boundary falls
+   between the two, \"idle for exactly N seconds\" comes out as N+1.  Passing
+   the same base the test holds removes the real clock from the comparison
+   altogether:
+
+     (let ((last-access (clock-now)))
+       (with-clock-advanced-by ((* 3600 24 21) :from last-access)
+         (= (idle-seconds last-access) (* 3600 24 21))))   ; always true
+
+   Nesting it inside WITH-FROZEN-CLOCK has the same effect, because CLOCK-NOW
+   then answers the frozen value."
   (let ((base (gensym "BASE")))
-    `(let ((,base (clock-now)))
+    `(let ((,base ,(if from-supplied-p from '(clock-now))))
        (call-with-frozen-clock (+ ,base ,seconds) (lambda () ,@body)))))
 
 (defun idle-seconds (last-access-time)
