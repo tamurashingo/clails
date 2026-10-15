@@ -12,6 +12,8 @@
   ;; components named after them.
   (:import-from #:lack/middleware/session
                 #:*lack-middleware-session*)
+  (:import-from #:clails/middleware/session/store/memory
+                #:make-memory-session-store)
   (:import-from #:clails/logger
                 #:log-level-enabled-p
                 #:log-package.trace)
@@ -39,10 +41,27 @@
 (defvar *session-store* nil
   "Session store used by the session middleware.
 
-   When NIL, a fresh in-memory store (lack/middleware/session/store/memory:make-memory-store)
-   is created the first time the middleware stack is built. Set this to a
-   different lack session store instance (e.g. a DBI or Redis backed store)
-   before starting the server to persist sessions elsewhere.
+   When NIL, a fresh clails in-memory store
+   (clails/middleware/session/store/memory:make-memory-session-store) is
+   created the first time the middleware stack is built. Set this to a
+   different store instance before starting the server to keep sessions
+   elsewhere:
+
+     (setf clails/middleware/session-middleware:*session-store*
+           (make-instance 'my-app/redis-session-store ...))
+
+   Two kinds of object are accepted here, and both keep working:
+
+     * an instance of a class deriving from
+       clails/middleware/session/store:<session-store> -- the clails
+       abstraction, and the only kind that supports the fourth operation
+       (TOUCH-SESSION, i.e. idle-timeout expiry);
+     * a lack session store structure (lack's own memory, DBI or Redis
+       store), which earlier versions of clails documented here.  The session
+       stage passes the value straight to lack, and lack dispatches on it
+       generically, so such a store behaves exactly as it did before.  It
+       simply has no last-access time: a lack structure cannot inherit from a
+       CLOS class, so it cannot pick up the default TOUCH-SESSION.
 
    This can be overridden in <project>/app/config/environment.lisp")
 
@@ -76,7 +95,7 @@
     (if (not *enable-session-middleware*)
         app
         (let ((store (or *session-store*
-                          (lack/middleware/session/store/memory:make-memory-store)))
+                          (make-memory-session-store)))
               (state (or *session-state*
                           (lack/middleware/session/state/cookie:make-cookie-state))))
           (when (log-level-enabled-p :trace)
