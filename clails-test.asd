@@ -9,15 +9,22 @@
   :depends-on (#:babel
                #:clails
                #:rove
-               ;; HTTP round-trip helpers for the tests (no server, no DB).
-               ;; lack-test provides exactly one package (LACK/TEST) and
-               ;; lack.asd registers a "lack/test" system alias for it, so a
-               ;; single :import-from #:lack/test resolves cleanly from a
-               ;; package-inferred component.  lack-middleware-csrf is used by
-               ;; clails-test/middleware/middleware-stack as a real extra
-               ;; stage; the framework itself does not depend on it.
-               #:lack-test
-               #:lack-middleware-csrf
+               ;; HTTP round-trip helpers for the tests (no server, no DB) are
+               ;; built on lack-test, and clails-test/middleware/middleware-stack
+               ;; uses lack-middleware-csrf as a real extra stage (the framework
+               ;; itself does not depend on it).
+               ;;
+               ;; Neither system is listed here, because neither has to be:
+               ;; lack.asd defines forwarding systems named "lack/test" and
+               ;; "lack/middleware/csrf", each with nothing but a :depends-on
+               ;; of the hyphenated system that actually holds the code.  A
+               ;; package-inferred component writing
+               ;; (:import-from #:lack/test ...) therefore makes ASDF look for
+               ;; a system called "lack/test", find that forwarding definition
+               ;; and load lack-test through it.  This is a different
+               ;; mechanism from the nickname registration in lack's own
+               ;; defpackage forms, which only teaches ASDF that the dotted
+               ;; names (LACK.TEST, ...) belong to an already known system.
                #:clails-test/util
                #:clails-test/environment
                #:clails-test/model/impl/sqlite3
