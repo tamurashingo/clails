@@ -75,8 +75,10 @@
            #:client-request
            ;; session store access
            #:make-memory-session-store
+           #:make-lack-memory-session-store
            #:make-test-cookie-state
            #:fetch-stored-session
+           #:remove-stored-session
            ;; concurrency
            #:run-concurrently
            #:run-concurrent-session-requests
@@ -586,9 +588,28 @@
 ;;; ------------------------------------------------------------------
 ;;; Session store / cookie state
 ;;; ------------------------------------------------------------------
+;;;
+;;; clails' own store package DOES have a matching ASDF system
+;;; (clails/middleware/session/store/memory), so it could be named in an
+;;; :import-from clause -- but its constructor is spelled exactly like the
+;;; helper below, so it is referenced fully-qualified here to keep the two
+;;; apart.  The lack sub-packages are fully-qualified for the different reason
+;;; explained at the top of this file.
 
 (defun make-memory-session-store ()
-  "A fresh lack in-memory session store, for *session-store*."
+  "A fresh clails in-memory session store, for *session-store*.
+
+   This is the store the framework itself falls back to when *session-store*
+   is NIL, so a test that hands this in is testing the default configuration."
+  (clails/middleware/session/store/memory:make-memory-session-store))
+
+(defun make-lack-memory-session-store ()
+  "A fresh LACK in-memory session store, for *session-store*.
+
+   A lack session store is a structure, not a clails <session-store>; older
+   clails releases documented *session-store* as holding exactly this.  It is
+   kept available so that the compatibility of those configurations can be
+   asserted rather than assumed."
   (lack/middleware/session/store/memory:make-memory-store))
 
 (defun make-test-cookie-state (&rest args)
@@ -598,8 +619,18 @@
   (apply #'lack/middleware/session/state/cookie:make-cookie-state args))
 
 (defun fetch-stored-session (store session-id)
-  "Read the session hash-table that STORE holds for SESSION-ID."
+  "Read the session hash-table that STORE holds for SESSION-ID.
+
+   Goes through lack's generic function, which is the one the session stage
+   itself calls, so this works for both kinds of store a test may build: a
+   lack store structure and a clails <session-store> derivation (the latter
+   bridges lack's three operations to its own)."
   (lack/middleware/session/store:fetch-session store session-id))
+
+(defun remove-stored-session (store session-id)
+  "Drop SESSION-ID from STORE, through the same generic function the session
+   stage uses.  Works for lack stores and clails stores alike."
+  (lack/middleware/session/store:remove-session store session-id))
 
 
 ;;; ------------------------------------------------------------------

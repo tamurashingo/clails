@@ -16,6 +16,19 @@
                 #:*enable-session-middleware*
                 #:*session-store*
                 #:*session-state*)
+  ;; The session store abstraction: an application that wants to keep sessions
+  ;; somewhere else subclasses <session-store> and implements these generic
+  ;; functions, then puts an instance in *session-store*.
+  (:import-from #:clails/middleware/session/store
+                #:<session-store>
+                #:fetch-session
+                #:store-session
+                #:remove-session
+                #:touch-session
+                #:session-last-access-time)
+  (:import-from #:clails/middleware/session/store/memory
+                #:<memory-session-store>
+                #:make-memory-session-store)
   (:export #:*clails-middleware-stack*
            #:*lack-middleware-clails-controller*
            #:*lack-middleware-transaction*
@@ -24,6 +37,14 @@
            #:*enable-session-middleware*
            #:*session-store*
            #:*session-state*
+           #:<session-store>
+           #:fetch-session
+           #:store-session
+           #:remove-session
+           #:touch-session
+           #:session-last-access-time
+           #:<memory-session-store>
+           #:make-memory-session-store
            #:add-middleware-before
            #:add-middleware-after
            #:show-middleware-stack))

@@ -45,6 +45,8 @@
                #:clails-test/middleware/middleware-stack
                #:clails-test/middleware/session-concurrency
                #:clails-test/middleware/session-clock
+               #:clails-test/middleware/session-store
+               #:clails-test/middleware/session-store-swap
                #:clails-test/helper/date-helper
                #:clails-test/model/join-query
                #:clails-test/model/save
