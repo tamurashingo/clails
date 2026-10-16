@@ -16,6 +16,14 @@
                 #:log-package.trace
                 #:log-package.debug
                 #:log-level-enabled-p)
+  ;; The session stage's atomic read-modify-write macro.  It is re-exported
+  ;; here (and a method is added below so that it accepts a controller) so
+  ;; that an action can write (with-session-lock (controller) ...) with no
+  ;; extra package in its :use list, the same way SESSION and CURRENT-USER
+  ;; are available.
+  (:import-from #:clails/middleware/session/store/wrapper
+                #:with-session-lock
+                #:session-lock-env)
   (:export #:<base-controller>
            #:<web-controller>
            #:<rest-controller>
@@ -36,6 +44,7 @@
            #:do-delete
            #:param
            #:session
+           #:with-session-lock
            #:current-user
            #:initialize-routing-tables
            #:create-scanner-from-uri-path
@@ -148,6 +157,20 @@
       (error "Session is not available. Enable session middleware by setting ~
               clails/middleware/session-middleware:*enable-session-middleware* ~
               to T (e.g. in app/config/environment.lisp).")))
+
+(defmethod session-lock-env ((controller <base-controller>))
+  "Tell the session layer where this controller's request environment is, so
+   that (with-session-lock (controller) ...) can find the session to lock.
+
+   The session store and the session id both live in the request environment
+   (see clails/middleware/session/store/wrapper); the macro accepts an
+   environment plist directly, and this method is what lets it accept a
+   controller instead.
+
+   @param controller [<base-controller>] Controller instance
+   @return [list] The request environment plist
+   "
+  (env controller))
 
 (defmethod current-user ((controller <base-controller>))
   "Return the currently authenticated user, or NIL if no user is logged in.

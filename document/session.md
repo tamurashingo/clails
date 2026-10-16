@@ -55,10 +55,10 @@ hash table is created.
 
 ### Customizing the store and cookie state (optional)
 
-By default, sessions are kept in an in-memory store
-(`lack/middleware/session/store/memory:make-memory-store`) with a standard
-cookie (`lack/middleware/session/state/cookie:make-cookie-state`). Both can
-be overridden before the server starts:
+By default, sessions are kept in clails' own in-memory store
+(`clails/middleware/session/store/memory:make-memory-session-store`) with a
+standard cookie (`lack/middleware/session/state/cookie:make-cookie-state`).
+Both can be overridden before the server starts:
 
 ```common-lisp
 ;; use a custom cookie name / httponly flag
@@ -76,6 +76,13 @@ The in-memory store is fine for local development and single-process
 deployments; for anything that runs more than one server process (or that
 must survive a restart) you will want a shared store such as
 `lack-session-store-dbi` or `lack-session-store-redis`.
+
+`*session-store*` accepts either kind of store: a class deriving from
+clails' own `clails/middleware/session/store:<session-store>`, or a Lack
+session store structure such as the ones above. Both are driven by the
+session stage in exactly the same way; only a clails derivation can
+implement the store protocol's fourth operation (`touch-session`, which
+records when a session was last used).
 
 **Important:** these variables are read once, when the middleware stack is
 built at server startup (`clails:server`). Set them in
