@@ -14,6 +14,9 @@
                 #:*lack-middleware-session*)
   (:import-from #:clails/middleware/session/store/memory
                 #:make-memory-session-store)
+  (:import-from #:clails/middleware/session/store/wrapper
+                #:ensure-session-store-wrapper
+                #:wrap-session-container)
   (:import-from #:clails/logger
                 #:log-level-enabled-p
                 #:log-package.trace)
@@ -63,6 +66,14 @@
        simply has no last-access time: a lack structure cannot inherit from a
        CLOS class, so it cannot pick up the default TOUCH-SESSION.
 
+   Whatever is put here, the session stage wraps it in a
+   clails/middleware/session/store/wrapper:<session-store-wrapper>, which
+   serialises access to one session and provides WITH-SESSION-LOCK.  The
+   wrapping is transparent -- the operations are forwarded to the store set
+   here, and the store set here is where the sessions end up -- and
+   idempotent, so putting a wrapper here yourself does not add a second
+   layer.
+
    This can be overridden in <project>/app/config/environment.lisp")
 
 (defvar *session-state* nil
@@ -94,11 +105,24 @@
      "
     (if (not *enable-session-middleware*)
         app
-        (let ((store (or *session-store*
-                          (make-memory-session-store)))
+        ;; The configured store is wrapped so that access to one session is
+        ;; serialised, and the application is wrapped so that it runs with a
+        ;; session container that tolerates concurrent writes.  Both halves
+        ;; live in clails/middleware/session/store/wrapper, which explains why
+        ;; neither is optional: the default server runs one thread per request
+        ;; and a single page load sends several requests carrying the same
+        ;; session cookie, so without them concurrent requests corrupt the
+        ;; session table (measured).  Wrapping is idempotent, so a store that
+        ;; already is a wrapper is used as it is.
+        (let ((store (ensure-session-store-wrapper
+                      (or *session-store*
+                          (make-memory-session-store))))
               (state (or *session-state*
                           (lack/middleware/session/state/cookie:make-cookie-state))))
           (when (log-level-enabled-p :trace)
             (log-package.trace "Session middleware: enabled"))
-          (funcall *lack-middleware-session* app :store store :state state))))
+          (funcall *lack-middleware-session*
+                   (wrap-session-container app store)
+                   :store store
+                   :state state))))
   "Lack middleware function for opt-in cookie session management.")

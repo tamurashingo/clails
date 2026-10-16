@@ -56,10 +56,10 @@ Cookie の発行もリクエストごとのハッシュテーブルの生成も�
 
 ### ストアと Cookie の設定をカスタマイズする(任意)
 
-デフォルトでは、セッションはインメモリストア
-(`lack/middleware/session/store/memory:make-memory-store`)と標準的な
-Cookie (`lack/middleware/session/state/cookie:make-cookie-state`)を使って
-保持されます。どちらもサーバー起動前に上書きできます。
+デフォルトでは、セッションは clails 自身のインメモリストア
+(`clails/middleware/session/store/memory:make-memory-session-store`)と
+標準的な Cookie (`lack/middleware/session/state/cookie:make-cookie-state`)
+を使って保持されます。どちらもサーバー起動前に上書きできます。
 
 ```common-lisp
 ;; Cookie 名や httponly フラグをカスタマイズする
@@ -77,6 +77,13 @@ Cookie (`lack/middleware/session/state/cookie:make-cookie-state`)を使って
 複数プロセスで動かす場合や再起動をまたいでセッションを保持したい場合は、
 `lack-session-store-dbi` や `lack-session-store-redis` のような共有ストア
 が必要になります。
+
+`*session-store*` にはどちらの種類のストアも渡せます。clails 自身の
+`clails/middleware/session/store:<session-store>` を継承したクラスでも、
+上記のような Lack のセッションストア構造体でも構いません。セッションの段
+からの扱いはまったく同じで、ストアの第4の操作(最終アクセス時刻だけを
+記録する `touch-session`)を実装できるのが clails 側の派生クラスだけ、と
+いう点だけが異なります。
 
 **重要:** これらの変数は、サーバー起動時にミドルウェアスタックが構築
 される際(`clails:server`)に一度だけ読み取られます。サーバー起動前に

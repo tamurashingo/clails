@@ -675,8 +675,12 @@
      :values     list of THREADS lists, each holding that thread's results in
                  iteration order
      :errors     list of (thread-index . condition) for every call that
-                 signalled an error -- errors are collected, never
-                 resignalled, so that a test can assert on them
+                 signalled a SERIOUS-CONDITION -- they are collected, never
+                 resignalled, so that a test can assert on them.  The whole
+                 serious half of the condition hierarchy is caught, not just
+                 ERROR: anything a worker lets through would kill the thread
+                 and be resignalled by BT:JOIN-THREAD inside this function,
+                 i.e. outside the test's reach
      :timed-out  NIL, or the condition that ended the wait
      :abandoned  how many threads were still running when the wait ended and
                  had to be destroyed (0 on a clean run)"
@@ -700,9 +704,25 @@
                                     (bt:wait-on-semaphore gate)
                                     (let ((acc '()))
                                       (dotimes (j iterations)
+                                        ;; SERIOUS-CONDITION, not ERROR: a
+                                        ;; worker that signals a serious
+                                        ;; condition which is not an ERROR
+                                        ;; (BT:TIMEOUT is one, and so is a
+                                        ;; STORAGE-CONDITION) would
+                                        ;; otherwise die, and BT:JOIN-THREAD
+                                        ;; would resignal it inside this
+                                        ;; function -- i.e. out of
+                                        ;; RUN-CONCURRENTLY and past the
+                                        ;; test that is supposed to assert
+                                        ;; on it.  Collecting the whole
+                                        ;; serious half of the hierarchy
+                                        ;; keeps the contract below true:
+                                        ;; concurrency failures arrive in
+                                        ;; :ERRORS, never as a condition
+                                        ;; escaping this call.
                                         (handler-case
                                             (push (funcall worker index j) acc)
-                                          (error (condition)
+                                          (serious-condition (condition)
                                             (bt:with-lock-held (lock)
                                               (push (cons index condition) errors)))))
                                       ;; written under the lock: the reader

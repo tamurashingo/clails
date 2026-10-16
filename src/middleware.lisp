@@ -29,6 +29,16 @@
   (:import-from #:clails/middleware/session/store/memory
                 #:<memory-session-store>
                 #:make-memory-session-store)
+  ;; The wrapping store the session stage puts around the configured store:
+  ;; it serialises access to one session and is where an application asks for
+  ;; an atomic read-modify-write (WITH-SESSION-LOCK).
+  (:import-from #:clails/middleware/session/store/wrapper
+                #:<session-store-wrapper>
+                #:make-session-store-wrapper
+                #:ensure-session-store-wrapper
+                #:session-store-wrapper-inner
+                #:with-session-lock
+                #:call-with-session-lock)
   (:export #:*clails-middleware-stack*
            #:*lack-middleware-clails-controller*
            #:*lack-middleware-transaction*
@@ -45,6 +55,12 @@
            #:session-last-access-time
            #:<memory-session-store>
            #:make-memory-session-store
+           #:<session-store-wrapper>
+           #:make-session-store-wrapper
+           #:ensure-session-store-wrapper
+           #:session-store-wrapper-inner
+           #:with-session-lock
+           #:call-with-session-lock
            #:add-middleware-before
            #:add-middleware-after
            #:show-middleware-stack))

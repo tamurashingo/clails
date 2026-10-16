@@ -148,9 +148,17 @@
 ;;;     and the sweeper can record a known instant instead of re-reading the
 ;;;     clock at each layer.
 ;;;
-;;; The wrapper itself is NOT implemented here; M4 owns it.  M3-T2's swap
-;;; tests do exercise a delegating store that keeps its own id index, to prove
-;;; that inserting such a layer does not disturb the round trip.
+;;; The wrapper itself is NOT implemented here: it is
+;;; clails/middleware/session/store/wrapper:<session-store-wrapper> (M4),
+;;; which the session stage puts around whatever *session-store* holds.  One
+;;; thing that design note got wrong is written down there: taking the
+;;; per-session lock around the store operations is NOT by itself enough to
+;;; stop concurrent requests from damaging the session, because the damage
+;;; happens between the operations, while the application writes into the
+;;; container -- so the container itself is replaced by one that tolerates
+;;; concurrent access.  M3-T2's swap tests exercise a delegating store that
+;;; keeps its own id index, to prove that inserting such a layer does not
+;;; disturb the round trip.
 
 
 (defclass <session-store> ()
