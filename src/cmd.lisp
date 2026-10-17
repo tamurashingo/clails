@@ -43,6 +43,9 @@
   (:import-from #:clails/model/connection
                 #:startup-connection-pool
                 #:shutdown-connection-pool)
+  (:import-from #:clails/middleware/session/table
+                #:ensure-session-table
+                #:session-table-definition-file)
   (:import-from #:clails/model/base-model
                 #:initialize-table-information)
   (:import-from #:clails/task
@@ -65,6 +68,7 @@
            #:db/rollback
            #:db/seed
            #:db/status
+           #:db/create-session-table
            #:console
            #:routes
            #:server
@@ -212,6 +216,43 @@
    @return [t] Migration status information
    "
   (db-status))
+
+(defun db/create-session-table ()
+  "Create the table the database session store keeps sessions in.
+
+   Implementation of the db:create-session-table command.  One step: the table
+   exists when this returns.  The definition is read from the project's
+   db/session-table.lisp (the file `clails new' copies in), or -- for a project
+   created before that file existed -- from the framework's own definition,
+   which is the same content.
+
+   In the `db:' namespace and not in `generate:' because it touches the
+   database rather than writing a file, which is the line every existing
+   command of both namespaces keeps.  It takes no arguments: the environment
+   comes from CLAILS_ENV through the project's boot file, exactly as it does
+   for db:create and db:migrate.
+
+   Running it twice is harmless -- the statement is CREATE TABLE IF NOT EXISTS,
+   the same way db:create creates the migration history table -- so it does not
+   destroy the sessions of a running application.
+
+   There is deliberately no command to drop the table again: the `db:'
+   namespace has no drop-anything command to follow (only migrate:down and
+   rollback), the table holds no application data, and a mistyped drop command
+   would log every user out at once.  Removing it is a DROP TABLE in the
+   database, which is where an operation that destructive belongs.
+
+   The connection pool is NOT running during a command, so this opens a direct
+   connection of its own (see ENSURE-SESSION-TABLE).
+
+   @return [string] The name of the table that now exists
+   "
+  (let ((file (session-table-definition-file))
+        (table (ensure-session-table)))
+    (format t "session table: ~A~%" table)
+    (format t "definition: ~A~%"
+            (or file "the clails default (no db/session-table.lisp in this project)"))
+    table))
 
 (defun db/migrate-up (version &key (env :development))
   "Run a specific database migration for the specified environment.

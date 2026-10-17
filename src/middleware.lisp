@@ -29,6 +29,17 @@
   (:import-from #:clails/middleware/session/store/memory
                 #:<memory-session-store>
                 #:make-memory-session-store)
+  ;; The persistent derivation, and the table it needs: the recommended
+  ;; production store.  The table is created by `clails db:create-session-table'
+  ;; from db/session-table.lisp, and the store takes its column names from the
+  ;; same definition, so the two cannot disagree.
+  (:import-from #:clails/middleware/session/store/db
+                #:<db-session-store>
+                #:make-db-session-store)
+  (:import-from #:clails/middleware/session/table
+                #:session-table-definition
+                #:session-table-ddl
+                #:ensure-session-table)
   ;; The wrapping store the session stage puts around the configured store:
   ;; it serialises access to one session and is where an application asks for
   ;; an atomic read-modify-write (WITH-SESSION-LOCK).
@@ -55,6 +66,11 @@
            #:session-last-access-time
            #:<memory-session-store>
            #:make-memory-session-store
+           #:<db-session-store>
+           #:make-db-session-store
+           #:session-table-definition
+           #:session-table-ddl
+           #:ensure-session-table
            #:<session-store-wrapper>
            #:make-session-store-wrapper
            #:ensure-session-store-wrapper

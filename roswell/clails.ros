@@ -32,6 +32,7 @@ exec ros -Q -- $0 "$@"
   (format t "  db:migrate:down <version>         Migrate down to version~%")
   (format t "  db:rollback                       Rollback migrations~%")
   (format t "  db:status                         Show migration status~%")
+  (format t "  db:create-session-table           Create the session table~%")
   (format t "  task [TASK] [OPTIONS]             Execute custom tasks~%")
   (format t "  job:work [OPTIONS]                Run the background job worker~%")
   (format t "  test [packages...]                Run tests~%")
@@ -91,6 +92,7 @@ exec ros -Q -- $0 "$@"
   (format t "  db:rollback --step N      Rollback N migrations~%")
   (format t "  db:seed                   Seed the database~%")
   (format t "  db:status                 Show migration status~%")
+  (format t "  db:create-session-table   Create the table the database session store uses~%")
   (format t "~%")
   (format t "Options:~%")
   (format t "  --version VERSION         Migration version (for db:migrate)~%")
@@ -103,7 +105,13 @@ exec ros -Q -- $0 "$@"
   (format t "  clails db:migrate --version 20231105120000~%")
   (format t "  clails db:migrate:up 20231105120000~%")
   (format t "  clails db:rollback~%")
-  (format t "  clails db:rollback --step 3~%"))
+  (format t "  clails db:rollback --step 3~%")
+  (format t "  clails db:create-session-table~%")
+  (format t "~%")
+  (format t "Notes:~%")
+  (format t "  db:create-session-table reads db/session-table.lisp and creates the table~%")
+  (format t "  the database session store keeps sessions in. It is safe to run twice, and~%")
+  (format t "  the table is intentionally not part of the migration history or db/schema.lisp.~%"))
 
 (defun help/test ()
   (format t "Usage: clails test [PACKAGES...] [OPTIONS]~%~%")
@@ -413,6 +421,20 @@ exec ros -Q -- $0 "$@"
   (load-project)
   (load-db-package)
   (clails/cmd:db/status))
+
+;; Creates the table the database session store uses.  No arguments: the
+;; environment comes from CLAILS_ENV through the project's boot file, as it
+;; does for every other db: command.  db/package.lisp is not loaded because
+;; nothing here needs the project's models -- the statement is rendered from
+;; db/session-table.lisp and run on a direct connection.
+(define-command "db:create-session-table" (&key (help :short-option "h"
+                                                      :long-option "help"))
+  (:help-function #'help/db)
+  (when help
+    (help/db)
+    (uiop:quit 0))
+  (load-project)
+  (clails/cmd:db/create-session-table))
 
 (define-command "generate:model" (args &key (no-overwrite :long-option "no-overwrite")
                                             (no-migration :short-option "n"

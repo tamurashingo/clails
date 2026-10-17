@@ -14,6 +14,7 @@
                 #:drop-index-impl
                 #:ensure-database-impl
                 #:ensure-migration-table-impl
+                #:ddl-column-type-impl
                 #:check-type-valid)
   (:import-from #:clails/model/base-model
                 #:fetch-columns-and-types-impl
@@ -434,6 +435,27 @@
 (defmethod ensure-migration-table-impl ((database-type <database-type-postgresql>) connection)
   (declare (ignore database-type))
   (dbi:do-sql connection CREATE-MIGRATION-TABLE))
+
+(defmethod ddl-column-type-impl ((database-type <database-type-postgresql>) type &key length)
+  "Return the PostgreSQL type name for TYPE, honouring LENGTH for :STRING.
+
+   The type names come from *postgresql-type-convert*, the same table the migration DSL
+   renders with, so a hand-written DDL statement and a migration cannot
+   disagree about what a :DATETIME column is called here.  LENGTH exists
+   because that table fixes :STRING at varchar(255): a raw statement is
+   written precisely when a different length (a 40 character session id) is
+   needed.
+
+   @param database-type [<database-type-postgresql>] Database type instance
+   @param type [keyword] Column type
+   @param length [(or integer null)] Length for :STRING, ignored otherwise
+   @return [string] SQL type name
+   "
+  (declare (ignore database-type))
+  (check-type-valid type)
+  (if (and length (eq type :string))
+      (format NIL "varchar(~D)" length)
+      (cdr (assoc type *postgresql-type-convert*))))
 
 
 (defmethod get-last-id-impl ((database-type <database-type-postgresql>) connection)

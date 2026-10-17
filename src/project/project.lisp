@@ -194,6 +194,19 @@
                                database
                                (read-template "db/seeds.lisp.tmpl"))
 
+    ;; session table definition
+    ;;
+    ;; Read -- never evaluated -- by `clails db:create-session-table', which
+    ;; renders it into one CREATE TABLE statement for the project's dialect.
+    ;; It is copied into the project so that the table the database session
+    ;; store needs is visible and editable; a project without the file falls
+    ;; back to the framework's own definition, which is the same content.
+    (create-file-with-template "db/session-table.lisp"
+                               project-name
+                               project-dir
+                               database
+                               (read-template "db/session-table.lisp.tmpl"))
+
     ;; test system
     (create-file-with-template (format nil "~A-test.asd" project-name)
                                project-name
