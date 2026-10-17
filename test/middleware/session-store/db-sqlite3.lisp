@@ -11,8 +11,17 @@
   (:import-from #:clails/middleware/session/store/db
                 #:make-db-session-store)
   (:import-from #:clails/util
-                #:env-or-default))
+                #:env-or-default)
+  (:import-from #:clails-test/support/temp-project
+                #:make-test-project-root
+                #:delete-test-project-root))
 (in-package #:clails-test/middleware/session-store/db-sqlite3)
+
+
+(defvar *test-project-root* nil
+  "This suite's own directory under the system temporary directory, standing in
+   for a project root.  Scoped to the suite so that TEARDOWN deletes only what
+   the suite created.")
 
 
 ;;; M3-T3: the database session store and the table it needs, on SQLite3.
@@ -36,14 +45,12 @@
   (setf clails/environment:*project-environment* :test)
   (setf clails/environment:*database-config* `(:test (:database-name ,(format NIL "~A/volumes/clails_test.sqlite3"
                                             (env-or-default "CLAILS_SQLITE3_DATABASE" "/app")))))
-  (uiop:setup-temporary-directory)
-  (prepare-session-table-database))
+  (setf *test-project-root* (make-test-project-root))
+  (prepare-session-table-database *test-project-root*))
 
 (teardown
   (shutdown-connection-pool)
-  (uiop:delete-directory-tree uiop:*temporary-directory*
-                              :if-does-not-exist :ignore
-                              :validate t))
+  (delete-test-project-root *test-project-root*))
 
 
 (deftest session-table-and-store-agree-test-sqlite3

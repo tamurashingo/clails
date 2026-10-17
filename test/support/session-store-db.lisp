@@ -91,7 +91,7 @@
 ;;; started the connection pool.
 
 
-(defun prepare-session-table-database (&key (project-dir uiop:*temporary-directory*))
+(defun prepare-session-table-database (project-dir)
   "Create the database, the migration history table and the session table, and
    start the connection pool.  What a dialect suite's SETUP calls once the
    dialect is configured.
@@ -101,6 +101,11 @@
    schema dump is written) both point at it.  It holds no db/session-table.lisp,
    so the framework's own definition is what gets created -- which is also the
    case for a project that was created before that file existed.
+
+   Required rather than defaulted: defaulting it to the system temporary
+   directory is what made the suites of this repository delete the whole of
+   /tmp (see clails-test/support/temp-project), so a caller has to say which
+   directory it owns.
 
    @param project-dir [pathname] Directory standing in for the project root
    @return [string] The name of the session table

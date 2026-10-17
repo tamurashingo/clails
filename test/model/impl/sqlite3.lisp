@@ -8,7 +8,10 @@
   (:import-from #:clails/model/base-model
                 #:<base-model>
                 #:defmodel
-                #:ref))
+                #:ref)
+  (:import-from #:clails-test/support/temp-project
+                #:make-test-project-root
+                #:delete-test-project-root))
 (defpackage #:clails-test/model/db
   (:use #:cl)
   (:import-from #:clails/model/migration
@@ -21,6 +24,11 @@
                 #:drop-index))
 (in-package #:clails-test/model/impl/sqlite3)
 
+(defvar *test-project-root* nil
+  "This suite's own directory under the system temporary directory, used as
+   CLAILS/ENVIRONMENT:*PROJECT-DIR*.  Scoped to the suite so that TEARDOWN
+   deletes only what the suite created.")
+
 (defvar todo nil)
 
 (setup
@@ -28,12 +36,12 @@
    (setf clails/environment:*project-environment* :test)
    (setf clails/environment:*database-config* `(:test (:database-name ,(format NIL "~A/volumes/clails_test.sqlite3" (env-or-default "CLAILS_SQLITE3_DATABASE" "/app")))))
    (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR_0001" "/app/test/data/0001-migration-test"))
-   (uiop:setup-temporary-directory)
-   (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
-   (setf clails/environment::*project-dir* uiop:*temporary-directory*))
+   (setf *test-project-root* (make-test-project-root))
+   (ensure-directories-exist (merge-pathnames "db/" *test-project-root*))
+   (setf clails/environment::*project-dir* *test-project-root*))
 
 (teardown
-   (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t))
+   (delete-test-project-root *test-project-root*))
 
 (deftest create-database-sqlite3
   (clails/model/migration::db-create)
