@@ -35,7 +35,8 @@
            #:db-rollback
            #:check-type-valid
            #:valid-migration-filename-p
-           #:db-seed))
+           #:db-seed
+           #:ddl-column-type-impl))
 (in-package #:clails/model/migration)
 
 ;;; migration list
@@ -114,6 +115,32 @@
 
 (defgeneric ensure-migration-table-impl (database-type connection)
   (:documentation "Implementation of ensure migration table"))
+
+(defgeneric ddl-column-type-impl (database-type type &key length)
+  (:documentation "Return the SQL type name DATABASE-TYPE spells TYPE with.
+
+   The dialect difference of a hand-written DDL statement, isolated: the
+   framework writes raw CREATE TABLE statements in a few places (the migration
+   history table, the session table -- see
+   clails/middleware/session/table) and those statements are identical
+   across dialects except for the type names.  `db:create` keeps the whole
+   statement as a per-dialect constant because it has exactly one shape; a
+   statement rendered from a definition the user may edit needs the type names
+   on their own, which is what this answers.
+
+   LENGTH is honoured for :STRING, where the migration DSL's type map is fixed
+   at varchar(255) -- a raw statement may choose its own length, which is the
+   point of writing it by hand.  It is ignored for every other type.
+
+   This is NOT part of the migration DSL: nothing here consults or updates the
+   table list a migration run tracks, so a table created with it stays out of
+   the migration history and out of the exported schema file, deliberately.
+
+   @param database-type [<database-type>] Database type instance
+   @param type [keyword] One of clails/model/migration::*type-list*
+   @param length [(or integer null)] Length for :STRING, or NIL for the default
+   @return [string] The SQL type name, e.g. \"varchar(40)\" or \"timestamp\"
+   "))
 
 
 ;;;;

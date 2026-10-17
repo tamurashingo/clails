@@ -9,7 +9,13 @@
                 #:store-calls
                 #:store-call-count
                 #:clear-store-calls
-                #:run-session-store-roundtrip)
+                #:run-session-store-roundtrip
+                ;; The 4-concurrent bulk-write scenario lives in the support
+                ;; module because the database derivation has to run the very
+                ;; same body, and that run needs a database container -- see
+                ;; clails-test/middleware/session-store/db-mysql and its two
+                ;; siblings.
+                #:assert-bulk-write-survives)
   (:import-from #:clails/middleware/session/store
                 #:<session-store>
                 #:fetch-session
@@ -28,10 +34,7 @@
                 #:note-session-touched
                 #:session-table-synchronized-p
                 #:+synchronized-session-tables-p+
-                #:+session-store-env-key+)
-  (:import-from #:lack/request
-                #:make-request
-                #:request-query-parameters))
+                #:+session-store-env-key+))
 (in-package #:clails-test/middleware/session-store-wrapper)
 
 
@@ -256,52 +259,11 @@
 ;;; ------------------------------------------------------------------
 ;;; The scenario that used to damage the session, per store kind (M4-T2)
 ;;; ------------------------------------------------------------------
-
-(defparameter +bulk-keys+ 20
-  "Keys written by one request of the bulk-write scenario.")
-
-(defun bulk-writer-app ()
-  (make-recording-app
-   (lambda (env)
-     (let* ((session (getf env :lack.session))
-            (params (request-query-parameters (make-request env)))
-            (writer (cdr (assoc "writer" params :test #'string=)))
-            (n (cdr (assoc "n" params :test #'string=))))
-       (dotimes (index +bulk-keys+)
-         (setf (gethash (format nil "w-~A-~A-~D" writer n index) session) index))))))
-
-(defun assert-bulk-write-survives (inner label &key (threads 4) (iterations 25))
-  "Run the 4-concurrent bulk-write scenario against INNER and assert that the
-   session survived it: nothing signalled, the container is intact, every
-   written key is still there, and it can still be used."
-  (let* ((result (run-concurrent-session-requests
-                  (bulk-writer-app)
-                  :store inner
-                  :threads threads
-                  :iterations iterations
-                  :uri (lambda (thread-index iteration-index)
-                         (format nil "/?writer=~D&n=~D" thread-index iteration-index))))
-         (errors (getf result :errors))
-         (session (getf result :session))
-         ;; the sequential request that opens the session writes its own set
-         (expected (* +bulk-keys+ (1+ (* threads iterations)))))
-    (ok (null (getf result :timed-out)) (format nil "~A: all workers finished" label))
-    (ok (null errors)
-        (format nil "~A: no request signalled~@[; first: ~A~]"
-                label (when errors (cdr (first errors)))))
-    (ok (= (length (getf result :responses)) (* threads iterations))
-        (format nil "~A: every concurrent request was answered" label))
-    (ok (hash-table-p session) (format nil "~A: the session is still a hash table" label))
-    (when (hash-table-p session)
-      (multiple-value-bind (sane reason) (hash-table-sane-p session)
-        (ok sane (or reason (format nil "~A: the container is intact" label))))
-      (ok (= (hash-table-count session) expected)
-          (format nil "~A: ~D of ~D written keys survived"
-                  label (hash-table-count session) expected))
-      (setf (gethash "after" session) "ok")
-      (ok (equal (gethash "after" session) "ok")
-          (format nil "~A: the session is still usable afterwards" label)))))
-
+;;;
+;;; The scenario itself is ASSERT-BULK-WRITE-SURVIVES in the support module.
+;;; The stores listed here are the ones that need no database; the database
+;;; derivation runs the same scenario, wrapped the same way, in
+;;; clails-test/middleware/session-store/db-{sqlite3,mysql,postgresql}.
 
 (deftest session-store-wrapper-concurrency-test
   (testing "4 concurrent writers do not damage the session, whichever store is wrapped"

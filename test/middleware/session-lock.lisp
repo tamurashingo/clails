@@ -5,7 +5,16 @@
         #:clails-test/support/http)
   (:import-from #:clails-test/support/session-store
                 #:make-recording-session-store
-                #:make-wrapping-session-store)
+                #:make-wrapping-session-store
+                ;; The acceptance scenario lives in the support module because
+                ;; the database derivation has to run the very same body, and
+                ;; that run needs a database container -- see
+                ;; clails-test/middleware/session-store/db-mysql and its two
+                ;; siblings.
+                #:+expected-lossless-counter+
+                #:counter-value
+                #:make-locking-counter-app
+                #:assert-locked-increment-is-lossless)
   (:import-from #:clails/middleware/session/store
                 #:fetch-session)
   (:import-from #:clails/middleware/session/store/wrapper
@@ -40,27 +49,6 @@
 ;;; asserted to be lossy (losing an update is a race, and a test that demands
 ;;; a race is a flaky test); it is only reported, and bounded from above.
 
-
-(defparameter +expected-lossless-counter+ 101
-  "2 threads x 50 increments, plus the one request that opens the session.")
-
-(defun counter-value (result)
-  (let ((session (getf result :session)))
-    (and (hash-table-p session) (gethash "counter" session))))
-
-(defun make-locking-counter-app (&key (key "counter") (gap 0.001))
-  "An application that increments KEY in the session ATOMICALLY: the read,
-   the change and the write are all inside WITH-SESSION-LOCK.
-
-   GAP seconds pass between the read and the write, which is how a slow
-   action behaves and what makes a lost update certain without the lock."
-  (lambda (env)
-    (with-session-lock (env)
-      (let* ((session (getf env :lack.session))
-             (value (1+ (or (gethash key session) 0))))
-        (sleep gap)
-        (setf (gethash key session) value)
-        (list 200 (list :content-type "text/plain") (list (princ-to-string value)))))))
 
 (defun make-unlocked-counter-app (&key (key "counter") (gap 0.001))
   "The same application WITHOUT the lock: the shape of an ordinary action,
@@ -134,6 +122,15 @@
 ;;; Whatever store is configured
 ;;; ------------------------------------------------------------------
 
+;;; The stores listed here are the ones that need no database.  The database
+;;; derivation runs the same scenario -- ASSERT-LOCKED-INCREMENT-IS-LOSSLESS in
+;;; the support module, which this test and the database suites share -- in
+;;; clails-test/middleware/session-store/db-{sqlite3,mysql,postgresql}.  Its
+;;; expectation there is different, and the difference is a property of that
+;;; store rather than of the macro: a store that rebuilds the session on every
+;;; fetch gives each request its own table, and the fetch and the write-back
+;;; both happen outside the body the macro locks.  See the support module.
+
 (deftest session-lock-store-kinds-test
   (testing "the macro is lossless with every kind of store underneath"
     (dolist (entry (list (cons "clails memory store" (make-memory-session-store))
@@ -142,14 +139,7 @@
                          (cons "delegating test store"
                                (make-wrapping-session-store (make-memory-session-store)))))
       (destructuring-bind (label . store) entry
-        (let ((final (counter-value
-                      (run-concurrent-session-requests (make-locking-counter-app)
-                                                       :store store
-                                                       :threads 2
-                                                       :iterations 50))))
-          (ok (eql final +expected-lossless-counter+)
-              (format nil "~A: the counter is ~S, expected ~D"
-                      label final +expected-lossless-counter+)))))))
+        (assert-locked-increment-is-lossless store label)))))
 
 
 ;;; ------------------------------------------------------------------
