@@ -27,6 +27,7 @@
                ;; names (LACK.TEST, ...) belong to an already known system.
                #:clails-test/util
                #:clails-test/environment
+               #:clails-test/condition
                #:clails-test/model/impl/sqlite3
                #:clails-test/model/impl/mysql
                #:clails-test/model/impl/postgresql
@@ -56,6 +57,7 @@
                #:clails-test/middleware/session-store/db-postgresql
                #:clails-test/middleware/session-store-wrapper
                #:clails-test/middleware/session-lock
+               #:clails-test/middleware/forbidden-response
                #:clails-test/helper/date-helper
                #:clails-test/model/join-query
                #:clails-test/model/save
@@ -89,6 +91,7 @@
                #:clails-test/logger/dynamic-config
                #:clails-test/logger/package-hierarchy
                #:clails-test/logger/console-appender-threads
+               #:clails-test/logger/audit-destination
                #:clails-test/view/parser
                #:clails-test/view/compiler
                #:clails-test/view/renderer

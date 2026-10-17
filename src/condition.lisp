@@ -26,7 +26,23 @@
          :documentation "Request path that caused the error"))
   (:report (lambda (c s)
              (format s "~A ~A: ~A" (code c) (message c) (path c))))
-  (:documentation "Base condition class for HTTP errors."))
+  (:documentation "Base condition class for HTTP errors.
+
+   Every subclass below supplies CODE, MESSAGE and TEMPLATE-NAME through
+   :default-initargs, and PATH is passed in by whoever signals the condition.
+   A misspelled initarg here leaves the corresponding slot unbound, and the
+   slot readers -- including the ones the report function above calls -- then
+   fail at the point where the condition is turned into a response rather
+   than at the point where it was signalled.  :code on 403/forbidden and
+   :message on 401/unauthorized were misspelled exactly that way until M2;
+   clails-test/condition asserts all four slots of every subclass, so a new
+   typo is caught by the test suite instead of in production.
+
+   Note that nothing in the framework currently converts these conditions
+   into HTTP responses, with the single exception of 404/not-found, which
+   clails/middleware/clails-middleware catches in order to delegate to the
+   next application.  A middleware stage that has to reject a request builds
+   the response itself -- see clails/middleware/rejection."))
 
 
 (define-condition 400/bad-request (http-error)
@@ -42,14 +58,14 @@
   (:default-initargs
    :code 401
    :template-name "public/error.html"
-   :messsage "Unauthorized")
+   :message "Unauthorized")
   (:documentation "HTTP 401 Unauthorized error condition."))
 
 
 (define-condition 403/forbidden (http-error)
   ()
   (:default-initargs
-   :codee 403
+   :code 403
    :template-name "public/error.html"
    :message "Forbidden")
   (:documentation "HTTP 403 Forbidden error condition."))

@@ -50,6 +50,17 @@
                 #:session-store-wrapper-inner
                 #:with-session-lock
                 #:call-with-session-lock)
+  ;; Rejecting a request from inside a stage: a stage that must not let a
+  ;; request through answers it itself with a 403 triple and records the
+  ;; rejection on the :audit logger.  See src/middleware/rejection.lisp.
+  (:import-from #:clails/middleware/rejection
+                #:+forbidden-status+
+                #:*forbidden-message*
+                #:*forbidden-content-type*
+                #:forbidden-response
+                #:log-rejection
+                #:reject-forbidden
+                #:forbidden-app)
   (:export #:*clails-middleware-stack*
            #:*lack-middleware-clails-controller*
            #:*lack-middleware-transaction*
@@ -77,6 +88,13 @@
            #:session-store-wrapper-inner
            #:with-session-lock
            #:call-with-session-lock
+           #:+forbidden-status+
+           #:*forbidden-message*
+           #:*forbidden-content-type*
+           #:forbidden-response
+           #:log-rejection
+           #:reject-forbidden
+           #:forbidden-app
            #:add-middleware-before
            #:add-middleware-after
            #:show-middleware-stack))
