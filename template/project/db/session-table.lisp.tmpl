@@ -1,0 +1,58 @@
+;;;; Session table definition
+;;;;
+;;;; The table that the database session store keeps sessions in.  Create it
+;;;; with:
+;;;;
+;;;;     clails db:create-session-table
+;;;;
+;;;; which reads THIS file, renders one CREATE TABLE IF NOT EXISTS statement in
+;;;; your database's dialect and runs it.  Running the command again does
+;;;; nothing and keeps the rows that are already there.
+;;;;
+;;;; This is NOT a migration: it is data, read and never evaluated, and the
+;;;; table it creates does not appear in the migration history or in
+;;;; db/schema.lisp.  That is deliberate -- the session table is framework
+;;;; bookkeeping rather than part of your schema -- and it is why
+;;;; `clails db:migrate' and `clails db:status' are unaffected by it.
+;;;;
+;;;; To use the table, point the session store at it in
+;;;; app/config/environment.lisp:
+;;;;
+;;;;     (setf clails/middleware/session-middleware:*session-store*
+;;;;           (clails/middleware/session/store/db:make-db-session-store))
+;;;;
+;;;; The store reads the column names from this file, so renaming a column here
+;;;; moves both halves at once.  Each column says what it is FOR with :role:
+;;;;
+;;;;   :id           the session id (40 characters, the primary key)
+;;;;   :value        the serialised session
+;;;;   :last-access  when the session was last used, which is what the idle
+;;;;                 timeout is measured from.  It is a column of its own on
+;;;;                 purpose: an updated_at column is not written unless
+;;;;                 something writes it, and a session store that skips the
+;;;;                 write when the session did not change would let the time
+;;;;                 stand still for a user who is only reading pages -- and
+;;;;                 expire them while they are using the application.
+;;;;
+;;;; Column keys: :name :role :type :length :not-null :primary-key :unique
+;;;; :default (only :current-timestamp).  :type is one of the migration column
+;;;; types (:string :text :integer :float :decimal :datetime :date :time
+;;;; :boolean); the dialect's spelling of it (datetime against timestamp) is
+;;;; chosen when the statement is rendered.
+
+(:table "clails_sessions"
+ :columns ((:name "session_id"
+            :role :id
+            :type :string
+            :length 40
+            :not-null t
+            :primary-key t)
+           (:name "session_value"
+            :role :value
+            :type :text
+            :not-null t)
+           (:name "last_access_at"
+            :role :last-access
+            :type :datetime
+            :not-null t
+            :default :current-timestamp)))

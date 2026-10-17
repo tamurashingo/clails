@@ -47,6 +47,13 @@
                #:clails-test/middleware/session-clock
                #:clails-test/middleware/session-store
                #:clails-test/middleware/session-store-swap
+               ;; The session table (M3-T3): the definition, the statement
+               ;; rendered from it and the store that reads the table, first
+               ;; without a database and then once per dialect.
+               #:clails-test/middleware/session-table
+               #:clails-test/middleware/session-store/db-sqlite3
+               #:clails-test/middleware/session-store/db-mysql
+               #:clails-test/middleware/session-store/db-postgresql
                #:clails-test/middleware/session-store-wrapper
                #:clails-test/middleware/session-lock
                #:clails-test/helper/date-helper
