@@ -57,6 +57,23 @@
   (:import-from #:clails/middleware/session/clock
                 #:*session-clock*
                 #:session-clock-now)
+  ;; The CSRF verification stage (M6): opt-in, sits inside the session stage
+  ;; and outside the routing stage.  See src/middleware/csrf-middleware.lisp.
+  (:import-from #:clails/middleware/csrf-middleware
+                #:*lack-middleware-clails-csrf*
+                #:*lack-middleware-clails-csrf-body-guard*
+                #:*enable-csrf-middleware*
+                #:*csrf-session-key*
+                #:*csrf-form-token*
+                #:*csrf-header-name*
+                #:*csrf-one-time-token*
+                #:*csrf-forbidden-message*
+                #:+csrf-marker-key+
+                #:csrf-configuration-error
+                #:check-csrf-configuration
+                #:constant-time-string=
+                #:csrf-token
+                #:csrf-html-tag)
   ;; The session store abstraction: an application that wants to keep sessions
   ;; somewhere else subclasses <session-store> and implements these generic
   ;; functions, then puts an instance in *session-store*.
@@ -133,6 +150,20 @@
            #:session-regenerate-id
            #:*session-clock*
            #:session-clock-now
+           #:*lack-middleware-clails-csrf*
+           #:*lack-middleware-clails-csrf-body-guard*
+           #:*enable-csrf-middleware*
+           #:*csrf-session-key*
+           #:*csrf-form-token*
+           #:*csrf-header-name*
+           #:*csrf-one-time-token*
+           #:*csrf-forbidden-message*
+           #:+csrf-marker-key+
+           #:csrf-configuration-error
+           #:check-csrf-configuration
+           #:constant-time-string=
+           #:csrf-token
+           #:csrf-html-tag
            #:<session-store>
            #:fetch-session
            #:store-session
