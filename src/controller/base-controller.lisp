@@ -24,6 +24,40 @@
   (:import-from #:clails/middleware/session/store/wrapper
                 #:with-session-lock
                 #:session-lock-env)
+  ;; The session lifecycle API (M5-T1, M5-T2).  Defined in
+  ;; clails/middleware/session/lifecycle, which accepts "a controller" through
+  ;; the SESSION-LOCK-ENV method below, and re-exported here so that an action
+  ;; reaches the whole session API through the package its controller already
+  ;; uses -- the same way SESSION and CURRENT-USER are available.
+  ;;
+  ;; NAMES ADDED TO THE CONTROLLER BASE, and how they avoid collisions:
+  ;;
+  ;;   SESSION-ID  SESSION-VALUE  SESSION-DELETE  SESSION-CLEAR
+  ;;   SESSION-DESTROY  SESSION-REGENERATE-ID
+  ;;   SESSION-RESERVED-KEY-P  +SESSION-RESERVED-KEY-PREFIX+
+  ;;
+  ;; Every one of them is prefixed with SESSION-, which is the convention this
+  ;; package already follows for the session area (SESSION, WITH-SESSION-LOCK)
+  ;; and the reason a collision is unlikely: an application's own helpers are
+  ;; named after its domain, not after the framework's.  Where a collision
+  ;; does happen, it is a compile-time package error rather than silent
+  ;; shadowing, and the application resolves it the normal way -- shadow the
+  ;; symbol in its own defpackage, or call the function through its home
+  ;; package (clails/middleware/session/lifecycle:SESSION-CLEAR).  No name
+  ;; here is a generic function, so nothing can be accidentally extended
+  ;; either.
+  (:import-from #:clails/middleware/session/lifecycle
+                #:+session-reserved-key-prefix+
+                #:session-reserved-key-p
+                #:session-id
+                #:session-value
+                #:session-delete
+                #:session-clear
+                #:session-destroy
+                #:session-regenerate-id
+                #:session-destroyed-p
+                #:session-id-changing-p
+                #:session-new-p)
   (:export #:<base-controller>
            #:<web-controller>
            #:<rest-controller>
@@ -45,6 +79,17 @@
            #:param
            #:session
            #:with-session-lock
+           #:+session-reserved-key-prefix+
+           #:session-reserved-key-p
+           #:session-id
+           #:session-value
+           #:session-delete
+           #:session-clear
+           #:session-destroy
+           #:session-regenerate-id
+           #:session-destroyed-p
+           #:session-id-changing-p
+           #:session-new-p
            #:current-user
            #:initialize-routing-tables
            #:create-scanner-from-uri-path
@@ -145,6 +190,22 @@
    and (setf (gethash key (session controller)) value) to read/write session
    data; it is persisted (as a cookie-tracked session) after the response is
    sent.
+
+   The rest of the session API works on the controller directly, and is
+   usually clearer than reaching for the table:
+
+     (session-value controller \"cart\")          read one value
+     (setf (session-value controller \"cart\") x) write one value
+     (session-delete controller \"cart\")         forget one value
+     (session-clear controller)                 forget every value
+     (session-destroy controller)                end the session (logout)
+     (session-regenerate-id controller)          new id, same contents
+                                                 (call after a login)
+     (session-id controller)                     this session's id
+
+   See clails/middleware/session/lifecycle for when to destroy and when to
+   regenerate -- they are not interchangeable -- and WITH-SESSION-LOCK for
+   making a read-modify-write of one key atomic.
 
    @param controller [<base-controller>] Controller instance
    @return [hash-table] Session hash table

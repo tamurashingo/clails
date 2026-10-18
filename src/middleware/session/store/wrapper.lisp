@@ -9,6 +9,8 @@
   ;; are written as fully-qualified symbols below.  The same trap is explained
   ;; at length in clails/middleware/session/store.
   (:import-from #:lack/middleware/session)
+  (:import-from #:clails/middleware/session/clock
+                #:session-clock-now)
   (:import-from #:clails/middleware/session/store
                 #:<session-store>
                 #:fetch-session
@@ -30,7 +32,13 @@
            #:wrap-session-container
            #:session-table-synchronized-p
            #:+synchronized-session-tables-p+
-           #:+session-store-env-key+))
+           #:+session-store-env-key+
+           ;; The sweep index (M5-T3)
+           #:session-store-wrapper-index-entries
+           #:session-store-wrapper-indexed-session-ids
+           #:session-store-wrapper-index-time
+           #:session-store-wrapper-index-count
+           #:session-store-tracks-access-time-p))
 (in-package #:clails/middleware/session/store/wrapper)
 
 
@@ -41,9 +49,9 @@
 ;;; This file is the wrapping store the design note in
 ;;; clails/middleware/session/store describes: a <session-store> derivation
 ;;; that holds one inner store, forwards the four operations to it, and is the
-;;; place where cross-request concerns live.  M4 puts the serialisation of one
-;;; session here; M5-T3 will put the sweeper's id index in the same object
-;;; (see "Room for the sweep index" below).
+;;; place where cross-request concerns live.  M4 put the serialisation of one
+;;; session here; M5-T3 added the sweeper's id index to the same object (see
+;;; "The sweep index" below).
 ;;;
 ;;; What actually breaks without this layer
 ;;; ---------------------------------------
@@ -97,14 +105,35 @@
 ;;; here, and WITH-SESSION-LOCK is how an application that cannot live with it
 ;;; asks for atomicity.
 ;;;
-;;; Room for the sweep index (M5-T3)
-;;; --------------------------------
+;;; The sweep index (M5-T3)
+;;; -----------------------
 ;;; The protocol has no "enumerate every session" operation, so a periodic
-;;; sweeper needs a layer that watches the operations go past.  Rather than
-;;; have M5-T3 rewrite the methods below, the three mutating operations call
-;;; NOTE-SESSION-STORED / NOTE-SESSION-REMOVED / NOTE-SESSION-TOUCHED, which
-;;; do nothing by default.  The sweep index is then a subclass with a slot and
-;;; three methods -- additive, with this file untouched.
+;;; sweeper needs a layer that watches the operations go past.  M4 left three
+;;; hooks for it -- NOTE-SESSION-STORED / NOTE-SESSION-REMOVED /
+;;; NOTE-SESSION-TOUCHED, called by the three mutating operations -- and M5-T3
+;;; fills them in: this object now keeps an index from session id to
+;;; last-access time, which is what clails/middleware/session/sweeper walks.
+;;; The hooks remain the extension point they were, so a subclass can still
+;;; add bookkeeping of its own on top.
+;;;
+;;; The index is a CANDIDATE LIST, not a second truth.  The sweeper reads the
+;;; authoritative time with SESSION-LAST-ACCESS-TIME (decision 11: the time
+;;; is store-side state) and falls back to the index only for a store that
+;;; keeps no time of its own.  What the index really provides is the one thing
+;;; no store can: the set of ids to ask about.
+;;;
+;;; Scope of the index: it holds the sessions THIS PROCESS has seen.  With the
+;;; in-memory store that is every session there is.  With a persistent store
+;;; shared by several processes, each process sweeps the sessions it served,
+;;; and a session whose process has since stopped is removed the next time
+;;; someone presents its id (the lazy deletion in the expiry stage).  A
+;;; store-side sweep -- one DELETE over the whole table -- would cover those
+;;; too and is a natural later addition to the database derivation; nothing
+;;; here prevents it.
+;;;
+;;; Pruning: an id leaves the index as soon as its session is removed, so the
+;;; index does not grow without bound.  The LOCKS table below is deliberately
+;;; NOT pruned with it; the reason is in its own documentation.
 
 (defparameter +session-store-env-key+ :clails.session.store
   "Request-environment key under which the session stage publishes the store
@@ -263,13 +292,40 @@
                     which cannot be guaranteed once the entry can disappear
                     while someone is using it.  The table therefore grows with
                     the number of distinct session ids this process has seen.
-                    M5-T3, which adds the sweep index and so becomes the owner
-                    of session-id lifetime in this object, is where pruning
-                    belongs.")
+
+                    M5-T3 (which added the sweep index below, and with it the
+                    knowledge of which ids are dead) looked at pruning this
+                    table along with the index and decided against it: a swept
+                    id can still have a request in flight, and giving that
+                    request a DIFFERENT lock object from the one the sweeper
+                    holds removes the very exclusion this table exists for.
+                    The index is pruned instead -- it is the one that would
+                    otherwise grow per session rather than per id -- and
+                    bounding this table needs weak references, not the
+                    sweeper.")
    (locks-lock
     :initform (bt:make-lock "clails session store wrapper locks")
     :reader session-store-wrapper-locks-lock
-    :documentation "Guards LOCKS."))
+    :documentation "Guards LOCKS.")
+   (index
+    :initform (make-hash-table :test 'equal)
+    :reader session-store-wrapper-index
+    :documentation "Session id -> last-access time (a universal time), for
+                    every session this process has put into the inner store
+                    and not removed since.
+
+                    The sweep index (M5-T3).  Neither the clails store
+                    protocol nor lack's has an \"enumerate every session\"
+                    operation, so this is the only place the periodic sweeper
+                    can learn WHICH ids to consider; the time it compares
+                    against comes from the store itself whenever the store
+                    keeps one (see SESSION-LAST-ACCESS-TIME).  Maintained by
+                    the three NOTE-SESSION-* hooks, under the session's own
+                    lock.")
+   (index-lock
+    :initform (bt:make-lock "clails session store wrapper index")
+    :reader session-store-wrapper-index-lock
+    :documentation "Guards INDEX."))
   (:documentation "A session store that forwards to another store and
    serialises access to one session.
 
@@ -279,8 +335,8 @@
 
      * one lock per session id, taken around each store operation and exposed
        to applications as WITH-SESSION-LOCK;
-     * the hooks a later milestone needs to keep an index of live session ids
-       (NOTE-SESSION-STORED and friends).
+     * the index of live session ids the periodic sweeper walks, kept by the
+       three NOTE-SESSION-* hooks (M5-T3).
 
    Protecting the session CONTAINER is not done here but in
    WRAP-SESSION-CONTAINER; the file header explains why it cannot be."))
@@ -333,16 +389,77 @@
 
 
 ;;; ------------------------------------------------------------------
-;;; Hooks for the sweep index (M5-T3)
+;;; The sweep index, kept by three hooks (M5-T3)
 ;;; ------------------------------------------------------------------
+;;;
+;;; The three operations that change something call one of these, under the
+;;; session's own lock, so that the index can follow the set of live sessions
+;;; without the operations themselves knowing what it is for.  They are still
+;;; extension points: a subclass that needs bookkeeping of its own adds
+;;; methods and calls CALL-NEXT-METHOD to keep the index working.
+
+(defun %index-session (store sid time)
+  (bt:with-lock-held ((session-store-wrapper-index-lock store))
+    (setf (gethash sid (session-store-wrapper-index store)) time)))
+
+(defun %unindex-session (store sid)
+  (bt:with-lock-held ((session-store-wrapper-index-lock store))
+    (remhash sid (session-store-wrapper-index store))))
+
+(defun session-store-wrapper-index-entries (store)
+  "Return a snapshot of the sweep index as a list of (SID . LAST-ACCESS-TIME).
+
+   A snapshot, not the table: the sweeper walks it while other threads keep
+   serving requests, and removing a session while MAPHASH runs over the index
+   is not defined behaviour.
+
+   @param store [<session-store-wrapper>] Wrapping store
+   @return [list] (SID . universal-time) pairs, in no particular order
+   "
+  (bt:with-lock-held ((session-store-wrapper-index-lock store))
+    (loop for sid being the hash-keys of (session-store-wrapper-index store)
+            using (hash-value time)
+          collect (cons sid time))))
+
+(defun session-store-wrapper-indexed-session-ids (store)
+  "Return the session ids currently in STORE's sweep index.
+
+   @param store [<session-store-wrapper>] Wrapping store
+   @return [list] Session ids
+   "
+  (mapcar #'car (session-store-wrapper-index-entries store)))
+
+(defun session-store-wrapper-index-count (store)
+  "How many sessions STORE's sweep index currently holds.
+
+   @param store [<session-store-wrapper>] Wrapping store
+   @return [integer] Number of indexed sessions
+   "
+  (bt:with-lock-held ((session-store-wrapper-index-lock store))
+    (hash-table-count (session-store-wrapper-index store))))
+
+(defun session-store-wrapper-index-time (store sid)
+  "The last-access time STORE's sweep index holds for SID, or NIL.
+
+   The index' own record, which is what the sweeper falls back to for an
+   inner store that keeps no last-access time of its own.  The authoritative
+   answer is SESSION-LAST-ACCESS-TIME.
+
+   @param store [<session-store-wrapper>] Wrapping store
+   @param sid [string] Session id
+   @return [(or integer null)] Universal time, or NIL when SID is not indexed
+   "
+  (bt:with-lock-held ((session-store-wrapper-index-lock store))
+    (gethash sid (session-store-wrapper-index store))))
+
 
 (defgeneric note-session-stored (store sid session)
   (:documentation "Called inside STORE-SESSION, under the session's lock,
    after the inner store accepted the value.
 
-   An extension point and nothing else: the default does nothing.  M5-T3 adds
-   the sweeper's index of live session ids by subclassing the wrapper and
-   adding methods here, without changing the operations themselves.
+   The wrapper's own method adds SID to the sweep index with the current time:
+   storing a session is an access to it.  An extension point as well -- a
+   subclass may add a method and call CALL-NEXT-METHOD.
 
    @param store [<session-store-wrapper>] Wrapping store
    @param sid [string] Session id
@@ -351,13 +468,16 @@
    "))
 
 (defmethod note-session-stored ((store <session-store-wrapper>) sid session)
-  (declare (ignore sid session))
-  nil)
+  (declare (ignore session))
+  (%index-session store sid (session-clock-now)))
 
 (defgeneric note-session-removed (store sid)
   (:documentation "Called inside REMOVE-SESSION, under the session's lock,
-   after the inner store dropped the id.  Does nothing by default; see
-   NOTE-SESSION-STORED.
+   after the inner store dropped the id.
+
+   The wrapper's own method drops SID from the sweep index, which is what
+   keeps the index from growing for the lifetime of the process.  See
+   NOTE-SESSION-STORED about extending it.
 
    @param store [<session-store-wrapper>] Wrapping store
    @param sid [string] Session id
@@ -365,13 +485,15 @@
    "))
 
 (defmethod note-session-removed ((store <session-store-wrapper>) sid)
-  (declare (ignore sid))
-  nil)
+  (%unindex-session store sid))
 
 (defgeneric note-session-touched (store sid access-time)
   (:documentation "Called inside TOUCH-SESSION, under the session's lock, with
-   the time the inner store recorded (NIL when the id was unknown).  Does
-   nothing by default; see NOTE-SESSION-STORED.
+   the time that was recorded (NIL when the id was unknown).
+
+   The wrapper's own method refreshes SID's entry in the sweep index, so that
+   a session being used does not look idle to the sweeper.  Nothing is
+   indexed for an unknown id.  See NOTE-SESSION-STORED about extending it.
 
    @param store [<session-store-wrapper>] Wrapping store
    @param sid [string] Session id
@@ -380,8 +502,8 @@
    "))
 
 (defmethod note-session-touched ((store <session-store-wrapper>) sid access-time)
-  (declare (ignore sid access-time))
-  nil)
+  (when access-time
+    (%index-session store sid access-time)))
 
 
 ;;; ------------------------------------------------------------------
@@ -400,6 +522,81 @@
 (defun %clails-store-p (store)
   (typep store '<session-store>))
 
+
+;;; Does the inner store implement the fourth operation ITSELF?
+;;;
+;;; This question has to be asked before a touch is forwarded, and the answer
+;;; decides where the last-access time of a session lives.
+;;;
+;;; The base class carries a default TOUCH-SESSION so that a store which
+;;; implements only the three operations still expires correctly, and that
+;;; default is deliberately naive: fetch the session, then write the whole
+;;; thing back.  Called once by hand that is fine.  Called by the session
+;;; stage on EVERY request it is not: it would turn every request -- the
+;;; static-asset requests a single page load fans out included -- into a
+;;; whole-value write-back of the session, which is exactly the cost (and
+;;; exactly the concurrency hazard) that giving the protocol a fourth
+;;; operation exists to avoid.
+;;;
+;;; So the wrapper forwards the touch only to a store that can do it cheaply,
+;;; i.e. one that has a TOUCH-SESSION method of its own (the in-memory
+;;; derivation replaces one index entry, the database derivation issues one
+;;; UPDATE of one column, a future Redis derivation extends a key's
+;;; lifetime).  For any other store -- a minimal third-party derivation, or a
+;;; lack store structure, which cannot inherit a CLOS default at all -- the
+;;; wrapper's own index is where the time is recorded, and
+;;; SESSION-LAST-ACCESS-TIME below reads it back from there.  Expiry works
+;;; either way, which is what keeps the store abstraction substitutable (G2):
+;;; no store is excluded from expiry, and none pays a write-back for it.
+;;;
+;;; COMPUTE-APPLICABLE-METHODS is standard Common Lisp and asks precisely the
+;;; question above: it returns the methods that would run, most specific
+;;; first, so "the most specific one is the base class' default" means "this
+;;; store has none of its own".  The answer depends only on the store's class
+;;; and is cached per class; a store class that gains a TOUCH-SESSION method
+;;; after the cache was filled (interactive development) needs the image
+;;; restarted, or the entry cleared.
+
+(defvar *access-time-tracking-cache* (make-hash-table :test 'eq)
+  "Class -> boolean, the cached answer of SESSION-STORE-TRACKS-ACCESS-TIME-P.")
+
+(defvar *access-time-tracking-cache-lock*
+  (bt:make-lock "clails session store access-time tracking cache")
+  "Guards *ACCESS-TIME-TRACKING-CACHE*.")
+
+(defun %compute-tracks-access-time-p (store)
+  (and (%clails-store-p store)
+       (let ((default (find-method #'touch-session nil
+                                   (list (find-class '<session-store>)
+                                         (find-class t))
+                                   nil))
+             (applicable (compute-applicable-methods #'touch-session
+                                                     (list store "" nil))))
+         (and applicable
+              (not (eq (first applicable) default))
+              t))))
+
+(defun session-store-tracks-access-time-p (store)
+  "True when STORE keeps a last-access time of its own, i.e. implements the
+   fourth operation (TOUCH-SESSION) rather than inheriting the base class'
+   write-back default.
+
+   The wrapper uses it to decide whether to forward a touch to the store it
+   wraps or to record the time in its own sweep index instead; see the
+   commentary above.
+
+   @param store [t] A session store of any kind
+   @return [boolean] T when STORE can record an access without a write-back
+   "
+  (let ((class (class-of store)))
+    (bt:with-lock-held (*access-time-tracking-cache-lock*)
+      (multiple-value-bind (cached present-p)
+          (gethash class *access-time-tracking-cache*)
+        (if present-p
+            cached
+            (setf (gethash class *access-time-tracking-cache*)
+                  (%compute-tracks-access-time-p store)))))))
+
 (defun %inner-fetch (inner sid)
   (if (%clails-store-p inner)
       (fetch-session inner sid)
@@ -414,6 +611,25 @@
   (if (%clails-store-p inner)
       (remove-session inner sid)
       (lack/middleware/session/store:remove-session inner sid)))
+
+(defun %touch-in-index (store sid access-time)
+  "Record an access to SID in STORE's own index, for an inner store that keeps
+   no last-access time of its own.  Returns the recorded time, or NIL when
+   SID holds no session."
+  (let ((known (or (session-store-wrapper-index-time store sid)
+                   ;; Not in the index: either the id is unknown, or the
+                   ;; session was put into the inner store behind this
+                   ;; wrapper's back (a pre-populated store, a second process
+                   ;; sharing a persistent one).  Asking the inner store is
+                   ;; the only way to tell the two apart, and it is still
+                   ;; cheaper than a write-back -- and it happens at most once
+                   ;; per id, because the answer is indexed below.
+                   (and (%inner-fetch (session-store-wrapper-inner store) sid)
+                        t))))
+    (when known
+      (let ((time (or access-time (session-clock-now))))
+        (%index-session store sid time)
+        time))))
 
 (defmethod fetch-session ((store <session-store-wrapper>) sid)
   "Forward to the inner store, holding the session's lock while it runs.
@@ -460,10 +676,17 @@
       result)))
 
 (defmethod touch-session ((store <session-store-wrapper>) sid &optional access-time)
-  "Forward the fourth operation to the inner store, holding the session's lock.
+  "Record an access to SID, holding the session's lock while it runs.
 
-   A lack store structure has no fourth operation, so for such an inner store
-   the base class' default (fetch, change, store) is used instead.
+   Forwarded to the inner store when that store implements the fourth
+   operation itself; otherwise the time is recorded in the sweep index only,
+   so that a store without a cheap partial update is not made to write the
+   whole session back on every request.  The commentary above
+   SESSION-STORE-TRACKS-ACCESS-TIME-P explains the choice; the session value
+   is untouched either way.
+
+   An id that holds no session is not recorded, and answers NIL: the stage
+   reads NIL as \"this id is not a session\".
 
    @param store [<session-store-wrapper>] Wrapping store
    @param sid [string] Session id
@@ -472,15 +695,18 @@
    "
   (with-session-id-lock (store sid)
     (let* ((inner (session-store-wrapper-inner store))
-           (time (if (%clails-store-p inner)
+           (time (if (session-store-tracks-access-time-p inner)
                      (touch-session inner sid access-time)
-                     (call-next-method))))
+                     (%touch-in-index store sid access-time))))
       (note-session-touched store sid time)
       time)))
 
 (defmethod session-last-access-time ((store <session-store-wrapper>) sid)
-  "Read the last-access time from the inner store, or -- for a lack store
-   structure, which keeps none -- from the base class' own bookkeeping.
+  "Read the last-access time of SID.
+
+   From the inner store when it keeps one, otherwise from this wrapper's sweep
+   index -- the same split TOUCH-SESSION makes, so that the time is read back
+   from wherever it was written.
 
    @param store [<session-store-wrapper>] Wrapping store
    @param sid [string] Session id
@@ -488,9 +714,9 @@
    "
   (with-session-id-lock (store sid)
     (let ((inner (session-store-wrapper-inner store)))
-      (if (%clails-store-p inner)
+      (if (session-store-tracks-access-time-p inner)
           (session-last-access-time inner sid)
-          (call-next-method)))))
+          (session-store-wrapper-index-time store sid)))))
 
 
 ;;; ------------------------------------------------------------------

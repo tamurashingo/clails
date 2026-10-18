@@ -15,7 +15,48 @@
                 #:*lack-middleware-clails-session*
                 #:*enable-session-middleware*
                 #:*session-store*
-                #:*session-state*)
+                #:*session-state*
+                ;; Cookie safety, server-side expiry and its cleanup (M5).
+                ;; Each of these is declared in a session-specific package and
+                ;; re-exported by clails/middleware/session-middleware; this
+                ;; is the second re-export, so that an application can reach
+                ;; every session setting through clails/middleware as well.
+                #:*session-cookie-secure*
+                #:*session-idle-timeout*
+                #:*session-sweep-enabled*
+                #:*session-sweep-interval*
+                #:+default-session-cookie-name+)
+  ;; The session cookie clails emits by default, and the state that can be
+  ;; built by hand to change its attributes.
+  (:import-from #:clails/middleware/session/state/cookie
+                #:clails-cookie-state
+                #:make-clails-cookie-state)
+  ;; Server-side idle expiry: the predicate, and the stage that applies it.
+  (:import-from #:clails/middleware/session/expiry
+                #:session-idle-expired-p
+                #:wrap-session-expiry)
+  ;; The periodic sweeper, started and stopped by the framework's own hooks.
+  (:import-from #:clails/middleware/session/sweeper
+                #:sweep-idle-sessions
+                #:start-session-sweeper
+                #:stop-session-sweeper
+                #:session-sweeper-running-p)
+  ;; The session lifecycle API an action uses (also re-exported by the
+  ;; controller base, which is where an action normally finds it).
+  (:import-from #:clails/middleware/session/lifecycle
+                #:+session-reserved-key-prefix+
+                #:session-reserved-key-p
+                #:session-id
+                #:session-value
+                #:session-delete
+                #:session-clear
+                #:session-destroy
+                #:session-regenerate-id)
+  ;; The clock every session-related timestamp is read through, so that a
+  ;; test can freeze "now" for the whole session layer.
+  (:import-from #:clails/middleware/session/clock
+                #:*session-clock*
+                #:session-clock-now)
   ;; The session store abstraction: an application that wants to keep sessions
   ;; somewhere else subclasses <session-store> and implements these generic
   ;; functions, then puts an instance in *session-store*.
@@ -69,6 +110,29 @@
            #:*enable-session-middleware*
            #:*session-store*
            #:*session-state*
+           #:*session-cookie-secure*
+           #:*session-idle-timeout*
+           #:*session-sweep-enabled*
+           #:*session-sweep-interval*
+           #:+default-session-cookie-name+
+           #:clails-cookie-state
+           #:make-clails-cookie-state
+           #:session-idle-expired-p
+           #:wrap-session-expiry
+           #:sweep-idle-sessions
+           #:start-session-sweeper
+           #:stop-session-sweeper
+           #:session-sweeper-running-p
+           #:+session-reserved-key-prefix+
+           #:session-reserved-key-p
+           #:session-id
+           #:session-value
+           #:session-delete
+           #:session-clear
+           #:session-destroy
+           #:session-regenerate-id
+           #:*session-clock*
+           #:session-clock-now
            #:<session-store>
            #:fetch-session
            #:store-session

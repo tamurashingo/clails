@@ -23,6 +23,10 @@
                 #:make-cookie-jar)
   (:import-from #:babel
                 #:octets-to-string)
+  ;; clails' own session packages DO have matching ASDF systems, so they may
+  ;; be named in a clause (unlike lack's session sub-packages, see above).
+  (:import-from #:clails/middleware/session/state/cookie
+                #:make-clails-cookie-state)
   (:import-from #:clails/middleware/session-middleware
                 #:*enable-session-middleware*
                 #:*session-store*
@@ -77,6 +81,7 @@
            #:make-memory-session-store
            #:make-lack-memory-session-store
            #:make-test-cookie-state
+           #:make-clails-cookie-state
            #:fetch-stored-session
            #:remove-stored-session
            ;; concurrency
@@ -504,8 +509,15 @@
 ;;; Carrying cookies across requests
 ;;; ------------------------------------------------------------------
 
-(defparameter +default-session-cookie-name+ "lack.session"
-  "The cookie name lack/middleware/session/state/cookie uses by default.")
+(defparameter +default-session-cookie-name+
+  clails/middleware/session/state/cookie:+default-session-cookie-name+
+  "The cookie name the clails session stage uses by default.
+
+   Taken from the framework rather than written out, so that a test asserting
+   \"the session cookie\" keeps asserting about the cookie the framework
+   actually emits.  M5-T4 changed that default away from the underlying
+   library's \"lack.session\" (which advertised the implementation); a test
+   that needs the literal name asserts on this constant.")
 
 (defstruct (session-client (:constructor %make-session-client))
   "A tiny browser: remembers the cookies a response sets and sends them back.
@@ -613,9 +625,16 @@
   (lack/middleware/session/store/memory:make-memory-store))
 
 (defun make-test-cookie-state (&rest args)
-  "A lack cookie state, for *session-state*.  ARGS are passed through to
+  "A LACK cookie state, for *session-state*.  ARGS are passed through to
    lack/middleware/session/state/cookie:make-cookie-state (:cookie-key :path
-   :domain :expires :secure :httponly :samesite)."
+   :domain :expires :secure :httponly :samesite).
+
+   The library's state, not clails'.  Kept because *session-state* still
+   accepts it -- it is how an application asks for a persistent cookie, which
+   the clails state deliberately cannot express -- so its behaviour can be
+   asserted rather than assumed.  For the state the framework itself builds,
+   use MAKE-CLAILS-COOKIE-STATE (re-exported here from
+   clails/middleware/session/state/cookie)."
   (apply #'lack/middleware/session/state/cookie:make-cookie-state args))
 
 (defun fetch-stored-session (store session-id)

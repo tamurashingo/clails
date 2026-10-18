@@ -13,6 +13,10 @@
   ;; written as fully-qualified symbols below; loading them is guaranteed by
   ;; this (symbol-less) dependency on the system that contains them.
   (:import-from #:lack/middleware/session)
+  ;; Every session-related reading of the clock goes through one hook, so that
+  ;; a test can freeze "now" for the whole session layer at once.
+  (:import-from #:clails/middleware/session/clock
+                #:session-clock-now)
   (:export #:<session-store>
            #:fetch-session
            #:store-session
@@ -298,7 +302,7 @@
    "
   (let ((session (fetch-session store sid)))
     (when session
-      (let ((time (or access-time (get-universal-time))))
+      (let ((time (or access-time (session-clock-now))))
         ;; The session value itself is handed back unchanged; what changes is
         ;; the store-side timestamp.
         (store-session store sid session)

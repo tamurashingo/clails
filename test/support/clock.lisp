@@ -1,6 +1,15 @@
 (in-package #:cl-user)
 (defpackage #:clails-test/support/clock
   (:use #:cl)
+  ;; The framework's own clock hook.  Everything in the session layer reads
+  ;; the time through it, so listing it in *CLOCK-VARIABLES* below is what
+  ;; makes WITH-FROZEN-CLOCK freeze the framework and the test together.
+  (:import-from #:clails/middleware/session/clock
+                #:*session-clock*)
+  ;; The real idle-timeout predicate, which REFERENCE-IDLE-EXPIRED-P now
+  ;; delegates to (it used to be a stand-in of its own).
+  (:import-from #:clails/middleware/session/expiry
+                #:session-idle-expired-p)
   (:export #:*clock*
            #:*clock-variables*
            #:clock-now
@@ -33,12 +42,14 @@
 ;;;        seconds", which the sweeping tests need.
 ;;;
 ;;; The trade-off accepted: production code has to read the time through a
-;;; hook rather than calling GET-UNIVERSAL-TIME directly.  Nothing in src/
-;;; does that yet -- the expiry feature itself does not exist -- so this file
-;;; stays deliberately small and only provides the mechanism.
+;;; hook rather than calling GET-UNIVERSAL-TIME directly.  M5-T3 added that
+;;; hook -- clails/middleware/session/clock:*SESSION-CLOCK*, which the expiry
+;;; stage, the stores' timestamps and the periodic sweeper all read -- and it
+;;; is listed in *CLOCK-VARIABLES* below, so one WITH-FROZEN-CLOCK now freezes
+;;; the framework's notion of "now" together with the test's.
 ;;;
-;;; How M5-T3 extends it: when the framework gains its own clock hook, push
-;;; that variable's symbol onto *CLOCK-VARIABLES*.  WITH-FROZEN-CLOCK rebinds
+;;; How this file is extended: push a new clock variable's symbol onto
+;;; *CLOCK-VARIABLES*.  WITH-FROZEN-CLOCK rebinds
 ;;; every variable listed there (via PROGV), so the framework's notion of
 ;;; "now" and the tests' notion of "now" move together without this file
 ;;; having to know the framework's variable name at compile time.
@@ -46,12 +57,19 @@
 (defvar *clock* #'get-universal-time
   "Function of no arguments returning the current time as a universal time.")
 
-(defvar *clock-variables* '(*clock*)
+(defvar *clock-variables*
+  (list '*clock* 'clails/middleware/session/clock:*session-clock*)
   "Symbols of the special variables that WITH-FROZEN-CLOCK rebinds to the
    frozen clock function.
 
-   Starts out holding only this file's own *CLOCK*.  M5-T3 adds the
-   framework's clock hook here so that one WITH-FROZEN-CLOCK freezes both.")
+   Two of them: this file's own *CLOCK*, which CLOCK-NOW reads, and the
+   framework's *SESSION-CLOCK*, which the expiry stage, the session stores'
+   timestamps and the periodic sweeper read.  Freezing both together is what
+   lets a test say \"this session has been idle for 31 minutes\" and have the
+   framework agree.
+
+   A future feature with a clock hook of its own is added by pushing its
+   symbol here; nothing else in this file changes.")
 
 (defun clock-now ()
   "The current time according to the (possibly frozen) clock."
@@ -97,12 +115,15 @@
   (- (clock-now) last-access-time))
 
 (defun reference-idle-expired-p (last-access-time idle-timeout)
-  "Stand-in predicate: has a session last touched at LAST-ACCESS-TIME been
-   idle for longer than IDLE-TIMEOUT seconds?
+  "Has a session last used at LAST-ACCESS-TIME been idle for longer than
+   IDLE-TIMEOUT seconds?
 
-   This exists only to exercise the clock from a test while the real feature
-   does not exist yet.  M5-T3 must assert against the framework's own
-   predicate instead of this one; the clock machinery above is the part meant
-   to be reused."
-  (and idle-timeout
-       (> (idle-seconds last-access-time) idle-timeout)))
+   THE FRAMEWORK'S OWN PREDICATE, reached through this name.  It used to be a
+   stand-in implemented here, because the feature did not exist; M5-T3 built
+   it, so this is now a one-line delegation to
+   clails/middleware/session/expiry:SESSION-IDLE-EXPIRED-P and the suite that
+   calls it (clails-test/middleware/session-clock) asserts about the real
+   thing.  New tests should call SESSION-IDLE-EXPIRED-P directly; this name
+   is kept because it reads well in the clock suite, whose subject is the
+   clock rather than the predicate."
+  (session-idle-expired-p last-access-time idle-timeout (clock-now)))
