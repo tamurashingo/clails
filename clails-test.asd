@@ -74,6 +74,15 @@
                #:clails-test/middleware/csrf-middleware
                #:clails-test/middleware/csrf-http-roundtrip
                #:clails-test/middleware/csrf-one-time
+               ;; The request-method override stage (M9): the stage from the
+               ;; inside (configuration, accepted values, position in the
+               ;; stack, the marker check that catches a broken stage order)
+               ;; and the same stage from the outside (method x where the
+               ;; forged value sits x token, a form reaching a resource's
+               ;; update / destroy / partial-update routes, the legacy
+               ;; dispatch branch and a hand-written routing table).
+               #:clails-test/middleware/method-override
+               #:clails-test/middleware/method-override-roundtrip
                #:clails-test/helper/date-helper
                #:clails-test/model/join-query
                #:clails-test/model/save
