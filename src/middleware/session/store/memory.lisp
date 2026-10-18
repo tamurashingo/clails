@@ -1,6 +1,8 @@
 (in-package #:cl-user)
 (defpackage #:clails/middleware/session/store/memory
   (:use #:cl)
+  (:import-from #:clails/middleware/session/clock
+                #:session-clock-now)
   (:import-from #:clails/middleware/session/store
                 #:<session-store>
                 #:fetch-session
@@ -92,7 +94,7 @@
   (bt:with-lock-held ((memory-session-store-lock store))
     (setf (gethash sid (memory-session-store-index store))
           (%make-entry :value session
-                       :last-access-time (get-universal-time))))
+                       :last-access-time (session-clock-now))))
   session)
 
 (defmethod remove-session ((store <memory-session-store>) sid)
@@ -118,7 +120,7 @@
    @param access-time [(or integer null)] Universal time, or NIL for now
    @return [(or integer null)] The recorded time, or NIL when SID is unknown
    "
-  (let ((time (or access-time (get-universal-time))))
+  (let ((time (or access-time (session-clock-now))))
     (bt:with-lock-held ((memory-session-store-lock store))
       (let ((entry (gethash sid (memory-session-store-index store))))
         (when entry

@@ -5,7 +5,12 @@
         #:clails-test/support/session-store-db)
   (:import-from #:clails-test/support/session-store
                 #:assert-bulk-write-survives
-                #:assert-locked-increment-is-lossless)
+                #:assert-locked-increment-is-lossless
+                ;; M5-T3: idle expiry and the periodic sweep, required to work
+                ;; "whichever store is configured" -- this is the derivation
+                ;; that needs a database to prove it.
+                #:assert-idle-expiry-works
+                #:assert-sweep-removes-idle-sessions)
   (:import-from #:clails/model/connection
                 #:shutdown-connection-pool)
   (:import-from #:clails/middleware/session/store/db
@@ -129,3 +134,30 @@
     (clear-session-rows)
     (assert-locked-increment-is-lossless (make-db-session-store) "PostgreSQL db store"
                                          :shares-container nil)))
+
+
+;;; ------------------------------------------------------------------
+;;; M5-T3 with this store underneath
+;;; ------------------------------------------------------------------
+;;;
+;;; Server-side idle expiry and the periodic sweep have to hold for the
+;;; database derivation as well as for the in-memory one, and this is the
+;;; suite that can prove it: both bodies are the shared ones in
+;;; clails-test/support/session-store, run here because they need a table.
+;;;
+;;; Neither waits for real time: the clock the whole session layer reads is
+;;; frozen, so the timestamps this store writes into the table -- and the
+;;; comparison the stage and the sweeper make against them -- all move
+;;; together.  (That the last-access column is a column of this store's own
+;;; rather than a borrowed updated_at is asserted by
+;;; SESSION-TABLE-AND-STORE-AGREE-TEST above.)
+
+(deftest db-session-store-idle-expiry-test-postgresql
+  (testing "an idle session is emptied, renamed and deleted from the table (PostgreSQL)"
+    (clear-session-rows)
+    (assert-idle-expiry-works (make-db-session-store) "PostgreSQL db store")))
+
+(deftest db-session-store-sweep-test-postgresql
+  (testing "a sweep deletes the idle rows and leaves the live ones (PostgreSQL)"
+    (clear-session-rows)
+    (assert-sweep-removes-idle-sessions (make-db-session-store) "PostgreSQL db store")))

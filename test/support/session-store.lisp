@@ -10,9 +10,21 @@
                 #:remove-session
                 #:touch-session
                 #:session-last-access-time)
-  ;; WITH-SESSION-LOCK is what the atomic-increment scenario below is about.
+  ;; WITH-SESSION-LOCK is what the atomic-increment scenario below is about;
+  ;; the sweep index and the sweeper are what the shared expiry scenarios
+  ;; (M5-T3) read.
   (:import-from #:clails/middleware/session/store/wrapper
-                #:with-session-lock)
+                #:with-session-lock
+                #:ensure-session-store-wrapper
+                #:session-store-wrapper-indexed-session-ids)
+  (:import-from #:clails/middleware/session/expiry
+                #:*session-idle-timeout*
+                #:session-idle-expired-p)
+  (:import-from #:clails/middleware/session/sweeper
+                #:sweep-idle-sessions)
+  (:import-from #:clails-test/support/clock
+                #:clock-now
+                #:with-clock-advanced-by)
   ;; The bulk-write application reads the writer and iteration out of the query
   ;; string, so that the keys of one request can be told from another's.
   (:import-from #:lack/request
@@ -21,6 +33,9 @@
   (:export ;; a minimal derivation: the three operations and nothing else
            #:<recording-session-store>
            #:make-recording-session-store
+           ;; the same, plus the fourth operation
+           #:<full-recording-session-store>
+           #:make-full-recording-session-store
            #:store-calls
            #:store-call-count
            #:clear-store-calls
@@ -38,7 +53,10 @@
            #:+expected-lossless-counter+
            #:make-locking-counter-app
            #:counter-value
-           #:assert-locked-increment-is-lossless))
+           #:assert-locked-increment-is-lossless
+           ;; the shared idle-expiry and sweeping scenarios (M5-T3)
+           #:assert-idle-expiry-works
+           #:assert-sweep-removes-idle-sessions))
 (in-package #:clails-test/support/session-store)
 
 
@@ -409,3 +427,166 @@
       (when (hash-table-p session)
         (multiple-value-bind (sane reason) (hash-table-sane-p session)
           (ok sane (or reason (format nil "~A: the container is intact" label))))))))
+
+
+;;; ------------------------------------------------------------------
+;;; A derivation that implements all four operations and records them
+;;; ------------------------------------------------------------------
+;;;
+;;; <RECORDING-SESSION-STORE> above deliberately has no TOUCH-SESSION, so it
+;;; stands for "a store whose author never heard of the fourth operation".
+;;; This one is the opposite case, and it is what makes decision 11's goal
+;;; assertable: with every operation recorded, a test can show that recording
+;;; an access calls the FOURTH operation and NOT the value write -- i.e. that
+;;; a request which only reads the session does not rewrite the session's
+;;; value table.
+
+(defclass <full-recording-session-store> (<recording-session-store>)
+  ((times
+    :initform (make-hash-table :test 'equal)
+    :reader full-recording-store-times
+    :documentation "Session id -> last-access time, this store's own column."))
+  (:documentation "A store with all four operations, every one of them
+   recorded.
+
+   Its TOUCH-SESSION is what a real derivation's looks like: it writes the
+   time and touches nothing else -- no fetch, no store, and the session value
+   object stays EQ."))
+
+(defun make-full-recording-session-store ()
+  (make-instance '<full-recording-session-store>))
+
+(defmethod touch-session ((store <full-recording-session-store>) sid &optional access-time)
+  (record-call store :touch sid)
+  (bt:with-lock-held ((recording-store-lock store))
+    (multiple-value-bind (session present-p)
+        (gethash sid (recording-store-sessions store))
+      (declare (ignore session))
+      (when present-p
+        (let ((time (or access-time (clock-now))))
+          (setf (gethash sid (full-recording-store-times store)) time)
+          time)))))
+
+(defmethod session-last-access-time ((store <full-recording-session-store>) sid)
+  (bt:with-lock-held ((recording-store-lock store))
+    (gethash sid (full-recording-store-times store))))
+
+(defmethod store-session :after ((store <full-recording-session-store>) sid session)
+  (declare (ignore session))
+  (bt:with-lock-held ((recording-store-lock store))
+    (setf (gethash sid (full-recording-store-times store)) (clock-now))))
+
+(defmethod remove-session :after ((store <full-recording-session-store>) sid)
+  (bt:with-lock-held ((recording-store-lock store))
+    (remhash sid (full-recording-store-times store))))
+
+
+;;; ------------------------------------------------------------------
+;;; The idle-expiry and sweeping scenarios, run against any store
+;;; ------------------------------------------------------------------
+;;;
+;;; Both are acceptance conditions of M5-T3 and both have to hold "whichever
+;;; store is configured", which includes the database derivation.  They live
+;;; here so that the three dialect suites run the very same body against the
+;;; very same expectations as the in-memory suite -- the same arrangement the
+;;; M4 scenarios above use.
+;;;
+;;; Neither waits for real time to pass: the clock the whole session layer
+;;; reads is frozen ahead of the session's last use (see
+;;; clails-test/support/clock), so "idle for 31 minutes" costs nothing and
+;;; cannot be made flaky by a slow request.
+
+(defun assert-idle-expiry-works (inner label &key (idle-timeout 1800))
+  "Drive two round trips over a session stage backed by INNER, the second one
+   from beyond the idle limit, and assert the whole expiry contract:
+
+     * a request inside the limit continues the session normally;
+     * a request past it sees an EMPTY session;
+     * the response renames the session, so the id the client presented is
+       not reused;
+     * the old id is gone from the store.
+
+   @param inner [t] The store to configure the session stage with
+   @param label [string] Name of the store, for the assertion descriptions
+   @param idle-timeout [integer] Limit to configure, in seconds
+   "
+  (flet ((note (text) (format nil "~A: ~A" label text)))
+    (let ((*session-idle-timeout* idle-timeout))
+      (with-middleware-stack (app :store inner :inner (make-session-counter-app))
+        (let* ((client (make-session-client app))
+               (opened-at (clock-now))
+               (first-response (client-request client "/"))
+               (first-id (set-cookie-value (session-client-last-set-cookie client))))
+          (ok (string= (response-body-string first-response) "1")
+              (note "the session starts empty"))
+          (ok (and first-id (= (length first-id) 40))
+              (note "and gets an id"))
+
+          ;; Just inside the limit: an ordinary continuing request.
+          (with-clock-advanced-by ((1- idle-timeout) :from opened-at)
+            (let ((response (client-request client "/")))
+              (ok (string= (response-body-string response) "2")
+                  (note "a request inside the limit continues the session"))
+              (ok (null (session-client-last-set-cookie client))
+                  (note "and is answered without a new cookie"))))
+
+          ;; Past the limit.  The base is the time of the request above, so
+          ;; that the session really is idle from the stage's point of view.
+          (let ((last-used (+ opened-at (1- idle-timeout))))
+            (with-clock-advanced-by ((+ idle-timeout 60) :from last-used)
+              (let* ((response (client-request client "/"))
+                     (cookie (session-client-last-set-cookie client)))
+                (ok (string= (response-body-string response) "1")
+                    (note "a request past the limit sees an empty session"))
+                (ok cookie
+                    (note "and is answered with a new cookie"))
+                (when cookie
+                  (let ((second-id (set-cookie-value cookie)))
+                    (ok (= (length second-id) 40)
+                        (note "carrying a well-formed id"))
+                    (ok (string/= second-id first-id)
+                        (note "which is NOT the id the client presented"))
+                    (ok (not (set-cookie-expired-p cookie))
+                        (note "the new cookie is live, not a deletion"))))
+                (ok (null (fetch-stored-session inner first-id))
+                    (note "the expired session is gone from the store"))))))))))
+
+(defun assert-sweep-removes-idle-sessions (inner label &key (idle-timeout 1800))
+  "Open two sessions over a session stage backed by INNER, let one of them go
+   idle past the limit, and assert that one sweep removes exactly that one.
+
+   @param inner [t] The store to configure the session stage with
+   @param label [string] Name of the store, for the assertion descriptions
+   @param idle-timeout [integer] Limit to sweep against, in seconds
+   "
+  (flet ((note (text) (format nil "~A: ~A" label text)))
+    (let* ((*session-idle-timeout* idle-timeout)
+           (store (ensure-session-store-wrapper inner)))
+      (with-middleware-stack (app :store store :inner (make-session-counter-app))
+        (let* ((opened-at (clock-now))
+               (old-id (response-session-id (call-app app "/")))
+               (fresh-id nil))
+          (ok (and old-id (= (length old-id) 40)) (note "the first session exists"))
+          ;; The second session is opened from inside the limit, so that one
+          ;; sweep has one expired and one live session to tell apart.
+          (with-clock-advanced-by ((+ idle-timeout 60) :from opened-at)
+            (setf fresh-id (response-session-id (call-app app "/")))
+            (ok (and fresh-id (= (length fresh-id) 40))
+                (note "the second session exists"))
+            (ok (member old-id (session-store-wrapper-indexed-session-ids store)
+                        :test #'string=)
+                (note "both ids are in the sweep index"))
+            (let ((removed (sweep-idle-sessions store :idle-timeout idle-timeout
+                                                      :now (clock-now))))
+              (ok (equal removed (list old-id))
+                  (note "the sweep removed exactly the idle session"))
+              (ok (null (fetch-stored-session inner old-id))
+                  (note "which is gone from the store"))
+              (ok (hash-table-p (fetch-stored-session inner fresh-id))
+                  (note "and the live session is untouched"))
+              (ok (not (member old-id (session-store-wrapper-indexed-session-ids store)
+                               :test #'string=))
+                  (note "the swept id left the index"))
+              (ok (member fresh-id (session-store-wrapper-indexed-session-ids store)
+                          :test #'string=)
+                  (note "the live one did not")))))))))

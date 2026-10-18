@@ -46,6 +46,12 @@
                #:clails-test/middleware/middleware-stack
                #:clails-test/middleware/session-concurrency
                #:clails-test/middleware/session-clock
+               ;; M5: the session lifecycle API, server-side idle expiry, the
+               ;; periodic sweeper and the cookie clails emits.
+               #:clails-test/middleware/session-lifecycle
+               #:clails-test/middleware/session-expiry
+               #:clails-test/middleware/session-sweeper
+               #:clails-test/middleware/session-cookie
                #:clails-test/middleware/session-store
                #:clails-test/middleware/session-store-swap
                ;; The session table (M3-T3): the definition, the statement

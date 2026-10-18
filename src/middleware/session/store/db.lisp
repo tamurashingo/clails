@@ -5,6 +5,8 @@
                 #:*connection-pool*)
   (:import-from #:clails/model/connection
                 #:get-connection-direct)
+  (:import-from #:clails/middleware/session/clock
+                #:session-clock-now)
   (:import-from #:clails/middleware/session/store
                 #:<session-store>
                 #:fetch-session
@@ -474,7 +476,7 @@
    @return [hash-table] SESSION
    "
   (let ((text (serialize-session session))
-        (now (session-time-string (get-universal-time))))
+        (now (session-time-string (session-clock-now))))
     (with-store-connection (connection store)
       (flet ((update ()
                (dbi:do-sql connection
@@ -530,7 +532,7 @@
    @param access-time [(or integer null)] Universal time, or NIL for now
    @return [(or integer null)] The recorded time, or NIL when SID is unknown
    "
-  (let ((time (or access-time (get-universal-time))))
+  (let ((time (or access-time (session-clock-now))))
     (with-store-connection (connection store)
       (let ((updated (dbi:do-sql connection
                        (format nil "UPDATE ~A SET ~A = ? WHERE ~A = ?"

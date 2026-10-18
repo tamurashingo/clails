@@ -71,7 +71,7 @@
                (raw (response-header response :set-cookie))
                (cookie (response-set-cookie response))
                (session-id (set-cookie-value cookie)))
-          (ok (string= (set-cookie-name cookie) "lack.session"))
+          (ok (string= (set-cookie-name cookie) +default-session-cookie-name+))
           ;; lack session ids are 40 hex characters
           ;; (lack/middleware/session/state L18-L23)
           (ok (= (length session-id) 40))
@@ -90,45 +90,40 @@
   ;; an expiry (lack/middleware/session/state/cookie finalize-state
   ;; L45-L51), so a session-creating response is the only kind of response on
   ;; which cookie attributes can be asserted at all.
+  ;; UPDATED BY M5-T4.  This block used to record the defaults clails
+  ;; inherited from the underlying library -- cookie named "lack.session",
+  ;; no HttpOnly, and an "expires" roughly 127 years out (the library adds
+  ;; the current time to a slot it initialised to the current time).  M5-T4
+  ;; replaced those defaults with safe ones and gave clails a cookie state
+  ;; of its own, so what the baseline records changed with them.  The
+  ;; detailed assertions about the new defaults -- including the absence of
+  ;; "expires", which is the one that needed the new state -- live in
+  ;; clails-test/middleware/session-cookie; what is kept here is the shape
+  ;; of the session-creating response.
   (testing "current defaults on the session-creating response"
     (with-middleware-stack (app)
       (let* ((response (call-app app "/"))
              (cookie (response-set-cookie response)))
         (ok cookie "the session-creating response carries a Set-Cookie header")
-        (ok (string= (set-cookie-name cookie) "lack.session"))
-        ;; attributes that ARE emitted today
+        (ok (string= (set-cookie-name cookie) +default-session-cookie-name+))
+        (ok (string/= (set-cookie-name cookie) "lack.session")
+            "the default cookie name no longer names the library underneath")
+        ;; attributes that ARE emitted
         (ok (set-cookie-attribute-present-p cookie "path"))
         (ok (string= (set-cookie-attribute cookie "path") "/"))
-        (ok (set-cookie-attribute-present-p cookie "expires"))
-        ;; The VALUE of expires is the point, not its presence: cookie-state's
-        ;; EXPIRES slot defaults to (get-universal-time) *at the moment the
-        ;; state is created* (lack .../state/cookie L25), and finalize-state
-        ;; emits (+ (get-universal-time) expires) (L60-L61).  The default is
-        ;; therefore not "expires at the end of the visit" but an absolute
-        ;; date roughly twice the current universal time -- a persistent
-        ;; cookie about 127 years out.  M5-T4 reads this suite as the record
-        ;; of the current defaults, so the number is asserted here; asserting
-        ;; only presence would certify a persistent cookie as the intended
-        ;; baseline.  Changing the default is M5-T4's job, not this test's.
-        (let* ((raw (set-cookie-attribute cookie "expires"))
-               (expires (and (stringp raw) (parse-http-date raw)))
-               (seconds-out (and expires (- expires (get-universal-time)))))
-          (diag (format nil "default expires: ~A (~@[~D s from now~])~%"
-                        raw seconds-out))
-          (ok (stringp raw) "expires carries a date, not just a flag")
-          (ok expires "the expires attribute is a readable HTTP-date")
-          (when seconds-out
-            (ok (> seconds-out (* 100 365 24 3600))
-                (format nil "the default expiry is ~D year(s) out, i.e. a persistent cookie"
-                        (round seconds-out (* 365 24 3600))))))
+        (ok (set-cookie-attribute-present-p cookie "httponly"))
         (ok (set-cookie-attribute-present-p cookie "samesite"))
         (ok (string= (set-cookie-attribute cookie "samesite") "Lax"))
-        ;; attributes that are NOT emitted today; these are the current
-        ;; defaults, recorded as they are -- M5-T4 is where they change
-        (ok (not (set-cookie-attribute-present-p cookie "httponly")))
-        (ok (not (set-cookie-attribute-present-p cookie "secure")))
-        (ok (not (set-cookie-attribute-present-p cookie "domain")))
-        (ok (not (set-cookie-attribute-present-p cookie "max-age"))))))
+        ;; attributes that are NOT emitted.  "expires" is the interesting
+        ;; one: the deadline is the server-side idle timeout, and a date on
+        ;; the cookie would turn it into an absolute lifetime (the cookie is
+        ;; not re-sent on a continuing request -- see
+        ;; SESSION-COOKIE-NOT-REISSUED-TEST below).
+        (ok (not (set-cookie-attribute-present-p cookie "expires")))
+        (ok (not (set-cookie-attribute-present-p cookie "max-age")))
+        (ok (not (set-cookie-attribute-present-p cookie "secure"))
+            "Secure is off by default, so sessions work over plain HTTP")
+        (ok (not (set-cookie-attribute-present-p cookie "domain"))))))
 
   (testing "attributes configured on the cookie state are emitted and detected"
     (with-middleware-stack (app :state (make-test-cookie-state
@@ -206,12 +201,12 @@
              (first-response (client-request client "/")))
         ;; both cookies really are on the response, application's one first
         (ok (equal (mapcar #'set-cookie-name (response-set-cookies first-response))
-                   '("flash" "lack.session"))
+                   (list "flash" +default-session-cookie-name+))
             "the response sets the application cookie first, then the session cookie")
         (ok (string= (response-body-string first-response) "1"))
         ;; the client learned the session cookie, not the first one it saw
         (ok (string= (set-cookie-name (session-client-last-set-cookie client))
-                     "lack.session"))
+                     +default-session-cookie-name+))
         (ok (= (length (set-cookie-value (session-client-last-set-cookie client))) 40))
         ;; ... so the session continues instead of starting over
         (ok (string= (response-body-string (client-request client "/")) "2"))
@@ -219,7 +214,8 @@
         ;; and the application cookie is carried back as well, as a browser would
         (let ((header (session-client-cookie client)))
           (ok (search "flash=hello" header) "the application cookie is sent back too")
-          (ok (search "lack.session=" header) "and so is the session cookie")))))
+          (ok (search (concatenate 'string +default-session-cookie-name+ "=") header)
+              "and so is the session cookie")))))
 
   (testing "a cookie can be picked out of a multi-cookie response by name"
     (with-middleware-stack (app :inner (make-cookie-setting-app
@@ -228,7 +224,7 @@
       (let ((response (call-app app "/")))
         (ok (= (length (response-set-cookies response)) 2))
         (ok (string= (set-cookie-value (response-set-cookie response "flash")) "hello"))
-        (ok (= (length (response-session-id response "lack.session")) 40))
+        (ok (= (length (response-session-id response +default-session-cookie-name+)) 40))
         ;; asking without a name would be a guess, so it is refused rather
         ;; than answered about the wrong cookie
         (ok (handler-case (progn (response-set-cookie response) nil)
@@ -263,7 +259,7 @@
           (ok (= (length first-id) 40))
           (ok (string= (response-body-string (client-request client "/")) "2"))
           (let* ((response (client-request client "/logout"))
-                 (cookie (response-set-cookie response "lack.session")))
+                 (cookie (response-set-cookie response +default-session-cookie-name+)))
             (ok cookie "expiring the session re-emits the cookie")
             (ok (string= (set-cookie-value cookie) first-id)
                 "the expiring Set-Cookie still names the old session id")
