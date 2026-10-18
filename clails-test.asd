@@ -11,8 +11,10 @@
                #:rove
                ;; HTTP round-trip helpers for the tests (no server, no DB) are
                ;; built on lack-test, and clails-test/middleware/middleware-stack
-               ;; uses lack-middleware-csrf as a real extra stage (the framework
-               ;; itself does not depend on it).
+               ;; uses lack-middleware-csrf directly as an extra stage.  (Since
+               ;; M6 the framework itself depends on lack-middleware-csrf as
+               ;; well -- see clails.asd -- so that one is no longer a
+               ;; test-only dependency.)
                ;;
                ;; Neither system is listed here, because neither has to be:
                ;; lack.asd defines forwarding systems named "lack/test" and
@@ -64,6 +66,14 @@
                #:clails-test/middleware/session-store-wrapper
                #:clails-test/middleware/session-lock
                #:clails-test/middleware/forbidden-response
+               ;; The CSRF verification stage (M6): the stage from the inside
+               ;; (configuration, comparison, session key, marker, startup
+               ;; check), the same stage from the outside (method x token
+               ;; state x body format, unexpected bodies, audit records,
+               ;; position in the stack) and the one-time token setting.
+               #:clails-test/middleware/csrf-middleware
+               #:clails-test/middleware/csrf-http-roundtrip
+               #:clails-test/middleware/csrf-one-time
                #:clails-test/helper/date-helper
                #:clails-test/model/join-query
                #:clails-test/model/save

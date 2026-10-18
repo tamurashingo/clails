@@ -25,6 +25,12 @@
                "getcmd"
                "jonathan"
                "lack"
+               ;; lack-middleware-csrf and lack-middleware-session are both
+               ;; ordinary (non-package-inferred) systems defining several
+               ;; packages each; they are named here, in the hyphenated
+               ;; spelling, and imported from a single package apiece.  See the
+               ;; note at the top of src/middleware/csrf-middleware.lisp.
+               "lack-middleware-csrf"
                "lack-middleware-session"
                "lack/middleware/static"
                "local-time"

@@ -12,6 +12,7 @@
            #:*routing-tables*
            #:*startup-hooks*
            #:*shutdown-hooks*
+           #:*strict-configuration*
            #:*default-lock-mode*
            #:*sqlite3-busy-timeout*
            #:*sqlite3-lock-retry-count*
@@ -163,6 +164,40 @@
    order matches execution order; do not push onto it directly, since push
    prepends and would run the newly added hook before the framework's own
    default hooks (and before any hook registered earlier).")
+
+(defvar *strict-configuration* t
+  "How strictly a configuration that cannot work is treated.
+
+   T (the framework default) -- a configuration check that fails signals an
+   error, which aborts whatever was being set up: the framework refuses to
+   come up in a configuration in which requests are bound to fail.
+   NIL -- the same check records a warning on the :audit logger and the setup
+   continues, which is what a development or test environment usually wants:
+   a mistake is reported but does not stop the work.
+
+   The framework never decides this from the environment it is running in; it
+   only reads the value set here. A generated project's configuration files
+   are what put NIL in the development and test environments and T in
+   production, so that the decision is visible in the project rather than
+   hidden in the framework.
+
+   This lives here, with the rest of the framework-wide configuration, rather
+   than in the package of any one middleware: it is not about one stage. (The
+   convention of keeping a stage's own settings in that stage's package --
+   *enable-session-middleware*, *enable-csrf-middleware* -- still applies to
+   settings that only concern one stage.)
+
+   What is checked today:
+
+     * clails/middleware/csrf-middleware:check-csrf-configuration -- the CSRF
+       stage enabled while the session middleware is disabled, which cannot
+       serve a single state-changing request.
+
+   The checks are deliberately limited to configurations that are
+   unambiguously broken, so that T is a safe default: an existing project
+   that enables neither of the stages involved never trips one.
+
+   This can be overridden in <project>/app/config/environment.lisp")
 
 (defvar *default-lock-mode* :for-update
   "Default lock mode for with-locked-transaction macro.
