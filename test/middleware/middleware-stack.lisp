@@ -3,16 +3,19 @@
   (:use #:cl
         #:rove
         #:clails-test/support/http)
-  (:import-from #:lack/request
-                #:make-request
-                #:request-body-parameters)
   ;; The CSRF stage used below is lack's, imported through the "lack/middleware/csrf"
-  ;; system alias declared in lack.asd.  M6 is the milestone that adds a CSRF
-  ;; stage to the framework itself; here it only has to prove that a stack
-  ;; carrying such a stage can be assembled from a test.
+  ;; system alias declared in lack.asd.  M6 is the milestone that added a CSRF
+  ;; stage to the framework itself; here a CSRF stage only has to prove that a
+  ;; stack carrying one can be assembled from a test, and lack's keeps this
+  ;; suite independent of the framework stage's own configuration.
   (:import-from #:lack/middleware/csrf
                 #:*lack-middleware-csrf*
                 #:csrf-token)
+  ;; The request-method override stage, on the other hand, IS the framework's
+  ;; own since M9: this suite used to carry a stand-in for it.
+  (:import-from #:clails/middleware/method-override-middleware
+                #:*enable-method-override*
+                #:*lack-middleware-clails-method-override*)
   (:import-from #:clails/middleware/session-middleware
                 #:*enable-session-middleware*
                 #:*session-store*
@@ -33,27 +36,23 @@
       (funcall trace name)
       (funcall app env))))
 
-(defparameter +override-methods+
-  '(("put" . :put) ("patch" . :patch) ("delete" . :delete))
-  "Allow-list of methods a POST may be rewritten to.")
+(defun method-override-stage ()
+  "The framework's request-method override stage, as a one-argument
+   middleware.
 
-(defun make-method-override-middleware (&key (parameter "_method"))
-  "A stand-in for the request-method rewriting stage that M9 will add to the
-   framework.  It is not the real thing -- M9 owns that -- but it behaves the
-   way M9 requires (POST only, body only, allow-list only, rewrites env's
-   declared request method), which is enough to prove such a stage can be
-   placed inside a stack built by a test."
+   Until M9 this was a stand-in written here; the real stage now exists
+   (clails/middleware/method-override-middleware), so this suite uses it and
+   only asks the question it is about: can such a stage be placed inside a
+   stack a test assembled, and does it end up where it was put.  What the
+   stage DOES is the business of clails-test/middleware/method-override and
+   .../method-override-roundtrip.
+
+   The stage reads its configuration when the stack is built -- which is when
+   the middleware itself is called -- so the enabling flag is bound there and
+   not around the request."
   (lambda (app)
-    (lambda (env)
-      (when (eq (getf env :request-method) :post)
-        (let* ((req (make-request env))
-               (raw (cdr (assoc parameter (request-body-parameters req) :test #'string=)))
-               (override (and (stringp raw)
-                              (cdr (assoc (string-downcase raw) +override-methods+
-                                          :test #'string=)))))
-          (when override
-            (setf (getf env :request-method) override))))
-      (funcall app env))))
+    (let ((*enable-method-override* t))
+      (funcall *lack-middleware-clails-method-override* app))))
 
 (defun csrf-stage (&rest args)
   "The lack CSRF stage as a one-argument middleware."
@@ -169,7 +168,7 @@
                               :inner-middleware (list (make-trace-middleware :inside-session record)
                                                       (csrf-stage)
                                                       (make-trace-middleware :inside-csrf record)
-                                                      (make-method-override-middleware)
+                                                      (method-override-stage)
                                                       (make-trace-middleware :inside-override record)))
         (let* ((client (make-session-client app))
                (token (response-body-string (client-request client "/"))))
@@ -201,8 +200,8 @@
             (ok (eq seen-method :delete))
             (ok (equal (reverse trace) '(:inside-session :inside-csrf :inside-override))))
 
-          ;; a GET carrying a forged method is not rewritten: the stand-in
-          ;; stage only looks at POST bodies
+          ;; a GET carrying a forged method is not rewritten: the stage only
+          ;; looks at POST bodies
           (setf seen-method nil)
           (client-request client "/?_method=delete")
           (ok (eq seen-method :get))))))

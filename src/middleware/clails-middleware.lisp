@@ -54,10 +54,22 @@
                          (when (log-level-enabled-p :trace)
                            (log-package.trace "Dispatching to do-get"))
                          (do-get controller))
+                        ;; PATCH is handled by DO-PUT: the legacy dispatch
+                        ;; mechanism has four receivers and no partial-update
+                        ;; one, and a PATCH that reached none of them would
+                        ;; call nothing at all.  Before M9 a "_method=patch"
+                        ;; POST fell through to DO-POST, because "patch" was
+                        ;; in neither of the two tests below; now that the
+                        ;; override allow-list accepts it (see
+                        ;; clails/middleware/method-override-middleware:+method-override-methods+),
+                        ;; a receiver has to be named, and replacement is the
+                        ;; receiver a partial update belongs with.
                         ((or (eq method :put)
+                             (eq method :patch)
                              (and (eq method :post)
-                                  (string-equal "put"
-                                           (gethash "_method" (params controller)))))
+                                  (let ((spoofed (gethash "_method" (params controller))))
+                                    (or (string-equal "put" spoofed)
+                                        (string-equal "patch" spoofed)))))
                          (when (log-level-enabled-p :trace)
                            (log-package.trace "Dispatching to do-put"))
                          (do-put controller))

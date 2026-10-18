@@ -279,6 +279,16 @@
 ;;; implicit HTTP-method convention, and it does not need the _method
 ;;; spoofing hack since each action gets its own explicit :method entry.
 ;;;
+;;; Since M9 the "_method" field is honoured one stage further out as well
+;;; (clails/middleware/method-override-middleware), which is what makes it
+;;; reach :action-based routes: that stage rewrites the request's declared
+;;; method before the route is matched, so a form POST can reach a route
+;;; declared for PUT, PATCH or DELETE. The legacy branch below is unchanged
+;;; by that -- a request rewritten to PUT satisfies its "is this a PUT" test
+;;; and lands in the same receiver it always did -- with one addition: PATCH
+;;; is dispatched to do-put, because there is no partial-update receiver and
+;;; a PATCH matching none of the four would call nothing at all.
+;;;
 ;;; The do-get/do-post/do-put/do-delete mechanism is not being removed by
 ;;; this change and continues to work exactly as before; it is marked here
 ;;; as deprecated in favor of :action-based routing. See
@@ -335,6 +345,10 @@
    normally reached via the \"_method\" parameter-spoofing hack on a POST
    request; :action-based routing does not need that hack. This method
    keeps working unchanged and is not scheduled for removal in this change.
+
+   A PATCH request is dispatched here as well: the legacy mechanism has no
+   partial-update receiver, and replacement is the receiver a partial update
+   belongs with.
 
    Default implementation signals a 404/not-found error.
    Override this method to implement PUT request handling.
@@ -661,7 +675,19 @@
 (defun resources (name controller &key only except)
   "Generate RESTful route entries for a resource.
 
-   By default, generates 7 standard routes: index, new, create, show, edit, update, destroy.
+   By default, generates 8 route entries for the 7 standard actions: index,
+   new, create, show, edit, update, destroy. \"update\" gets two entries,
+   one for PUT and one for PATCH, which is why there are eight: PATCH is a
+   partial update, PUT a replacement, and both are answered by the update
+   action. The CSRF stage verifies all four state-changing methods, and the
+   request-method override stage accepts all three of PUT / PATCH / DELETE in
+   a form's hidden field, so a resource without a PATCH route would leave one
+   method verified but unreachable.
+
+   Both update entries are named :update, so :only '(:update) keeps both and
+   :except '(:update) removes both: the selector names the action, not the
+   method it is reached with.
+
    Use :only to include specific actions, or :except to exclude specific actions.
 
    @param name [string] Resource name (e.g., \"todos\")
@@ -682,7 +708,12 @@
            (list :name :show    :path member-path     :controller controller :action "show"    :method :get)
            (list :name :edit    :path edit-path       :controller controller :action "edit"    :method :get)
            (list :name :update  :path member-path     :controller controller :action "update"  :method :put)
-           (list :name :destroy :path member-path     :controller controller :action "destroy" :method :delete))))
+           (list :name :destroy :path member-path     :controller controller :action "destroy" :method :delete)
+           ;; The PATCH entry is listed last so that the first seven keep the
+           ;; positions they have always had; the order of the table only
+           ;; decides which route wins when two match the SAME method, and no
+           ;; two entries here declare the same method on the same path.
+           (list :name :update  :path member-path     :controller controller :action "update"  :method :patch))))
     (mapcar (lambda (route)
               (let ((r (copy-list route)))
                 (remf r :name)
