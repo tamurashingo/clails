@@ -25,7 +25,10 @@
                 #:make-console-appender
                 #:<text-formatter>)
   (:import-from #:clails/util
-                #:env-or-default))
+                #:env-or-default)
+  (:import-from #:clails-test/support/temp-project
+                #:make-test-project-root
+                #:delete-test-project-root))
 
 (defpackage #:clails-test/model/bulk-db
   (:use #:cl)
@@ -35,6 +38,11 @@
                 #:drop-table))
 
 (in-package #:clails-test/model/bulk/bulk-postgresql)
+
+(defvar *test-project-root* nil
+  "This suite's own directory under the system temporary directory, used as
+   CLAILS/ENVIRONMENT:*PROJECT-DIR*.  Scoped to the suite so that TEARDOWN
+   deletes only what the suite created.")
 
 (defun cleanup-table ()
   "Delete all records from users table."
@@ -74,8 +82,8 @@
 
   (setf clails/environment:*database-type* (make-instance 'clails/environment::<database-type-postgresql>))
   (setf clails/environment:*project-environment* :test)
-  (uiop:setup-temporary-directory)
-  (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
+  (setf *test-project-root* (make-test-project-root))
+  (ensure-directories-exist (merge-pathnames "db/" *test-project-root*))
   (setf clails/environment:*database-config* 
         `(:test (:database-name ,(env-or-default "CLAILS_POSTGRESQL_DATABASE" "clails_test")
                 :username ,(env-or-default "CLAILS_POSTGRESQL_USERNAME" "clails")
@@ -83,7 +91,7 @@
                 :host ,(env-or-default "CLAILS_POSTGRESQL_HOST" "postgresql-test")
                 :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "5432"))))
   (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR_0010" "/app/test/data/0010-bulk-test"))
-  (setf clails/environment::*project-dir* uiop:*temporary-directory*)
+  (setf clails/environment::*project-dir* *test-project-root*)
   (clails/model/migration::db-create)
   (clails/model/migration::db-migrate)
   (startup-connection-pool)
@@ -91,7 +99,7 @@
 
 (teardown
   (shutdown-connection-pool)
-  (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t))
+  (delete-test-project-root *test-project-root*))
 
 
 ;;;; ----------------------------------------

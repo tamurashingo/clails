@@ -4,35 +4,43 @@
         #:rove)
   (:import-from #:clails/project/generate
                 #:gen/model
-                #:check-unregistered-models))
+                #:check-unregistered-models)
+  (:import-from #:clails-test/support/temp-project
+                #:make-test-project-root
+                #:delete-test-project-root))
 (in-package #:clails-test/project/generate)
+
+(defvar *test-project-root* nil
+  "This suite's own directory under the system temporary directory, used as
+   CLAILS/ENVIRONMENT:*PROJECT-DIR*.  Scoped to the suite so that TEARDOWN
+   deletes only what the suite created.")
 
 (defparameter *test-project-name* "testproj")
 
 (setup
-  (uiop:setup-temporary-directory)
-  (setf clails/environment:*project-dir* uiop:*temporary-directory*)
+  (setf *test-project-root* (make-test-project-root))
+  (setf clails/environment:*project-dir* *test-project-root*)
   (setf clails/environment:*project-name* *test-project-name*)
-  (ensure-directories-exist (merge-pathnames "app/models/" uiop:*temporary-directory*))
-  (ensure-directories-exist (merge-pathnames "test/models/" uiop:*temporary-directory*))
-  (with-open-file (out (merge-pathnames "app/application-loader.lisp" uiop:*temporary-directory*)
+  (ensure-directories-exist (merge-pathnames "app/models/" *test-project-root*))
+  (ensure-directories-exist (merge-pathnames "test/models/" *test-project-root*))
+  (with-open-file (out (merge-pathnames "app/application-loader.lisp" *test-project-root*)
                        :direction :output :if-exists :supersede)
     (format out "; -*- mode: lisp -*-~%(in-package #:cl-user)~%(defpackage #:~A/application-loader~%  (:use #:cl)~%  (:import-from #:~A/models/package))~%(in-package #:~A/application-loader)~%"
             *test-project-name* *test-project-name* *test-project-name*))
-  (with-open-file (out (merge-pathnames "app/models/package.lisp" uiop:*temporary-directory*)
+  (with-open-file (out (merge-pathnames "app/models/package.lisp" *test-project-root*)
                        :direction :output :if-exists :supersede)
     (format out "; -*- mode: lisp -*-~%(in-package #:cl-user)~%(defpackage #:~A/models/package~%  (:use #:cl))~%(in-package #:~A/models/package)~%"
             *test-project-name* *test-project-name*))
-  (with-open-file (out (merge-pathnames "test/test-loader.lisp" uiop:*temporary-directory*)
+  (with-open-file (out (merge-pathnames "test/test-loader.lisp" *test-project-root*)
                        :direction :output :if-exists :supersede)
     (format out "; -*- mode: lisp -*-~%(in-package #:cl-user)~%(defpackage #:~A-test/test-loader~%  (:use #:cl))~%(in-package #:~A-test/test-loader)~%"
             *test-project-name* *test-project-name*)))
 
 (teardown
-  (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t))
+  (delete-test-project-root *test-project-root*))
 
 (defun read-project-file (relative-path)
-  (uiop:read-file-string (merge-pathnames relative-path uiop:*temporary-directory*)))
+  (uiop:read-file-string (merge-pathnames relative-path *test-project-root*)))
 
 
 ;;; Test: gen/model registers into app/models/package.lisp, not application-loader.lisp
@@ -55,7 +63,7 @@
 
 (deftest check-unregistered-models-warns-for-unloaded-file-test
   (testing "check-unregistered-models warns about a model file whose package was never loaded"
-    (with-open-file (out (merge-pathnames "app/models/foo.lisp" uiop:*temporary-directory*)
+    (with-open-file (out (merge-pathnames "app/models/foo.lisp" *test-project-root*)
                          :direction :output :if-exists :supersede)
       (format out "; a hand-written model file, never registered anywhere~%"))
     (let ((output (with-output-to-string (*standard-output*)
@@ -65,7 +73,7 @@
 
 (deftest check-unregistered-models-silent-for-loaded-file-test
   (testing "check-unregistered-models stays silent about a model file whose package is already loaded"
-    (with-open-file (out (merge-pathnames "app/models/bar.lisp" uiop:*temporary-directory*)
+    (with-open-file (out (merge-pathnames "app/models/bar.lisp" *test-project-root*)
                          :direction :output :if-exists :supersede)
       (format out "; simulate a model that was already loaded via application-loader.lisp~%"))
     (unless (find-package "TESTPROJ/MODELS/BAR")

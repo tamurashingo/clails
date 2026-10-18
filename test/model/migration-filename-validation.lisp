@@ -11,7 +11,10 @@
   (:import-from #:clails/model/migration
                 #:db-create
                 #:db-migrate
-                #:valid-migration-filename-p))
+                #:valid-migration-filename-p)
+  (:import-from #:clails-test/support/temp-project
+                #:make-test-project-root
+                #:delete-test-project-root))
 
 (defpackage #:clails-test/model/db/migration-filename-validation
   (:use #:cl)
@@ -21,6 +24,11 @@
                 #:drop-table))
 
 (in-package #:clails-test/model/migration-filename-validation)
+
+(defvar *test-project-root* nil
+  "This suite's own directory under the system temporary directory, used as
+   CLAILS/ENVIRONMENT:*PROJECT-DIR*.  Scoped to the suite so that TEARDOWN
+   deletes only what the suite created.")
 
 
 (setup
@@ -32,16 +40,16 @@
                                                       :host ,(env-or-default "CLAILS_MYSQL_HOST" "mysql-test")
                                                       :port ,(env-or-default "CLAILS_MYSQL_PORT" "3306"))))
   (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR_0014" "/app/test/data/0014-migration-filename-validation-test"))
-  (uiop:setup-temporary-directory)
-  (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
-  (setf clails/environment::*project-dir* uiop:*temporary-directory*)
+  (setf *test-project-root* (make-test-project-root))
+  (ensure-directories-exist (merge-pathnames "db/" *test-project-root*))
+  (setf clails/environment::*project-dir* *test-project-root*)
   (db-create)
   (clean-test-database)
   (startup-connection-pool))
 
 (teardown
   (clean-test-database)
-  (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t)
+  (delete-test-project-root *test-project-root*)
   (shutdown-connection-pool))
 
 

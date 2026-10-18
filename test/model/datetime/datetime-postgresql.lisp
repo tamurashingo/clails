@@ -9,7 +9,10 @@
   (:import-from #:clails/model/base-model
                 #:<base-model>
                 #:defmodel
-                #:ref))
+                #:ref)
+  (:import-from #:clails-test/support/temp-project
+                #:make-test-project-root
+                #:delete-test-project-root))
 (defpackage #:clails-test/model/db
   (:use #:cl)
   (:import-from #:clails/model/migration
@@ -17,6 +20,11 @@
                 #:create-table
                 #:drop-table))
 (in-package #:clails-test/model/datetime/datetime-postgresql)
+
+(defvar *test-project-root* nil
+  "This suite's own directory under the system temporary directory, used as
+   CLAILS/ENVIRONMENT:*PROJECT-DIR*.  Scoped to the suite so that TEARDOWN
+   deletes only what the suite created.")
 
 (setup
   (clrhash clails/model/base-model::*table-information*)
@@ -31,16 +39,16 @@
                                                       :host ,(env-or-default "CLAILS_POSTGRESQL_HOST" "postgresql-test")
                                                       :port ,(env-or-default "CLAILS_POSTGRESQL_PORT" "5432"))))
   (setf clails/environment:*migration-base-dir* (env-or-default "CLAILS_MIGRATION_DIR_0009" "/app/test/data/0009-datetime-test"))
-  (uiop:setup-temporary-directory)
-  (ensure-directories-exist (merge-pathnames "db/" uiop:*temporary-directory*))
-  (setf clails/environment::*project-dir* uiop:*temporary-directory*)
+  (setf *test-project-root* (make-test-project-root))
+  (ensure-directories-exist (merge-pathnames "db/" *test-project-root*))
+  (setf clails/environment::*project-dir* *test-project-root*)
   (clails/model/migration::db-create)
   (clails/model/migration::db-migrate)
   (clails/model/base-model:initialize-table-information)
   (clails/model/connection:startup-connection-pool))
 
 (teardown
-  (uiop:delete-directory-tree uiop:*temporary-directory* :if-does-not-exist :ignore :validate t)
+  (delete-test-project-root *test-project-root*)
   (clails/model/connection:shutdown-connection-pool))
 
 (deftest datetime-column-returns-universal-time-postgresql
