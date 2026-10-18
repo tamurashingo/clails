@@ -33,7 +33,7 @@ logs.postgresql:
 	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env logs -f postgresql-dev
 <% ) %>
 
-.PHONY: db.create db.migrate db.rollback db.seed
+.PHONY: db.create db.migrate db.rollback db.seed db.create-session-table
 db.create:
 	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env run --rm --entrypoint clails <%= (@ project-name ) %>-app db:create
 
@@ -45,4 +45,9 @@ db.rollback:
 
 db.seed:
 	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env run --rm --entrypoint clails <%= (@ project-name ) %>-app db:seed
+
+# Only needed when sessions are kept in the database (see app/config/environment.lisp).
+# Reads db/session-table.lisp; running it again does nothing.
+db.create-session-table:
+	docker compose -f docker/docker-compose.dev.yml --env-file docker/dev.env run --rm --entrypoint clails <%= (@ project-name ) %>-app db:create-session-table
 

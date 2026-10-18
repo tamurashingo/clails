@@ -132,6 +132,11 @@
                #:clails-test/job/queue
                #:clails-test/job/worker
                #:clails-test/project/generate
+               ;; What `clails new' writes: the session settings and the log
+               ;; destinations of the generated configuration (M8-T1, M8-T4),
+               ;; and the session table instructions in README/Makefile
+               ;; (M8-T5).
+               #:clails-test/project/templates
                #:clails-test/cmd)
   :perform (test-op (o c)
              (uiop:symbol-call :rove :run c)))

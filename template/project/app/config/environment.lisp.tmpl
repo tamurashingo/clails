@@ -6,7 +6,19 @@
                 #:*project-environment*
                 #:*routing-tables*
                 #:add-startup-hook
-                #:add-shutdown-hook))
+                #:add-shutdown-hook)
+  ;; Session settings.  Every session option is declared in a session-specific
+  ;; package and re-exported by clails/middleware/session-middleware, so one
+  ;; package is enough to configure all of them.
+  (:import-from #:clails/middleware/session-middleware
+                #:*enable-session-middleware*
+                #:*session-store*
+                #:*session-state*
+                #:*session-cookie-secure*
+                #:*session-idle-timeout*
+                #:*session-sweep-enabled*
+                #:*session-sweep-interval*)
+  (:export #:initialize-session-config))
 
 (in-package #:<%= (@ project-name ) %>/config/environment)
 
@@ -19,6 +31,132 @@
 (setf clails/environment:*routing-tables*
   '((:path "/"
      :controller "<%= (@ project-name )%>/controllers/application-controller:<application-controller>")))
+
+
+;;; ------------------------------------------------------------------
+;;; Sessions
+;;; ------------------------------------------------------------------
+;;;
+;;; Sessions are enabled in a generated project, so (session controller) and
+;;; (current-user controller) work from the first request.  The FRAMEWORK's own
+;;; default is "disabled": a project whose configuration has no lines like the
+;;; ones below keeps behaving exactly as it did, and the defaults written out
+;;; here are this project's configuration rather than something clails decides
+;;; on its own.
+;;;
+;;; All of these variables are read once, while the middleware stack is being
+;;; built by `clails server'.  Changing them in a running image does not change
+;;; how the running server answers.
+;;;
+;;; The guide is document/session.md in the clails source tree.
+
+;; Enable clails' cookie session stage.
+(setf *enable-session-middleware* t)
+
+;; Where sessions are kept.  NIL means clails' own in-memory store: right for
+;; development and for a single process, but the sessions are lost when the
+;; process stops and are not shared with a second process.
+;;
+;; To keep them in the database instead -- the recommended production setup --
+;; create the table once with `clails db:create-session-table' (it reads
+;; db/session-table.lisp; see "Setup Database" in README.md) and point the store
+;; at it:
+;;
+;;     (setf *session-store*
+;;           (clails/middleware/session/store/db:make-db-session-store))
+;;
+;; A session kept in a table may only hold values that can be printed and read
+;; back (strings, numbers, symbols, lists, vectors, hash-tables of those).
+;; Class instances and streams have to be kept outside the session.
+(setf *session-store* nil)
+
+;; The cookie clails emits by default is
+;;
+;;     <name>=<id>; path=/; HttpOnly; SameSite=Lax
+;;
+;; HttpOnly (no script can read it), SameSite stated explicitly, a name that
+;; does not advertise the implementation -- and deliberately NO expiry date.
+;; The deadline is the server-side idle timeout below; a date on the cookie
+;; would become an absolute deadline counted from the moment the session was
+;; created, because a cookie is only re-sent when the session is created,
+;; renamed or destroyed.
+;;
+;; Set *SESSION-STATE* to change the name, path, domain or SameSite:
+;;
+;;     (setf *session-state*
+;;           (clails/middleware/session/state/cookie:make-clails-cookie-state
+;;             :cookie-key "_<%= (@ project-name ) %>_session"
+;;             :samesite :strict))
+
+;; How long a session may stay UNUSED before it expires, in seconds.
+;; Framework default: 1800 (30 minutes).  This is an idle time, not a lifetime:
+;; every request carrying a live session pushes the deadline forward, so a user
+;; who keeps working is never logged out.  NIL switches server-side expiry off
+;; entirely.
+(setf *session-idle-timeout* 1800)
+
+;; Expired sessions are removed in two ways, and both are on: lazily, when an
+;; expired session is presented, and by a background sweeper thread that the
+;; server starts in a startup hook and stops in a shutdown hook.  Framework
+;; defaults: sweeping enabled, every 300 seconds.  Setting the first to NIL
+;; leaves cleanup to the lazy deletion alone -- correct, but it never frees a
+;; session nobody comes back for.
+(setf *session-sweep-enabled* t)
+(setf *session-sweep-interval* 300)
+
+
+;;; Secure cookie: the one session setting that differs per environment
+;;;
+;;; T means the browser sends the session cookie over HTTPS ONLY.  The
+;;; framework default is NIL, which is a deliberate exception to "default to
+;;; the safe value": a Secure cookie is not sent over plain HTTP AT ALL, so
+;;; turning it on in a development or test environment that runs without TLS
+;;; stops sessions from working altogether -- the cookie is set and never comes
+;;; back, so every request looks like a first visit.
+;;;
+;;; Production is served over HTTPS, so it is turned on there, and it is turned
+;;; on HERE: clails never inspects which environment it is running in, it only
+;;; reads this variable.  That is why the environment difference lives in this
+;;; file.
+
+(defun setup-session/develop ()
+  ;; served over plain HTTP: Secure would break the session
+  (setf *session-cookie-secure* nil))
+
+(defun setup-session/test ()
+  ;; served over plain HTTP, same as development
+  (setf *session-cookie-secure* nil))
+
+(defun setup-session/production ()
+  ;; served over HTTPS: send the session cookie over TLS only
+  (setf *session-cookie-secure* t))
+
+(defun initialize-session-config (&optional environment)
+  "Apply the session settings that depend on the environment.
+
+   If environment is not specified, it will be obtained from
+   clails/environment:*project-environment*.
+
+   Called from clails.boot, after CLAILS_ENV has been resolved and before the
+   middleware stack is built -- not from a startup hook, because the stack (and
+   with it the session cookie) is built before the startup hooks run.
+
+   Supported environments:
+   - :develop, :development - Development environment
+   - :test - Test environment
+   - :production - Production environment
+
+   @param environment [keyword] Environment keyword (optional)
+   @return [null] nil
+   @condition error Unknown environment specified
+   "
+  (let ((env (or environment *project-environment*)))
+    (case env
+      ((:develop :development) (setup-session/develop))
+      (:test (setup-session/test))
+      (:production (setup-session/production))
+      (t (error "Unknown environment: ~A" env)))
+    nil))
 
 
 ;; startup hooks (run in registration order, after the framework's own default hooks)

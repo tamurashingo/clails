@@ -55,6 +55,19 @@ Run migrations:
 make db.migrate
 ```
 
+Create the session table (only when sessions are kept in the database):
+
+```bash
+make db.create-session-table
+```
+
+Sessions are kept in memory by default, so this step is only needed once
+`app/config/environment.lisp` points the session store at the database (see the
+comments in that file). The command reads `db/session-table.lisp` and creates
+the table in one step; running it again does nothing and keeps the sessions
+that are already there. The table is intentionally kept out of the
+migration history, so `make db.migrate` neither creates nor touches it.
+
 Seed the database (optional):
 
 ```bash
@@ -97,6 +110,7 @@ Connect to the Swank server from your editor (Emacs/SLIME, Vim/Slimv, etc.):
 | `make db.migrate` | Run pending migrations |
 | `make db.rollback` | Rollback the last migration |
 | `make db.seed` | Load seed data |
+| `make db.create-session-table` | Create the table the database session store uses |
 
 ### Project Structure
 
@@ -108,8 +122,9 @@ Connect to the Swank server from your editor (Emacs/SLIME, Vim/Slimv, etc.):
 │   ├── models/         # Model files
 │   └── views/          # View templates
 ├── db/
-│   ├── migrate/        # Database migration files
-│   └── seeds.lisp      # Seed data
+│   ├── migrate/            # Database migration files
+│   ├── seeds.lisp          # Seed data
+│   └── session-table.lisp  # Session table definition (db:create-session-table)
 ├── docker/
 │   ├── Dockerfile.dev           # Development Dockerfile
 │   ├── docker-compose.dev.yml   # Docker Compose configuration

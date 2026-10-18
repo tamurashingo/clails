@@ -21,3 +21,9 @@
 (clails/environment:resolve-project-environment :env-var (uiop:getenv "CLAILS_ENV"))
 
 (<%= (@ project-name) %>/config/database:initialize-database-config)
+
+;;; Session settings that depend on the environment (the Secure flag of the
+;;; session cookie).  Called here, after the environment has been resolved,
+;;; because the middleware stack -- which reads them -- is built before the
+;;; first startup hook runs, so a startup hook would be too late.
+(<%= (@ project-name) %>/config/environment:initialize-session-config)
