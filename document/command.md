@@ -98,6 +98,7 @@ clails --help
 | `clails db:rollback` | Rollback migrations |
 | `clails db:seed` | Seed the database |
 | `clails db:status` | Display migration status |
+| `clails db:create-session-table` | Create the table the database session store uses |
 
 ### Task Management
 
@@ -846,6 +847,47 @@ clails db:status
 
 - `[X]` - Executed
 - `[ ]` - Pending
+
+---
+
+### `clails db:create-session-table` - Create the Session Table
+
+Creates the table the database session store keeps sessions in. One step: the
+table exists when the command returns.
+
+#### Syntax
+
+```bash
+clails db:create-session-table
+```
+
+It takes no arguments; the environment comes from `CLAILS_ENV`, exactly as it
+does for `db:create` and `db:migrate`.
+
+#### Examples
+
+```bash
+clails db:create-session-table
+# => session table: clails_sessions
+# => definition: /path/to/myapp/db/session-table.lisp
+
+CLAILS_ENV=production clails db:create-session-table
+```
+
+#### Notes
+
+- The definition is read from the project's `db/session-table.lisp` (the file
+  `clails new` copies in), or from the framework's identical built-in
+  definition for a project created before that file existed.
+- **It is not a migration.** The statement is rendered from that file and run
+  directly, so the table does not appear in the migration history or in
+  `db/schema.lisp`, and `clails db:migrate` neither creates nor touches it.
+- **Running it again does nothing** (`CREATE TABLE IF NOT EXISTS`), so it does
+  not log out the users of a running application.
+- There is deliberately no command to drop the table again; removing it is a
+  `DROP TABLE` in the database.
+- Only needed when `*session-store*` is set to the database session store. See
+  the **[Session & Authentication Guide](session.md)**.
 
 ---
 

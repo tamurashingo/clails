@@ -728,6 +728,9 @@ Lack middleware のリストを保持します。リクエストはこのスタ�
 **デフォルト値**: 
 ```lisp
 (list
+  *lack-middleware-clails-csrf-body-guard*  ; CSRF を有効にするまでパススルー
+  *lack-middleware-clails-session*          ; セッションを有効にするまでパススルー
+  *lack-middleware-clails-csrf*             ; CSRF を有効にするまでパススルー
   *lack-middleware-transaction*
   *lack-middleware-clails-controller*
   #'(lambda (app)
@@ -741,6 +744,8 @@ Lack middleware のリストを保持します。リクエストはこのスタ�
 
 **注意**: この変数は直接変更せず、`add-middleware-before` または `add-middleware-after` 関数を使用してください。
 
+フレームワーク自身の段は、`add-middleware-before` / `add-middleware-after` ではなくこの変数に直接並べられています。この2つの関数はリストの両端にしか届かず、段の位置そのものが正しさの一部だからです（セッションの段はトランザクションの段より外側、かつ振り分けの段より外側でなければなりません）。有効化されていない段は単なるパススルーなので、何も設定していないプロジェクトの応答はこれらの段が存在しなかったときと完全に同じです。**したがってリストを丸ごと置き換えると、残しておきたい段まで消えます。** リストを作り直すのではなく、自分の段を追加してください。
+
 ### Middleware の追加
 
 #### `add-middleware-before` 関数
@@ -753,13 +758,6 @@ Middleware スタックの先頭に middleware を追加します。先頭に追
 **設定例**:
 ```lisp
 (in-package #:myapp/config/environment)
-
-;; Lack の session middleware を追加
-(clails/middleware:add-middleware-before
-  (lambda (app)
-    (funcall lack.middleware.session:*lack-middleware-session*
-             app
-             :state (make-instance 'lack.session.state.cookie:cookie-state))))
 
 ;; カスタム middleware を追加
 (clails/middleware:add-middleware-before
@@ -797,6 +795,29 @@ Middleware スタックの末尾に middleware を追加します。末尾に追
 ```
 
 ### 組み込み Middleware
+
+#### `*lack-middleware-clails-session*`
+
+Cookie セッションを管理する middleware です。リクエストに触るフレームワークの段のうち最も外側にあります。内側のすべて（トランザクションの段や振り分けの段を含む）がセッションを読み書きしうるためです。
+
+**パッケージ**: `clails/middleware/session-middleware`
+
+**機能**:
+- リクエストごとのセッション（ハッシュテーブル）を要求環境に置き、`(session controller)` や `(current-user controller)` を使えるようにする
+- セッション Cookie を発行する（`HttpOnly`、`SameSite=Lax`、実装を推測されない名前、失効日時なし）
+- 同一セッションへのアクセスを直列化し、並行要求でセッションが壊れないようにする
+- サーバ側の放置時間による失効を適用し、ストアを定期掃除に登録する
+
+**有効/無効の切り替え**:
+```lisp
+;; セッションの段を有効化（生成されたプロジェクトにはこの行が入っています）
+(setf clails/middleware/session-middleware:*enable-session-middleware* t)
+
+;; 無効化（フレームワークのデフォルト）。段はパススルーになります
+(setf clails/middleware/session-middleware:*enable-session-middleware* nil)
+```
+
+**注意**: `clails new` は有効化行・ストア・放置時間・定期掃除の設定を `app/config/environment.lisp` に書き出すので、生成されたプロジェクトでは最初からセッションが使えます。フレームワーク自身のデフォルトは「無効」なので、既存プロジェクトはこれらの行を足すまで影響を受けません。Cookie の環境ごとの `Secure` を含む全設定項目は **[セッション・認証ガイド](session_ja.md)** で説明しています。
 
 #### `*lack-middleware-transaction*`
 
@@ -851,16 +872,17 @@ Middleware スタックの末尾に middleware を追加します。末尾に追
 
 **カスタマイズ例**:
 ```lisp
-;; 静的ファイルのパスを変更
-(setf clails/middleware:*clails-middleware-stack*
-  (list
-    clails/middleware:*lack-middleware-transaction*
-    clails/middleware:*lack-middleware-clails-controller*
-    #'(lambda (app)
-        (funcall lack.middleware.static:*lack-middleware-static*
-                 app
-                 :path "/static"
-                 :root #P"./assets/"))))
+;; ./public/ に加えて別のディレクトリも配信する
+;;
+;; 段を「追加」してください。`*clails-middleware-stack*` を作り直してはいけません。
+;; リストを置き換えるとフレームワーク自身の段（セッションの段もその1つ）が消え、
+;; 位置そのものが正しさの一部なので、単に末尾に足し直すこともできません。
+(clails/middleware:add-middleware-after
+  #'(lambda (app)
+      (funcall lack.middleware.static:*lack-middleware-static*
+               app
+               :path "/static"
+               :root #P"./assets/")))
 ```
 
 ### Middleware の実行順序
@@ -869,6 +891,12 @@ Middleware は `*clails-middleware-stack*` の順序で実行されます。
 
 ```
 リクエスト
+  ↓
+*lack-middleware-clails-csrf-body-guard*
+  ↓
+*lack-middleware-clails-session*
+  ↓
+*lack-middleware-clails-csrf*
   ↓
 *lack-middleware-transaction*
   ↓
@@ -879,22 +907,22 @@ Middleware は `*clails-middleware-stack*` の順序で実行されます。
 レスポンス
 ```
 
+有効化されていない段はリクエストをそのまま内側へ渡すので、セッションだけを使っていて他は既定のままのプロジェクトでは、実際の順序は セッション → トランザクション → 振り分け → 静的ファイル になります。
+
 ### Middleware の使用例
 
 #### セッション管理
 
+セッションはスタックに「追加するもの」ではありません。clails には専用のセッションの段（上述の `*lack-middleware-clails-session*`）があり、`*clails-middleware-stack*` の必要な位置に既に入っていて、生成されたプロジェクトではそれが有効になっています。必要なのは設定だけです。
+
 ```lisp
 (in-package #:myapp/config/environment)
 
-;; Lack の session middleware を追加
-(clails/middleware:add-middleware-before
-  (lambda (app)
-    (funcall lack.middleware.session:*lack-middleware-session*
-             app
-             :state (make-instance 'lack.session.state.cookie:cookie-state
-                                  :secret "your-secret-key"
-                                  :httponly t))))
+;; この行は生成された app/config/environment.lisp に既に入っています
+(setf clails/middleware/session-middleware:*enable-session-middleware* t)
 ```
+
+その上にさらに `lack-middleware-session` を手で足すと、1つのリクエストに独立した2つのセッションができてしまいます。足さないでください。ストア・Cookie の属性・放置時間・定期掃除はいずれもフレームワークの段の設定項目です。**[セッション・認証ガイド](session_ja.md)** を参照してください。
 
 #### CORS 対応
 
