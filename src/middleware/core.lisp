@@ -12,6 +12,8 @@
   (:import-from #:clails/middleware/csrf-middleware
                 #:*lack-middleware-clails-csrf-body-guard*
                 #:*lack-middleware-clails-csrf*)
+  (:import-from #:clails/middleware/method-override-middleware
+                #:*lack-middleware-clails-method-override*)
   (:export #:*clails-middleware-stack*
            #:add-middleware-before
            #:add-middleware-after
@@ -22,6 +24,7 @@
                                           *lack-middleware-clails-csrf-body-guard*
                                           *lack-middleware-clails-session*
                                           *lack-middleware-clails-csrf*
+                                          *lack-middleware-clails-method-override*
                                           *lack-middleware-transaction*
                                           *lack-middleware-clails-controller*
                                           #'(lambda (app)
@@ -44,6 +47,15 @@
    true of the transaction stage. ADD-MIDDLEWARE-BEFORE / ADD-MIDDLEWARE-AFTER
    stay the documented way for an application to add stages of its own.
 
+   The request-method override stage is the strongest case of that: its
+   position is a safety requirement, not a preference. It must sit INSIDE the
+   CSRF stage, so that a request cannot forge its method before its token is
+   verified, and OUTSIDE the controller stage, so that the rewritten method is
+   the one the route is matched against. Placed outside the CSRF stage it
+   silently opens a bypass, which is why the stage checks at run time that the
+   CSRF stage really did run outside it (see
+   src/middleware/method-override-middleware.lisp).
+
    The CSRF body guard is the one framework stage that does belong at the
    outer end, and for a reason worth knowing: the session stage parses the
    request body on its way to the Cookie header, so a body that cannot be
@@ -53,7 +65,14 @@
    Both CSRF stages are a pass-through until CSRF is enabled in
    app/config/environment.lisp (as the session stage is until sessions are),
    so adding them to this list does not change how an existing project
-   answers anything.")
+   answers anything.
+
+   The override stage is the one framework stage that is enabled by default,
+   because it acts only on a request that asks for it -- a POST carrying the
+   \"_method\" field, which is a convention only an application's own forms
+   use. The one existing project it does change is one whose hand-written
+   routing table declares a POST route and a PUT / PATCH / DELETE route on the
+   same path; *ENABLE-METHOD-OVERRIDE* turns it off for that case.")
 
 
 (defun add-middleware-before (middleware)

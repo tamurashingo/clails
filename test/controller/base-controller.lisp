@@ -298,9 +298,13 @@
 
 
 (deftest resources-test
-  (testing "generates 7 RESTful routes"
+  ;; Eight entries for the seven actions: the member path carries a PATCH
+  ;; entry beside its PUT one, both answered by the update action (M9-T2).
+  ;; The breakdown is asserted route by route below, and again as a whole in
+  ;; clails-test/middleware/method-override-roundtrip.
+  (testing "generates 8 RESTful route entries"
     (let ((routes (resources "todos" "test::<todo-controller>")))
-      (ok (= (length routes) 7))))
+      (ok (= (length routes) 8))))
 
   (testing "routes have correct path, action, and method"
     (let ((routes (resources "todos" "test::<todo-controller>")))
@@ -338,7 +342,14 @@
       (let ((r (nth 6 routes)))
         (ok (string= (getf r :path) "/todos/:id"))
         (ok (string= (getf r :action) "destroy"))
-        (ok (eq (getf r :method) :delete)))))
+        (ok (eq (getf r :method) :delete)))
+      ;; update, partial (listed last so that the first seven keep their
+      ;; positions; the order of the table decides nothing here, as no two
+      ;; entries declare the same method on the same path)
+      (let ((r (nth 7 routes)))
+        (ok (string= (getf r :path) "/todos/:id"))
+        (ok (string= (getf r :action) "update"))
+        (ok (eq (getf r :method) :patch)))))
 
   (testing "all routes reference the same controller"
     (let ((routes (resources "blogs" "myapp::<blog-controller>")))
@@ -352,6 +363,7 @@
       (ok (string= (getf (nth 1 routes) :action) "show"))))
 
   (testing ":except excludes specified actions"
+    ;; :update names the action, so both of its entries go.
     (let ((routes (resources "todos" "test::<todo-controller>" :except '(:destroy :update))))
       (ok (= (length routes) 5))
       (ok (every (lambda (r) (not (member (getf r :action) '("destroy" "update") :test #'string=))) routes))))

@@ -74,6 +74,22 @@
                 #:constant-time-string=
                 #:csrf-token
                 #:csrf-html-tag)
+  ;; The request-method override stage (M9): rewrites a POST that declares
+  ;; another method in its body, so that an HTML form can reach the update and
+  ;; destroy routes of a resource.  Sits inside the CSRF stage (a forged
+  ;; method must not be honoured before the token is verified) and outside the
+  ;; routing stage (the rewritten method is what the route is matched
+  ;; against).  See src/middleware/method-override-middleware.lisp.
+  (:import-from #:clails/middleware/method-override-middleware
+                #:*lack-middleware-clails-method-override*
+                #:*enable-method-override*
+                #:*method-override-parameter*
+                #:*method-override-forbidden-message*
+                #:+method-override-methods+
+                #:+method-override-default-parameter+
+                #:method-override-value
+                #:method-override-warning-issued-p
+                #:reset-method-override-warning)
   ;; The session store abstraction: an application that wants to keep sessions
   ;; somewhere else subclasses <session-store> and implements these generic
   ;; functions, then puts an instance in *session-store*.
@@ -164,6 +180,15 @@
            #:constant-time-string=
            #:csrf-token
            #:csrf-html-tag
+           #:*lack-middleware-clails-method-override*
+           #:*enable-method-override*
+           #:*method-override-parameter*
+           #:*method-override-forbidden-message*
+           #:+method-override-methods+
+           #:+method-override-default-parameter+
+           #:method-override-value
+           #:method-override-warning-issued-p
+           #:reset-method-override-warning
            #:<session-store>
            #:fetch-session
            #:store-session
