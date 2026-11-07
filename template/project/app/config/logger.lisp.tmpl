@@ -122,14 +122,10 @@
 
   (ensure-directories-exist "logs/")
 
-  ;; root logger
-  (register-logger
-   :root
-   :appender (make-console-appender
-              :formatter (make-instance '<json-formatter>))
-   :level :none)
-  
   ;; project default logger
+  ;;
+  ;; Registering a name twice replaces the first registration, so there is
+  ;; exactly one :root logger here on purpose.
   (register-logger
    :root
    :appenders (list (make-console-appender
@@ -138,8 +134,14 @@
                      :filepath "logs/application.log"
                      :formatter (make-instance '<json-formatter>)))
    :level :warn)
-  
+
   ;; clails framework logger
+  ;;
+  ;; Deliberately not registered in production: a logger with no registration
+  ;; of its own is looked up through the name hierarchy, so :clails records end
+  ;; up on :root above -- which means framework warnings reach
+  ;; logs/application.log instead of being dropped, as they would be with the
+  ;; :error level the other two environments use.
 
   ;; SQL logger
   (register-logger
@@ -151,7 +153,7 @@
 
   ;; web-access logger
   (register-logger
-   :sql
+   :web-access
    :appender (make-file-appender
               :filepath "logs/access.log"
               :formatter (make-instance '<json-formatter>))

@@ -659,6 +659,9 @@ Holds a list of Lack middlewares. Requests are processed in the order of this st
 **Default value**: 
 ```lisp
 (list
+  *lack-middleware-clails-csrf-body-guard*  ; passthrough until CSRF is enabled
+  *lack-middleware-clails-session*          ; passthrough until sessions are enabled
+  *lack-middleware-clails-csrf*             ; passthrough until CSRF is enabled
   *lack-middleware-transaction*
   *lack-middleware-clails-controller*
   #'(lambda (app)
@@ -672,6 +675,16 @@ Holds a list of Lack middlewares. Requests are processed in the order of this st
 
 **Note**: Do not modify this variable directly. Use `add-middleware-before` or `add-middleware-after` functions instead.
 
+The framework's own stages are listed in this variable rather than added with
+`add-middleware-before` / `add-middleware-after`, because those two reach only
+the ends of the list and the position of a stage is part of what makes it
+correct — the session stage has to sit outside the transaction stage and
+outside the routing stage. A stage that has not been enabled is a pure
+passthrough, so a project that configures nothing answers exactly as it did
+before these stages existed. **Replacing the whole list therefore removes
+stages you probably want to keep**; add your own stages instead of rebuilding
+the list.
+
 ### Adding Middleware
 
 #### `add-middleware-before` Function
@@ -684,13 +697,6 @@ Adds a middleware to the beginning of the middleware stack. Middleware added at 
 **Configuration example**:
 ```lisp
 (in-package #:myapp/config/environment)
-
-;; Add Lack's session middleware
-(clails/middleware:add-middleware-before
-  (lambda (app)
-    (funcall lack.middleware.session:*lack-middleware-session*
-             app
-             :state (make-instance 'lack.session.state.cookie:cookie-state))))
 
 ;; Add custom middleware
 (clails/middleware:add-middleware-before
@@ -726,6 +732,40 @@ Adds a middleware to the end of the middleware stack. Middleware added at the en
         (format t "Request time: ~A seconds~%" elapsed)
         response))))
 ```
+
+#### `*lack-middleware-clails-session*`
+
+Middleware that manages the cookie session. It is the outermost framework
+stage that touches a request, because everything inside it — including the
+transaction stage and the routing stage — may read and write the session.
+
+**Package**: `clails/middleware/session-middleware`
+
+**Features**:
+- Puts a per-request session (a hash table) in the request environment, so
+  that `(session controller)` and `(current-user controller)` work
+- Emits the session cookie: `HttpOnly`, `SameSite=Lax`, a name that does not
+  advertise the implementation, and no expiry date
+- Serialises concurrent access to one session, so concurrent requests cannot
+  corrupt it
+- Applies the server-side idle timeout and registers the store with the
+  periodic sweeper
+
+**Enable/disable toggle**:
+```lisp
+;; Enable the session stage (a generated project already has this line)
+(setf clails/middleware/session-middleware:*enable-session-middleware* t)
+
+;; Disable it (the framework default) -- the stage becomes a passthrough
+(setf clails/middleware/session-middleware:*enable-session-middleware* nil)
+```
+
+**Note**: `clails new` writes the enabling line, the store, the idle timeout
+and the sweeper settings into `app/config/environment.lisp`, so a generated
+project has sessions from the start. The framework's own default is "off", so
+an existing project is unaffected until those lines are added. Every setting,
+including the per-environment `Secure` flag of the cookie, is described in the
+**[Session & Authentication Guide](session.md)**.
 
 #### `*lack-middleware-transaction*`
 
@@ -780,16 +820,18 @@ Middleware that serves static files (CSS, JavaScript, images, etc.).
 
 **Customization example**:
 ```lisp
-;; Change static file path
-(setf clails/middleware:*clails-middleware-stack*
-  (list
-    clails/middleware:*lack-middleware-transaction*
-    clails/middleware:*lack-middleware-clails-controller*
-    #'(lambda (app)
-        (funcall lack.middleware.static:*lack-middleware-static*
-                 app
-                 :path "/static"
-                 :root #P"./assets/"))))
+;; Serve another directory in addition to ./public/.
+;;
+;; Add a stage; do not rebuild *clails-middleware-stack*.  Replacing the list
+;; drops the framework's own stages -- the session stage among them -- and they
+;; cannot simply be appended back, because their position in the list is what
+;; makes them correct.
+(clails/middleware:add-middleware-after
+  #'(lambda (app)
+      (funcall lack.middleware.static:*lack-middleware-static*
+               app
+               :path "/static"
+               :root #P"./assets/")))
 ```
 
 ### Middleware Execution Order
@@ -798,6 +840,12 @@ Middleware is executed in the order of `*clails-middleware-stack*`.
 
 ```
 Request
+  ↓
+*lack-middleware-clails-csrf-body-guard*
+  ↓
+*lack-middleware-clails-session*
+  ↓
+*lack-middleware-clails-csrf*
   ↓
 *lack-middleware-transaction*
   ↓
@@ -808,22 +856,31 @@ Request
 Response
 ```
 
+A stage that has not been enabled passes the request straight on, so the
+effective order for a project that uses sessions but configures nothing else is
+session → transaction → routing → static.
+
 ### Middleware Usage Examples
 
 #### Session Management
 
+Sessions are **not** something to add to the stack: clails has its own session
+stage (`*lack-middleware-clails-session*`, described above), it is already in
+`*clails-middleware-stack*` in the position it has to occupy, and a generated
+project switches it on. All it takes is the configuration:
+
 ```lisp
 (in-package #:myapp/config/environment)
 
-;; Add Lack's session middleware
-(clails/middleware:add-middleware-before
-  (lambda (app)
-    (funcall lack.middleware.session:*lack-middleware-session*
-             app
-             :state (make-instance 'lack.session.state.cookie:cookie-state
-                                  :secret "your-secret-key"
-                                  :httponly t))))
+;; this line is already in a generated app/config/environment.lisp
+(setf clails/middleware/session-middleware:*enable-session-middleware* t)
 ```
+
+Adding `lack-middleware-session` by hand on top of that would give the request
+two independent sessions, so do not do it. The store, the cookie attributes,
+the idle timeout and the periodic cleanup are all configuration of the
+framework's stage — see the
+**[Session & Authentication Guide](session.md)**.
 
 #### CORS Support
 

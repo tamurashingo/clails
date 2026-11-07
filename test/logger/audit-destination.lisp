@@ -10,7 +10,8 @@
                 #:logger-name
                 #:logger-level
                 #:log-level-enabled-p
-                #:log.audit))
+                #:log.audit
+                #:log.web-access))
 (in-package #:clails-test/logger/audit-destination)
 
 
@@ -45,13 +46,19 @@
 ;;;   production  :audit registered, level :info, file appender on
 ;;;               logs/audit.log, <json-formatter>                   -- live
 ;;;
-;;; The same configuration's :web-access block is NOT live in production: it
-;;; registers the name :sql (a copy-and-paste slip), so :web-access stays
-;;; unregistered there, falls back to :root -- which production configures at
-;;; :warn -- and an :info record written to it is dropped without a trace.
-;;; That is asserted below too, because it is the reason the rejection path
-;;; must not use that logger.  Repairing the template belongs to M8-T4; this
-;;; suite only pins down what is true today.
+;;; The same configuration's :web-access block USED to register the name :sql
+;;; (a copy-and-paste slip), which left :web-access unregistered in
+;;; production: records written to it fell back to :root -- configured at
+;;; :warn there -- so an :info record was dropped without a trace, and the SQL
+;;; destination was overwritten with logs/access.log, leaving logs/sql.log
+;;; empty.  M8-T4 repaired the template, and the second suite below is what
+;;; says so: every purpose-built destination is now registered in all three
+;;; environments, and a production web-access record really arrives in
+;;; logs/access.log.
+;;;
+;;; A duplicate registration is not visible from here, because registering a
+;;; name twice simply replaces the first logger: that half of the check reads
+;;; the generated file as text and lives in clails-test/project/templates.
 
 (defparameter +project-name+ "m2auditcheck"
   "Project name the template is rendered with.  Only used to spell the
@@ -130,12 +137,17 @@
     (setf *work-dir* nil)))
 
 
-(defun audit-log-contents ()
-  "Read back the production configuration's audit destination."
-  (let ((file (merge-pathnames "logs/audit.log" *work-dir*)))
+(defun log-file-contents (relative-path)
+  "Read back one of the file destinations the production configuration writes,
+   named relative to the generated project's root."
+  (let ((file (merge-pathnames relative-path *work-dir*)))
     (if (probe-file file)
         (uiop:read-file-string file)
         "")))
+
+(defun audit-log-contents ()
+  "Read back the production configuration's audit destination."
+  (log-file-contents "logs/audit.log"))
 
 
 (deftest audit-logger-is-live-in-every-environment-test
@@ -175,38 +187,56 @@
             "and it is the structured (JSON) format production configures")))))
 
 
-(deftest web-access-logger-is-not-live-in-production-test
-  (testing "production leaves :web-access unregistered (A6)"
-    ;; The web-access block of the production configuration registers :sql,
-    ;; so :web-access itself is never registered there.  A record written to
-    ;; it falls back up the hierarchy to :root, which production configures
-    ;; at :warn -- so an :info record (which is the level every purpose-built
-    ;; logger macro writes at) is dropped without a trace.  This is why the
-    ;; rejection path records on :audit instead.  When M8-T4 repairs the
-    ;; template, this test is the one that will say so.
-    (let ((*logger-registry* (make-hash-table :test 'equal))
-          (*default-pathname-defaults* *work-dir*))
-      (unwind-protect
-           (progn
-             (funcall (config-function "setup-logger/production"))
-             (ok (not (eq (logger-name (get-logger :web-access)) :web-access))
-                 ":web-access has no logger of its own in production")
-             (ok (null (log-level-enabled-p :info :web-access))
-                 "so an :info web-access record is dropped")
-             (ok (eq (logger-name (get-logger :audit)) :audit)
-                 "while :audit does have one")
-             (ok (log-level-enabled-p :info :audit)
-                 "and it accepts :info records"))
-        (funcall (config-function "finalize-logger")))))
+(defparameter +purpose-built-loggers+ '(:sql :web-access :audit :task)
+  "The destinations a generated configuration is expected to register in
+   every environment, one logger per purpose.")
 
-  (testing "develop and test do register :web-access"
-    (dolist (setup-name '("setup-logger/develop" "setup-logger/test"))
+(deftest purpose-built-loggers-are-live-in-every-environment-test
+  (testing "every environment registers each purpose-built destination itself"
+    ;; \"Itself\" is the point: GET-LOGGER walks up the name hierarchy, so an
+    ;; unregistered name answers with :root instead of signalling.  That is
+    ;; how the pre-M8-T4 production configuration lost its web-access
+    ;; records -- the name was never registered, the fallback was :root at
+    ;; :warn, and an :info record vanished.  Comparing the logger's own name
+    ;; is what distinguishes "registered" from "fell back".
+    (dolist (setup-name '("setup-logger/develop"
+                          "setup-logger/test"
+                          "setup-logger/production"))
       (let ((*logger-registry* (make-hash-table :test 'equal))
             (*default-pathname-defaults* *work-dir*))
         (unwind-protect
              (progn
                (funcall (config-function setup-name))
-               (let ((logger (get-logger :web-access)))
-                 (ok (and logger (eq (logger-name logger) :web-access))
-                     (format nil "~A registers :web-access" setup-name))))
+               (dolist (name +purpose-built-loggers+)
+                 (let ((logger (get-logger name)))
+                   (ok (and logger (eq (logger-name logger) name))
+                       (format nil "~A registers ~S" setup-name name))))
+               ;; The level is only asserted for :audit, because that is the
+               ;; one every environment has to accept :info on: M2's
+               ;; rejections and M6's configuration warnings are recorded
+               ;; there, and the framework-internal logger is at :error in
+               ;; development and test.  The other three are deliberately set
+               ;; per environment (production keeps :sql quiet, for instance).
+               (ok (log-level-enabled-p :info :audit)
+                   (format nil "~A accepts an :info record on :audit" setup-name)))
           (funcall (config-function "finalize-logger")))))))
+
+(deftest production-web-access-record-reaches-its-file-test
+  (testing "a production web-access record arrives in logs/access.log (M8-T4)"
+    ;; The regression this pins down: before M8-T4 the web-access block
+    ;; registered the name :sql, so this record was written to a logger that
+    ;; did not exist, fell back to :root at :warn and was dropped -- while
+    ;; logs/access.log received the SQL records instead.
+    (let ((*logger-registry* (make-hash-table :test 'equal))
+          (*default-pathname-defaults* *work-dir*))
+      (unwind-protect
+           (progn
+             (funcall (config-function "setup-logger/production"))
+             (log.web-access "M8-T4 web-access destination check"
+                             :method "GET" :path "/todos" :status 200))
+        (funcall (config-function "finalize-logger")))
+      (let ((contents (log-file-contents "logs/access.log")))
+        (ok (search "M8-T4 web-access destination check" contents)
+            "the record arrived in logs/access.log")
+        (ok (search "\"STATUS\":200" contents)
+            "and it is the structured (JSON) format production configures")))))

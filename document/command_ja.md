@@ -97,6 +97,7 @@ clails --help
 | `clails db:rollback` | Migration をロールバック |
 | `clails db:seed` | データベースにシードデータを投入 |
 | `clails db:status` | Migration の状態を表示 |
+| `clails db:create-session-table` | DB セッションストア用のテーブルを作成 |
 
 ### タスク管理
 
@@ -815,6 +816,47 @@ clails db:status
 
 - `[X]` - 実行済み
 - `[ ]` - 未実行
+
+---
+
+### `clails db:create-session-table` - セッションテーブルを作成
+
+DB セッションストアがセッションを保存するテーブルを作成します。1段階で、
+コマンドが戻った時点でテーブルができています。
+
+#### 書式
+
+```bash
+clails db:create-session-table
+```
+
+引数はありません。環境は `db:create` や `db:migrate` と同様に `CLAILS_ENV`
+から受け取ります。
+
+#### 使用例
+
+```bash
+clails db:create-session-table
+# => session table: clails_sessions
+# => definition: /path/to/myapp/db/session-table.lisp
+
+CLAILS_ENV=production clails db:create-session-table
+```
+
+#### 注意
+
+- 定義はプロジェクトの `db/session-table.lisp`（`clails new` が写すファイル）
+  から読みます。このファイルができる前に作られたプロジェクトでは、同じ内容の
+  フレームワーク組み込みの定義が使われます。
+- **これは Migration ではありません。** そのファイルから組み立てた文を直接
+  実行するため、テーブルは Migration 履歴にも `db/schema.lisp` にも現れず、
+  `clails db:migrate` は作成も変更もしません。
+- **2回目の実行は何もしません**（`CREATE TABLE IF NOT EXISTS`）。稼働中の
+  アプリケーションの利用者をログアウトさせることもありません。
+- テーブルを削除するコマンドは意図的にありません。削除は DB 側で
+  `DROP TABLE` してください。
+- 必要になるのは `*session-store*` に DB セッションストアを設定した場合だけ
+  です。**[セッション・認証ガイド](session_ja.md)** を参照してください。
 
 ---
 
