@@ -5,6 +5,27 @@
   (:import-from #:clails/view/view-helper
                 #:*view-context*
                 #:view)
+  ;; Form helpers (clails/view/form-helper).  Imported here so that a template
+  ;; in this namespace can call them unqualified.
+  ;;
+  ;; FORM-TAG / END-FORM-TAG / FORM-WITH write the hidden CSRF token field that
+  ;; the verification stage requires of every POST / PUT / PATCH / DELETE, plus
+  ;; the hidden "_method" field a form needs to reach an update or destroy
+  ;; route.  The remaining three are the individual pieces, for a form that has
+  ;; to be assembled by hand.
+  ;;
+  ;; Importing them is a convenience, not a requirement: a template may always
+  ;; call clails/view/form-helper:form-tag fully qualified and import nothing.
+  ;; They only work while a template is being rendered, and only with the CSRF
+  ;; stage on the stack; with CSRF verification switched off the token field is
+  ;; simply empty.  See the "Form helpers" section of document/view.md.
+  (:import-from #:clails/view/form-helper
+                #:form-tag
+                #:end-form-tag
+                #:form-with
+                #:form-authenticity-token
+                #:csrf-token-tag
+                #:method-override-tag)
   (:import-from #:<%%= (@ project-name ) %%>/controllers/application-controller
                 #:lisp-type
                 #:lisp-version))

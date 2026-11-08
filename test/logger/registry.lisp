@@ -1,4 +1,4 @@
-(defpackage #:clails/test/logger/registry
+(defpackage #:clails-test/logger/registry
   (:use #:cl
         #:rove)
   (:import-from #:clails/logger
@@ -10,7 +10,7 @@
                 #:logger-level
                 #:make-console-appender
                 #:<text-formatter>))
-(in-package #:clails/test/logger/registry)
+(in-package #:clails-test/logger/registry)
 
 (deftest logger-registry-tests
   (testing "Register and get logger"

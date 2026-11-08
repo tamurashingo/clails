@@ -5,6 +5,7 @@
   (:import-from #:clails/environment
                 #:*project-environment*
                 #:*routing-tables*
+                #:*strict-configuration*
                 #:add-startup-hook
                 #:add-shutdown-hook)
   ;; Session settings.  Every session option is declared in a session-specific
@@ -18,7 +19,20 @@
                 #:*session-idle-timeout*
                 #:*session-sweep-enabled*
                 #:*session-sweep-interval*)
-  (:export #:initialize-session-config))
+  ;; The CSRF verification stage.  A stage's own settings live in that stage's
+  ;; package, which is why this is a package of its own rather than more
+  ;; symbols from the session one.
+  (:import-from #:clails/middleware/csrf-middleware
+                #:*enable-csrf-middleware*
+                #:*csrf-form-token*
+                #:*csrf-header-name*
+                #:*csrf-one-time-token*)
+  ;; The request-method override stage, which lets a form reach a resource's
+  ;; update / destroy routes.
+  (:import-from #:clails/middleware/method-override-middleware
+                #:*enable-method-override*
+                #:*method-override-parameter*)
+  (:export #:initialize-environment-config))
 
 (in-package #:<%= (@ project-name ) %>/config/environment)
 
@@ -105,41 +119,165 @@
 (setf *session-sweep-interval* 300)
 
 
-;;; Secure cookie: the one session setting that differs per environment
+;;; ------------------------------------------------------------------
+;;; CSRF protection
+;;; ------------------------------------------------------------------
 ;;;
+;;; With this on, every state-changing request (POST / PUT / PATCH / DELETE)
+;;; has to carry this session's CSRF token, and one that does not is answered
+;;; with a 403 recorded on the :audit logger.  GET and HEAD are never verified.
+;;;
+;;; The session stage above MUST stay enabled: the token lives in the session.
+;;; A configuration that enables this stage without it cannot serve a single
+;;; state-changing request, and is refused while the stack is being built (see
+;;; *STRICT-CONFIGURATION* below).
+;;;
+;;; Every form therefore needs the token in a hidden field.  Do not write that
+;;; field by hand: call FORM-TAG / END-FORM-TAG (or FORM-WITH) from the
+;;; template, which write it -- together with the hidden "_method" field when
+;;; the form means PUT, PATCH or DELETE.  A generated view package already
+;;; imports those helpers, so a template can call them unqualified; the worked
+;;; examples are in the "Form helpers" section of document/view.md.
+;;;
+;;; A fetch/XHR request that cannot carry a body field may send the token in
+;;; the X-CSRF-Token header instead.  The token is NOT read from the query
+;;; string or from inside a JSON body.
+;;;
+;;; The framework's own default is NIL, so an existing project is unaffected
+;;; until this line is added to its configuration.  See the "CSRF protection"
+;;; section of document/session.md in the clails source tree.
+(setf *enable-csrf-middleware* t)
+
+;; The names the token may arrive under.  Shown rather than left implicit
+;; because the hidden field the form helper renders and the header a
+;; JavaScript caller sets both have to match them.
+(setf *csrf-form-token* "_csrf_token")
+(setf *csrf-header-name* "X-CSRF-Token")
+
+;; NIL (the framework default) keeps one token for the whole session, so every
+;; form on every page of that session carries the same one.  T makes a token
+;; single-use: the request that verifies successfully removes it, so a replay
+;; is refused -- and so are the back button, a double-clicked submit button, a
+;; naive retry, and every other form left open on the page.  Read "One-time
+;; tokens: what they cost" in document/session.md before switching it on.
+(setf *csrf-one-time-token* nil)
+
+
+;;; ------------------------------------------------------------------
+;;; Request-method override (the "_method" hidden field)
+;;; ------------------------------------------------------------------
+;;;
+;;; An HTML form can only be sent with GET or POST, so a form that means PUT,
+;;; PATCH or DELETE says so in a hidden "_method" field and this stage
+;;; rewrites the request method before the route is matched.  That is what
+;;; lets a plain form reach the update and destroy routes of a resource.
+;;;
+;;; This one is ENABLED BY DEFAULT in the framework -- unlike the session and
+;;; CSRF stages -- because it changes a request only when the request itself
+;;; carries the field, which is that field's documented purpose.  There is no
+;;; line to add to switch it on; the line below is how to switch it OFF:
+;;;
+;;;     (setf *enable-method-override* nil)
+;;;
+;;; The one reason to do that: a HAND-WRITTEN routing table that declares both
+;;; a POST route and a PUT / PATCH / DELETE route on the SAME path.  Such a
+;;; POST used to reach the POST route and now reaches the other one.  Tables
+;;; built with (resources ...) are unaffected.
+;;;
+;;; Safety properties this stage keeps, and that are worth not working around:
+;;; only a POST is rewritten, only into PUT / PATCH / DELETE (never into a
+;;; method that would be exempt from CSRF verification), the value is read from
+;;; the request BODY only (never from the query string, or a link could delete
+;;; something), an unknown value leaves the method alone, and the stage runs
+;;; INSIDE CSRF verification so a forged method is never honoured before the
+;;; token has been checked.
+;;;
+;;; The field's name, should something generating your forms insist on another:
+(setf *method-override-parameter* "_method")
+
+
+;;; ------------------------------------------------------------------
+;;; The two settings that differ per environment
+;;; ------------------------------------------------------------------
+;;;
+;;; clails never inspects which environment it is running in -- it only reads
+;;; these variables -- so the environment difference lives in this file.
+;;;
+;;; Secure cookie (*SESSION-COOKIE-SECURE*)
+;;; ---------------------------------------
 ;;; T means the browser sends the session cookie over HTTPS ONLY.  The
 ;;; framework default is NIL, which is a deliberate exception to "default to
 ;;; the safe value": a Secure cookie is not sent over plain HTTP AT ALL, so
 ;;; turning it on in a development or test environment that runs without TLS
 ;;; stops sessions from working altogether -- the cookie is set and never comes
-;;; back, so every request looks like a first visit.
+;;; back, so every request looks like a first visit.  Production is served over
+;;; HTTPS, so it is turned on there.
 ;;;
-;;; Production is served over HTTPS, so it is turned on there, and it is turned
-;;; on HERE: clails never inspects which environment it is running in, it only
-;;; reads this variable.  That is why the environment difference lives in this
-;;; file.
+;;; Strict configuration (*STRICT-CONFIGURATION*)
+;;; ---------------------------------------------
+;;; What happens when clails finds a configuration that cannot work.  T aborts:
+;;; the startup check refuses to build a stack whose CSRF stage is enabled
+;;; without the session stage, and a request whose stage order is broken (the
+;;; override stage running outside CSRF verification) is answered with a 403.
+;;; NIL records a warning on the :audit logger -- once per process for the
+;;; stage-order check -- and carries on serving.
+;;;
+;;; The framework default is T, and this file is what puts NIL in development
+;;; and test.  Careful with NIL: a broken stage order then opens the
+;;; "_method=GET and no token" bypass SILENTLY, and the one warning that says
+;;; so is easy to miss.
+;;;
+;;; Why the two defaults point in OPPOSITE directions
+;;; -------------------------------------------------
+;;; *STRICT-CONFIGURATION* defaults to the safe value (T) and
+;;; *SESSION-COOKIE-SECURE* defaults to the unsafe one (NIL), which looks
+;;; inconsistent and is not:
+;;;
+;;;   * a safe default for strict breaks NOTHING that was working.  It only
+;;;     fires on a configuration that cannot serve a request anyway, so the
+;;;     worst it costs is an early, explicit failure instead of a late,
+;;;     mysterious one;
+;;;   * a safe default for Secure breaks EVERY development environment, which
+;;;     is served over plain HTTP.  Sessions would simply stop working, with
+;;;     no error anywhere, until someone found this variable.
+;;;
+;;; So each default is chosen by what it costs when it is wrong, and the
+;;; convenience the other direction would have given is handed out here, per
+;;; environment, instead.
 
-(defun setup-session/develop ()
+(defun setup-environment/develop ()
   ;; served over plain HTTP: Secure would break the session
-  (setf *session-cookie-secure* nil))
+  (setf *session-cookie-secure* nil)
+  ;; report a broken configuration, but keep serving
+  (setf *strict-configuration* nil))
 
-(defun setup-session/test ()
+(defun setup-environment/test ()
   ;; served over plain HTTP, same as development
-  (setf *session-cookie-secure* nil))
+  (setf *session-cookie-secure* nil)
+  ;; a failing check must not abort a test run
+  (setf *strict-configuration* nil))
 
-(defun setup-session/production ()
+(defun setup-environment/production ()
   ;; served over HTTPS: send the session cookie over TLS only
-  (setf *session-cookie-secure* t))
+  (setf *session-cookie-secure* t)
+  ;; refuse to come up, or to answer, in a configuration that cannot work
+  (setf *strict-configuration* t))
 
-(defun initialize-session-config (&optional environment)
-  "Apply the session settings that depend on the environment.
+(defun initialize-environment-config (&optional environment)
+  "Apply the settings that depend on the environment.
+
+   Today those are the Secure flag of the session cookie and the strictness of
+   the configuration checks; anything else that has to differ between
+   development, test and production belongs in the same three functions, so
+   that clails.boot keeps one call.
 
    If environment is not specified, it will be obtained from
    clails/environment:*project-environment*.
 
    Called from clails.boot, after CLAILS_ENV has been resolved and before the
    middleware stack is built -- not from a startup hook, because the stack (and
-   with it the session cookie) is built before the startup hooks run.
+   with it the session cookie and the CSRF configuration check) is built before
+   the startup hooks run.
 
    Supported environments:
    - :develop, :development - Development environment
@@ -152,9 +290,9 @@
    "
   (let ((env (or environment *project-environment*)))
     (case env
-      ((:develop :development) (setup-session/develop))
-      (:test (setup-session/test))
-      (:production (setup-session/production))
+      ((:develop :development) (setup-environment/develop))
+      (:test (setup-environment/test))
+      (:production (setup-environment/production))
       (t (error "Unknown environment: ~A" env)))
     nil))
 

@@ -15,7 +15,7 @@ Two defaults are worth knowing before anything else:
   configuration says nothing about sessions keeps behaving exactly as it did:
   no cookie is set, and `(session controller)` signals an error telling you to
   enable the stage. Nothing in this release changes an existing project by
-  itself — see [9. Migrating an existing project](#9-migrating-an-existing-project).
+  itself — see [12. Migrating an existing project](#12-migrating-an-existing-project).
 
 What clails provides, and what it does not:
 
@@ -36,15 +36,24 @@ Explicitly **out of scope** (not provided by clails):
 - Role-based authorization or permission checks
 - A bundled password-hashing helper
 
-### A note on CSRF protection
+### CSRF protection
 
-This release does **not** switch any CSRF protection on, so a generated
-project has none. That is not a step backwards: a project that enabled
-sessions before this release had none either. What this release adds is the
-session side of the problem — concurrent requests can no longer corrupt a
-session, sessions expire and are cleaned up, and the cookie defaults moved to
-the safe side. CSRF protection is the subject of the next piece of work; it is
-not configured by the templates and not described in this guide yet.
+**A generated project also has CSRF verification switched on.** Every
+state-changing request — POST, PUT, PATCH and DELETE — has to carry this
+session's token, and one that does not is answered with a 403 that is recorded
+on the `:audit` logger. GET and HEAD are never verified.
+
+As with sessions, **the framework's own default is off**, so an existing
+project is unaffected until its configuration says otherwise.
+
+Two things to know before writing a form:
+
+- **Do not write the hidden token field by hand.** The form helpers
+  (`form-tag`, `form-with`) write it, and a generated view namespace already
+  imports them. See [9. CSRF protection](#9-csrf-protection).
+- **There is no way to exempt one route from verification.** With verification
+  on, *every* endpoint is verified. See
+  [9.6 No exemptions, and what that costs](#96-no-exemptions-and-what-that-costs).
 
 ---
 
@@ -76,13 +85,27 @@ the running server answers.
 ;; Expired sessions are also removed by a background sweeper.
 (setf *session-sweep-enabled* t)
 (setf *session-sweep-interval* 300)
+
+;; Verify every state-changing request against this session's CSRF token.
+(setf *enable-csrf-middleware* t)
+(setf *csrf-form-token* "_csrf_token")     ; the hidden field's name
+(setf *csrf-header-name* "X-CSRF-Token")   ; the header, for fetch/XHR
+(setf *csrf-one-time-token* nil)           ; reuse the token (see section 9.4)
+
+;; The "_method" field a form uses to mean PUT / PATCH / DELETE.  This stage is
+;; ENABLED by default, so there is no line to switch it on; the generated
+;; configuration only names the field and explains how to switch it OFF.
+(setf *method-override-parameter* "_method")
 ```
 
-The Secure flag of the cookie is the one setting that differs per environment,
-so the generated configuration puts it in a function per environment —
-`setup-session/develop`, `setup-session/test`, `setup-session/production` —
-and `clails.boot` calls `initialize-session-config` once `CLAILS_ENV` has been
-resolved. See [2. The session cookie](#2-the-session-cookie).
+**Two settings differ per environment** — the Secure flag of the cookie and
+the strictness of the configuration checks — so the generated configuration
+puts both in a function per environment: `setup-environment/develop`,
+`setup-environment/test`, `setup-environment/production`. `clails.boot` calls
+`initialize-environment-config` once `CLAILS_ENV` has been resolved, which is
+after the environment is known and before the middleware stack is built. See
+[2. The session cookie](#2-the-session-cookie) and
+[11. Strict configuration checking](#11-strict-configuration-checking).
 
 ### Settings reference
 
@@ -95,6 +118,26 @@ resolved. See [2. The session cookie](#2-the-session-cookie).
 | `*session-idle-timeout*` | Seconds a session may stay unused before it expires; `NIL` switches server-side expiry off | `1800` (30 minutes) | 1800, or shorter for sensitive applications |
 | `*session-sweep-enabled*` | Whether the periodic sweeper thread runs | `T` | `T` |
 | `*session-sweep-interval*` | Seconds between two sweeps | `300` (5 minutes) | 300; a longer interval only delays freeing, it never honours an expired session |
+
+And the settings of the two stages that go with sessions:
+
+| Setting | Meaning | Framework default | Recommended |
+|---|---|---|---|
+| `*enable-csrf-middleware*` | Whether state-changing requests are verified against the session's token | `NIL` (off) | `T` — a generated project sets it |
+| `*csrf-form-token*` | Name of the hidden form field the token is read from | `"_csrf_token"` | leave it alone: it is the name `form-tag` renders |
+| `*csrf-header-name*` | Request header the token may be sent in instead | `"X-CSRF-Token"` | leave it alone |
+| `*csrf-one-time-token*` | Consume the token on successful verification | `NIL` (reuse) | `NIL`; see [9.4](#94-one-time-tokens-what-they-cost) before changing it |
+| `*csrf-session-key*` | Session key the token is kept under | `"clails.csrf-token"` | leave it alone (a reserved key, section 3) |
+| `*csrf-forbidden-message*` | Body of the 403 a refused request gets | `"Forbidden: invalid CSRF token. Reload the page and try again."` | leave it alone, or translate it |
+| `*enable-method-override*` | Whether a POST may declare another method in its body | `T` (on) | `T`; `NIL` only for a hand-written routing table that declares both a POST and a PUT/PATCH/DELETE route on one path (section 10) |
+| `*method-override-parameter*` | Name of that hidden field | `"_method"` | leave it alone |
+| `*strict-configuration*` | Abort on a configuration that cannot work, or warn and carry on | `T` (abort) | `T` in production, `NIL` in development and test — which is what a generated project writes (section 11) |
+
+`*enable-csrf-middleware*` and the other `*csrf-…*` settings live in
+`clails/middleware/csrf-middleware`, the two override settings in
+`clails/middleware/method-override-middleware`, and `*strict-configuration*` in
+`clails/environment` — it is not about one stage. All of them are re-exported
+by `clails/middleware` as well.
 
 The stage is always in the middleware stack, in a fixed position — it has to
 sit outside the transaction stage and the routing stage — so enabling sessions
@@ -143,15 +186,28 @@ a first visit.
 difference lives in the project's configuration file:
 
 ```common-lisp
-(defun setup-session/develop ()
-  (setf *session-cookie-secure* nil))   ; plain HTTP
+(defun setup-environment/develop ()
+  (setf *session-cookie-secure* nil)    ; plain HTTP
+  (setf *strict-configuration* nil))    ; see section 11
 
-(defun setup-session/test ()
-  (setf *session-cookie-secure* nil))   ; plain HTTP
+(defun setup-environment/test ()
+  (setf *session-cookie-secure* nil)    ; plain HTTP
+  (setf *strict-configuration* nil))
 
-(defun setup-session/production ()
-  (setf *session-cookie-secure* t))     ; HTTPS only
+(defun setup-environment/production ()
+  (setf *session-cookie-secure* t)      ; HTTPS only
+  (setf *strict-configuration* t))
 ```
+
+**Why this default and the strict one point in opposite directions.**
+`*strict-configuration*` defaults to the *safe* value and
+`*session-cookie-secure*` to the *unsafe* one, which looks inconsistent and is
+not: a safe default for strict breaks nothing that was working — it only fires
+on a configuration that could not serve a request anyway — whereas a safe
+default for Secure would break every development environment, silently, since
+they are served over plain HTTP. Each default is chosen by what it costs when
+it is wrong, and the convenience the other direction would have given is handed
+out per environment in the file above.
 
 ### Changing the cookie
 
@@ -197,8 +253,17 @@ table would make it easy to lose data without noticing.
 **Keys beginning with `clails.` belong to the framework.** Do not write them
 from an application, and do not expect to find your own data there. The prefix
 is available as `+session-reserved-key-prefix+`, and
-`(session-reserved-key-p key)` answers whether a key is one of them; the one
-in use today is `"clails.current-user"`.
+`(session-reserved-key-p key)` answers whether a key is one of them. Two are in
+use today:
+
+| Key | What it holds |
+|---|---|
+| `"clails.current-user"` | Whoever is logged in (section 8) |
+| `"clails.csrf-token"` | This session's CSRF token (section 9) |
+
+A template must therefore **not** walk `(current-session)` and print what it
+finds: the framework's own entries are in that same hash table, and the CSRF
+token is one of them. Read the keys your application wrote, by name.
 
 Everything else in the hash table is yours. `(session-clear controller
 :keep-reserved t)` is the way to empty a session without discarding the
@@ -516,29 +581,374 @@ or a `:before` method — clails does not impose an authorization pattern.
 
 ---
 
-## 9. Migrating an existing project
+## 9. CSRF protection
+
+### 9.1 What the stage does
+
+With `*enable-csrf-middleware*` set to `T`, every **state-changing** request —
+POST, PUT, PATCH, DELETE — must carry this session's CSRF token. A request that
+carries none, or the wrong one, gets a **403** whose body is
+`*csrf-forbidden-message*`, and the rejection is recorded on the `:audit`
+logger together with the method, the path and the client address. GET and HEAD
+are never verified.
+
+The token is per session, minted on demand: the first template that asks for
+one puts it in the session, and every form on every page of that session then
+shares it.
+
+Three things the stage does that are worth knowing:
+
+- **A body it cannot make sense of is a 403, not a crash.** Broken JSON, a JSON
+  array at the top level, an empty body, a body that disagrees with its
+  declared `Content-Type` — all of them are refused by the same 403 rather than
+  letting a parse error escape the middleware stack.
+- **The comparison is length-independent and does not exit early**, so the time
+  it takes does not tell an attacker how much of a guessed token was right.
+- **The session stage must be enabled too**, because the token lives in the
+  session. A configuration that enables CSRF without sessions cannot serve a
+  single state-changing request, and is refused while the stack is built — see
+  [11. Strict configuration checking](#11-strict-configuration-checking).
+
+Where it sits: **inside the session stage** (the token lives in the session)
+and **outside the routing stage** (a request has to be refused before it can
+reach an action). See the
+[Environment Guide](environment.md#middleware-execution-order) for the stack as
+a whole.
+
+### 9.2 Putting the token in a form
+
+Call the form helpers; do not write the hidden field yourself. They live in
+`clails/view/form-helper`, and both view namespaces a project generates —
+`app/views/package.lisp` and the `app/views/<resource>/package.lisp` that
+`clails generate:view` writes — already import them, so a template calls them
+unqualified:
+
+```html
+<%= (form-tag :url "/todos" :method :post) %>
+  <input type="text" name="title">
+  <input type="submit" value="Create">
+<%= (end-form-tag) %>
+```
+
+That renders the opening `<form>` tag plus the hidden token field. For an
+update or a delete, say which method you mean and the helper adds the hidden
+`_method` field as well (section 10):
+
+```html
+<%= (form-tag :url (format nil "/todos/~A" (view :id)) :method :put) %>
+  <input type="text" name="title" value="<%= (view :title) %>">
+  <input type="submit" value="Save">
+<%= (end-form-tag) %>
+
+<%= (form-with :url (format nil "/todos/~A" (view :id))
+               :method :delete
+               :body "<input type=\"submit\" value=\"Delete\">") %>
+```
+
+**The two ways to reach the helpers.** Either import them into the view
+namespace, which is what a generated project does —
+
+```common-lisp
+(defpackage #:myapp/views/todo/package
+  (:use #:cl)
+  (:import-from #:clails/view/view-helper
+                #:*view-context*
+                #:view)
+  (:import-from #:clails/view/form-helper
+                #:form-tag
+                #:end-form-tag
+                #:form-with
+                #:form-authenticity-token
+                #:csrf-token-tag
+                #:method-override-tag))
+```
+
+— or import nothing and write `clails/view/form-helper:form-tag` in full. Both
+work; the import is a convenience.
+
+**What each helper does:**
+
+| Call | Result |
+|---|---|
+| `(form-tag :url u :method m :multipart b :attributes plist)` | The opening `<form>` tag and the hidden fields it needs. `:url` `NIL` writes no `action`, i.e. submits to the current URL. `:method` is one of `:get :post :put :patch :delete`. `:multipart` `T` adds `enctype="multipart/form-data"`. `:attributes` is a plist of further attributes, e.g. `(:class "edit")` |
+| `(end-form-tag)` | `"</form>"` |
+| `(form-with :url … :method … :multipart … :attributes … :body b)` | `form-tag`, `BODY` and `end-form-tag` in one expression. `:body` takes a string, a list of strings, or `NIL` for an empty form |
+| `(form-authenticity-token)` | The token itself as a string, or `NIL` when verification is off |
+| `(csrf-token-tag)` | Just the hidden token field, or `""` when verification is off |
+| `(method-override-tag :put)` | Just the hidden `_method` field, or `""` for `:get` and `:post` |
+
+**When they work, and what happens when they do not.** The helpers are for
+templates, for two separate reasons: the session comes from the controller
+being rendered, which is only bound while a template runs, and the token comes
+from a dynamic variable the CSRF stage binds for the duration of one request.
+So:
+
+- With verification **off**, `(csrf-token-tag)` returns `""` and
+  `(form-authenticity-token)` returns `NIL`, so a template that uses them does
+  not stop working in a project that has not switched CSRF on.
+- Called **outside a template**, they signal a `view-context-error` naming the
+  helper.
+- Called from a template rendered **outside the CSRF stage** (a stack
+  assembled by hand without it, while `*enable-csrf-middleware*` is `T`), they
+  signal a `form-helper-error` that says so, rather than letting an
+  `unbound-variable` from inside the dependency escape.
+
+**A GET form carries no token, on purpose.** `form-tag` omits it for
+`:method :get`, because a GET form's fields are appended to the URL as a query
+string — so the token would land in the browser's history, in the `Referer`
+header of every link followed from the next page, and in every access log on
+the way. The stage does not verify GET anyway, so there is nothing to lose.
+For the same reason the `_method` field is written into the form's **body**
+and never into the action URL's query string: a value in a query string would
+turn any link into a deletion.
+
+### 9.3 How a token may be sent
+
+| Where | Accepted? |
+|---|---|
+| A **top-level body parameter** named `*csrf-form-token*` (`"_csrf_token"`) | **Yes** — this is the normal case, and what `form-tag` renders. It works for `multipart/form-data` as well, where the hidden input becomes a part of its own |
+| The **`X-CSRF-Token` request header** (`*csrf-header-name*`, matched case-insensitively) | **Yes** — for a `fetch`/XHR caller that sends a JSON body it does not control |
+| The **query string** | **No.** A token there ends up in logs, proxy histories and `Referer` headers |
+| **Nested inside a JSON body** (`{"meta": {"_csrf_token": "…"}}`) | **No.** The stage's decision must not depend on an application's JSON schema |
+| A **non-string value** (`{"_csrf_token": 12345}`) | **No.** Only a string is compared |
+
+When a request carries both a body field and a header, **the body field wins**:
+it is the explicit, visible place to put the token, and letting a header
+override it would turn a header injected anywhere along the request path into
+the deciding value.
+
+### 9.4 One-time tokens: what they cost
+
+`*csrf-one-time-token*` defaults to `NIL`, which **reuses** the token for the
+whole session. Setting it to `T` makes a token single-use: the request that
+verifies successfully removes it from the session, so a replay is refused.
+**It is an explicit choice, not a default**, because it costs usability in ways
+that are easy to hit:
+
+1. **A resubmission is always refused.** The back button followed by another
+   submit, a double-clicked submit button, and a naive retry after a network
+   failure all fail.
+2. **Every form on one page shares one token**, so submitting any one of them
+   invalidates all the others still on screen. **A list screen with a button
+   per row suffers most**: the user clicks one row's button and every other
+   row's button is dead until the page is reloaded.
+3. **Several tabs are safe to open** — opening a page does not invalidate
+   another tab's form, because rendering twice returns the same token — **but
+   the moment one tab submits, the forms in the other tabs are invalid.**
+4. **Concurrent asynchronous submissions resolve to exactly one winner**, so an
+   application that submits in parallel has to be written expecting the losers
+   to be refused.
+5. **The successful request's own action body can no longer read the token**,
+   because it has already been consumed. Re-rendering the form mints a new one,
+   which is why "submit, then re-render" is self-healing.
+6. **A session that expires or has its id regenerated loses the token too**, so
+   a form left open across either needs the page reloaded before it can be
+   submitted.
+7. **You have to tell the user to reload and retry.** That is what
+   `*csrf-forbidden-message*` says by default, but a 403 body is not a good
+   place to leave it: with one-time tokens a legitimate user is refused often
+   enough that the application should handle it.
+8. **It suits a single-form screen with no concurrency and no retries.** It
+   does not suit a list screen with per-row forms, a page with several forms, a
+   JavaScript client that submits in parallel, or anything that retries.
+9. **What it does not cost** (both measured, both kept as regression tests): a
+   *failed* verification does not consume the token, so a third party cannot
+   destroy a user's token by throwing invalid ones at it; and rendering the
+   same form twice returns the same token.
+
+### 9.5 Where the token lives
+
+Under `*csrf-session-key*`, which defaults to `"clails.csrf-token"` — a
+reserved key (section 3). The underlying library's own default name carried no
+prefix, which would have let an application's own value of that name collide
+with the framework's token silently.
+
+### 9.6 No exemptions, and what that costs
+
+**This release provides no way to exempt an endpoint from CSRF verification** —
+neither per path nor per controller or action. With `*enable-csrf-middleware*`
+set to `T`, *every* endpoint is verified.
+
+That has one real consequence. **A route a third party is supposed to call — a
+webhook, a payment-provider callback, a health check that POSTs — cannot be
+accommodated except by switching CSRF off for the whole application**:
+
+```common-lisp
+;; The only way to accept a webhook today.  Read the warning below first.
+(setf clails/middleware/csrf-middleware:*enable-csrf-middleware* nil)
+```
+
+**Do not reach for that lightly.** Switching it off removes the protection from
+*every* route, including every form-driven one: the whole application is then
+open to cross-site requests, which is precisely the attack the stage exists to
+stop. If you have to receive a webhook before exemptions exist, the safer
+shapes are to put that endpoint in a separate application (or a separate
+process) with CSRF off, or to keep CSRF on and have the third party call
+something that is not a state-changing method.
+
+**Exemptions are planned**, in this order:
+
+1. **Per path.** The stage can match the path at its entry and pass the request
+   straight through, which fits the shape it already has.
+2. **Per controller / action.** Harder, and not a matter of effort: **the CSRF
+   stage runs before the controller is known.** Verifying per controller means
+   moving verification after route resolution, which collides with the stage
+   order that makes the `_method` forgery safe (verify → rewrite → dispatch,
+   section 10). That order has to be rebuilt without reopening the
+   `_method=GET` bypass, which is why this one comes second.
+
+---
+
+## 10. The request-method override (`_method`)
+
+An HTML `<form>` can only be sent with GET or POST. A resource's update and
+destroy routes are reached with PUT, PATCH and DELETE, so a form that means one
+of those says so in a hidden `_method` field, and this stage **rewrites the
+declared request method before the route is matched**.
+
+That rewriting is what makes `_method` work with `:action`-based routing at
+all. Route matching reads the method from the request environment, which is the
+value this stage rewrites, so both route matching and the older
+`do-get`/`do-post`/`do-put`/`do-delete` dispatch see the method the form meant.
+
+**It is enabled by default** (`*enable-method-override*` is `T` in the
+framework), unlike the session and CSRF stages. Those two change how *every*
+request is answered; this one changes a request only when the request itself
+carries the field, which is that field's documented purpose.
+
+### 10.1 The safety preconditions
+
+They are properties, not implementation details, and working around any of them
+reopens a hole:
+
+- **Only a POST is rewritten.** A GET is never touched.
+- **Only into `PUT`, `PATCH` or `DELETE`** — an explicit allow-list, in full,
+  that nothing extends at run time. In particular a request can never forge
+  `GET`, `HEAD` or `OPTIONS`, because those are exempt from CSRF verification
+  and forging one would be a way to be served without a token.
+- **The value is read from the request body only**, never from the query
+  string. A method in a query string would let any link — or any image tag —
+  delete something.
+- **An unknown value leaves the method alone.** `_method=banana` is a POST, not
+  an error.
+- **The stage runs inside CSRF verification.** Outside it, a POST rewritten to
+  a safe method would be let through unverified: the `_method=GET` plus no
+  token bypass. The stack order (CSRF → override → dispatch) is what closes
+  it, and a broken order is one of the two configurations the strict check
+  catches (section 11).
+
+### 10.2 What changed for existing projects
+
+- **A hand-written routing table that declares both a POST route and a
+  PUT / PATCH / DELETE route on the *same path* behaves differently.** Such a
+  POST carrying `_method=put` used to reach the POST route, because matching
+  looked at the real method; it now reaches the PUT route. That is the intended
+  effect — it is what lets a form reach an update route — but if your table has
+  that shape and you relied on the old behaviour, either give the two routes
+  different paths or set `*enable-method-override*` to `NIL`.
+- **Tables built with `(resources …)` are unaffected**, because no two of its
+  entries declare the same method on the same path.
+- **`(resources …)` now generates 8 routes, not 7.** PATCH was added as a
+  second entry for the `update` action: CSRF verification has always covered
+  all four state-changing methods and the override accepts all three of
+  PUT / PATCH / DELETE, so a resource without a PATCH route left one method
+  verified but unreachable. Both entries are named `:update`, so
+  `:only '(:update)` keeps both and `:except '(:update)` removes both. See the
+  [Controller Guide](controller.md#restful-routing-with-the-resources-function).
+
+---
+
+## 11. Strict configuration checking
+
+`clails/environment:*strict-configuration*` decides what happens when clails
+finds a configuration that **cannot work**.
+
+| Value | On a failing check |
+|---|---|
+| `T` (the framework default) | **Abort.** The startup check signals an error, so the middleware stack is not built; the request-level check answers **403** |
+| `NIL` | **Warn and carry on.** The same check records a warning on the `:audit` logger and the work continues |
+
+**Per environment:** the framework default is `T`; a generated project writes
+**`NIL` in development and test and `T` in production**, in the
+`setup-environment/<environment>` functions of
+`app/config/environment.lisp`. **clails never inspects which environment it is
+running in** — it only reads this variable — which is why the environment
+difference lives in the project's configuration, exactly as it does for the
+Secure flag of the cookie.
+
+### 11.1 The two configurations that are checked
+
+1. **CSRF enabled while the session stage is disabled.** Checked once, while
+   the middleware stack is being built. This configuration is 100% broken —
+   the token lives in the session, so not one state-changing request can
+   succeed — which is what makes `T` a safe default: there is no false positive
+   to worry about.
+2. **A broken stage order**, i.e. the request-method override stage running
+   *outside* CSRF verification. Checked per request, by looking for the marker
+   the CSRF stage leaves on a request it has let through. With `T` the request
+   is refused with a 403; with `NIL` it is served **without** the override.
+
+### 11.2 Non-strict means running with the hole open
+
+This is the part worth reading twice. With `*strict-configuration*` set to
+`NIL` and the stage order broken, **nothing is an error**: the requests are
+served, and the `_method=GET` bypass is quietly open — a POST can declare a
+safe method and be served without a token. The only sign is the warning, and
+
+- **the warning goes to the `:audit` logger**, not to the framework's own
+  package logger, because that one is configured at `:error` in a generated
+  project's development and test environments and would not show a warning at
+  all;
+- **the stage-order warning is emitted once per process.** That keeps a
+  per-request warning from flooding the log, and it is the reason it is easy to
+  miss: one line, at startup-ish time, and never again.
+
+So in development, read the audit log after changing the stack.
+
+### 11.3 What the check does not affect
+
+- **`clails task` and `clails console` do not build a middleware stack**, so
+  neither check runs there and neither is affected by this setting.
+- **Wrapping a stage, or replacing the whole list, does not cause a false
+  positive.** The order check reads a marker left on the request, i.e. the
+  order the request actually took, rather than walking the middleware list —
+  which is why the two shapes the documentation itself shows (wrapping a stage;
+  rebuilding the list) do not trip it.
+- **But a stack that keeps the override stage while leaving the CSRF stage
+  out does trip it**, which is the point: that is the configuration with the
+  hole in it.
+
+---
+
+## 12. Migrating an existing project
 
 `clails new` writes a project's configuration **once**. Nothing in this release
 reaches a project that already exists, so the steps below are manual and all of
 them are optional — a project that changes nothing keeps working, with sessions
 off.
 
-1. **Add the session settings** to `app/config/environment.lisp`. The easiest
-   way is to generate a throwaway project (`clails new scratch`) and copy the
-   "Sessions" block out of its `app/config/environment.lisp`, including the
-   `setup-session/<environment>` functions.
-2. **Call the per-environment part at boot.** The Secure flag is read while the
-   middleware stack is built, which happens *before* the first startup hook
-   runs, so a startup hook is too late. The generated `clails.boot` calls
-   `(<project>/config/environment:initialize-session-config)` right after
+1. **Add the session and CSRF settings** to `app/config/environment.lisp`. The
+   easiest way is to generate a throwaway project (`clails new scratch`) and
+   copy the "Sessions", "CSRF protection", "Request-method override" and
+   per-environment blocks out of its `app/config/environment.lisp`, including
+   the `setup-environment/<environment>` functions.
+2. **Call the per-environment part at boot.** The Secure flag and
+   `*strict-configuration*` are both read while the middleware stack is built,
+   which happens *before* the first startup hook runs, so a startup hook is too
+   late. The generated `clails.boot` calls
+   `(<project>/config/environment:initialize-environment-config)` right after
    `resolve-project-environment`; add that line to your own `clails.boot` (and
    export the function from the configuration package). If you skip this step,
-   remember that the cookie will not be marked Secure in production.
-3. **If you replaced `*clails-middleware-stack*` wholesale**, your stack has no
-   session stage, and adding the configuration above will not give you one.
+   remember that the cookie will not be marked Secure in production and that a
+   broken configuration will abort rather than warn in development.
+3. **If you replaced `*clails-middleware-stack*` wholesale**, your stack has
+   neither the session stage nor the CSRF stage nor the request-method override
+   stage, and adding the configuration above will not give you any of them.
    Switch to `add-middleware-before` / `add-middleware-after` for your own
    stages, so that the framework's stages stay where they belong. See the
-   [Environment Guide](environment.md).
+   [Environment Guide](environment.md). Note that a stack which keeps the
+   override stage but not the CSRF stage is the configuration with the
+   `_method=GET` hole in it, and is what the strict check refuses (section 11).
 4. **To keep sessions in the database**, copy `db/session-table.lisp` out of a
    generated project (or rely on the framework's identical built-in
    definition), run `clails db:create-session-table` per environment, and set
@@ -561,7 +971,36 @@ off.
    `setup-logger/production` against a freshly generated one and make sure
    `:sql`, `:web-access`, `:audit` and `:task` are each registered exactly
    once. This matters beyond logging: the `:audit` destination is where clails
-   records rejected requests.
+   records rejected requests and the configuration warnings of section 11.
+   Two further corrections are in the same template: `:job` is now registered
+   in all three environments (`clails/logger:log.job` writes at `:info`, and
+   with `:job` unregistered those records were mixed into the project default
+   in development and dropped altogether in test and production), and the
+   production `:sql` registration no longer declares a log file — production
+   does not emit debug records and `log.sql` writes at `:debug` only, so that
+   file could never have been written.
+7. **The request-method override stage is enabled by default**, so no
+   configuration is needed to get it — but **a hand-written routing table that
+   declares both a POST route and a PUT / PATCH / DELETE route on the same path
+   changes behaviour**: a POST carrying `_method=put` now reaches the PUT
+   route. Tables built with `(resources …)` are unaffected. If your table has
+   that shape and you relied on the old behaviour, give the two routes
+   different paths or set `*enable-method-override*` to `NIL`. See
+   [10.2](#102-what-changed-for-existing-projects).
+8. **Add the form helpers to your view namespaces.** A generated project
+   imports `form-tag`, `end-form-tag`, `form-with`,
+   `form-authenticity-token`, `csrf-token-tag` and `method-override-tag` from
+   `clails/view/form-helper` in `app/views/package.lisp` and in each
+   `app/views/<resource>/package.lisp`; those files are written once, so an
+   existing project has to add the `:import-from` clause itself. Alternatively
+   write `clails/view/form-helper:form-tag` fully qualified in the templates
+   and import nothing. See [9.2](#92-putting-the-token-in-a-form).
+9. **Replace the hand-written hidden fields in your forms.** With verification
+   on, every `<form method="POST">` written by hand is a 403 until it carries
+   the token. `form-tag` / `form-with` write it, together with the `_method`
+   field. Note also that an action which sets no view now returns **200 with an
+   empty body** rather than failing, so a form that posts to such an action
+   looks like it worked — check the action, not the status code.
 
 ---
 
@@ -586,5 +1025,19 @@ off.
    still lose an update — use `with-session-lock`. Across several processes the
    last writer wins.
 7. `current-user` is plumbing for "whoever is logged in". Login logic,
-   password handling and authorization are your project's responsibility, and
-   CSRF protection is not part of this release.
+   password handling and authorization are your project's responsibility.
+8. **CSRF verification is on in a generated project** and off by default in the
+   framework. Every POST / PUT / PATCH / DELETE needs the session's token;
+   `form-tag` and `form-with` write the hidden field, and a GET form carries no
+   token on purpose. There is **no per-route exemption** in this release, so a
+   webhook can only be accommodated by switching CSRF off globally — which is
+   dangerous, and which the next goals address (per path first, then per
+   controller/action).
+9. **A form can reach a resource's update and destroy routes** via the hidden
+   `_method` field, which is honoured by a stage that runs inside CSRF
+   verification, accepts only PUT / PATCH / DELETE, and reads the body only.
+   `(resources …)` now generates 8 routes, PATCH included.
+10. **`*strict-configuration*` is `T` in the framework and in production, and
+   `NIL` in a generated project's development and test environments.** `NIL`
+   means a broken stage order is served with the `_method=GET` hole open, with
+   one warning on the `:audit` logger per process.

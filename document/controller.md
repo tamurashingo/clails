@@ -96,37 +96,81 @@ Override methods corresponding to each HTTP method.
     (set-redirect controller "/users")))
 ```
 
-### Sending PUT and DELETE Requests from HTML Forms
+### Sending PUT, PATCH and DELETE Requests from HTML Forms
 
-HTML `<form>` tags only support `GET` and `POST` methods natively.
-To send PUT or DELETE requests from HTML forms, use the `_method` parameter.
+HTML `<form>` tags only support `GET` and `POST` methods natively. A form that
+means PUT, PATCH or DELETE says so in a hidden `_method` field, and a
+middleware stage — the **request-method override stage** — rewrites the
+declared request method before the route is matched.
 
-**PUT Request Example:**
+**Do not write the field by hand.** The form helpers write it, together with
+the hidden CSRF token field that a generated project's CSRF verification
+requires of every state-changing request:
 
 ```html
-<form action="/users/123" method="POST">
-    <input type="hidden" name="_method" value="PUT">
+<%= (form-tag :url "/users/123" :method :put) %>
     <input type="text" name="name" value="John Doe">
     <button type="submit">Update</button>
-</form>
+<%= (end-form-tag) %>
+
+<%= (form-with :url "/users/123"
+               :method :delete
+               :body "<button type=\"submit\">Delete</button>") %>
 ```
 
-**DELETE Request Example:**
+What the helper renders for `:method :put` is a `<form method="POST">` carrying
+`_method=put` and `_csrf_token=…`. Writing that by hand is equivalent and still
+supported; what is not optional is the token, so a hand-written form needs
+`<%= (csrf-token-tag) %>` as well. See the
+[View Guide](view.md#form-helpers) for every helper, and the
+[Session & Authentication Guide](session.md#9-csrf-protection) for CSRF.
 
-```html
-<form action="/users/123" method="POST">
-    <input type="hidden" name="_method" value="DELETE">
-    <button type="submit">Delete</button>
-</form>
-```
+**Because the rewriting happens before route matching, it works with both
+dispatch mechanisms:**
 
-clails checks the `_method` parameter in POST requests and routes as follows:
+- with **`:action`-based routing**, the POST reaches the `:method :put` route of
+  that path (e.g. a resource's `update` action);
+- with **HTTP-method dispatch**, the same POST reaches `do-put`, which is what
+  `_method` has always done. `_method` `"DELETE"` reaches `do-delete`, and a
+  POST without the field reaches `do-post`.
 
-- When `_method` is `"PUT"` → calls the `do-put` method
-- When `_method` is `"DELETE"` → calls the `do-delete` method
-- When `_method` is not specified → calls the `do-post` method
+#### The safety preconditions of the rewriting
 
-This enables REST API-like operations from HTML forms.
+These are properties, not implementation details, and working around any of
+them reopens a hole:
+
+- **Only a POST is rewritten.** A GET is never touched.
+- **Only into `PUT`, `PATCH` or `DELETE`** — an explicit allow-list, in full,
+  that nothing extends at run time. A request can never forge `GET`, `HEAD` or
+  `OPTIONS`: those are exempt from CSRF verification, so forging one would be a
+  way to be served without a token.
+- **The value is read from the request body only**, never from the query
+  string. A method in a query string would let any link, or any image tag,
+  delete something.
+- **An unknown value leaves the method alone.** `_method=banana` stays a POST
+  rather than becoming an error.
+- **The stage runs inside CSRF verification**, so a forged method is never
+  honoured before the token has been checked. A stack with the override stage
+  outside the CSRF stage is the `_method=GET`-plus-no-token bypass, and it is
+  one of the two configurations the strict configuration check catches — see
+  [Strict configuration checking](session.md#11-strict-configuration-checking).
+
+#### What changed for existing routing tables
+
+The stage is **enabled by default** (`*enable-method-override*` is `T`), and
+for almost every project that changes nothing. The exception:
+
+> **A hand-written routing table that declares both a POST route and a
+> PUT / PATCH / DELETE route on the *same path* behaves differently.** Such a
+> POST carrying `_method=put` used to reach the **POST** route, because route
+> matching looked at the real request method; it now reaches the **PUT** route.
+> That is the intended effect — it is what lets a form reach an update route —
+> but if your table has that shape and you relied on the old behaviour, either
+> give the two routes different paths, or switch the stage off:
+> `(setf clails/middleware/method-override-middleware:*enable-method-override* nil)`.
+
+Tables built with the `resources` function are unaffected, because no two of
+its entries declare the same method on the same path.
 
 ---
 
@@ -232,7 +276,7 @@ clails currently supports two ways for a route to decide which controller method
 Both keep working side by side today. **`:action`-based routing is the preferred mechanism for new code**, and existing HTTP-method-dispatch routes should be migrated over time:
 
 - **Single source of truth for the path → method mapping.** With HTTP-method dispatch, which controller method actually runs for a request is decided in two separate places: the routing table (which controller handles the path) and the middleware's HTTP-method `cond` (which of `do-get`/`do-post`/`do-put`/`do-delete` is called, plus the `_method` override). With `:action`-based routing, the `:path`, `:method`, and `:action` on a single route entry are the *only* place that mapping is declared.
-- **No `_method` spoofing needed to reach the right dispatch path.** `path-controller` matches `:action` routes directly against the request's real HTTP method and never inspects the `_method` parameter — that check exists only in the middleware's legacy fallback branch. Adding a new action to a controller therefore never requires wiring up an additional `_method` case.
+- **No `_method` case to wire up per action.** `path-controller` matches `:action` routes against the request method it finds in the request environment, and the `_method` field is honoured once, in a stage of its own (the request-method override stage), *before* route matching happens. So adding a new action to a controller never requires adding an `_method` case anywhere: a form declaring `:method :put` reaches the `:method :put` route, and a form declaring nothing reaches the `:method :post` one. (Until the override stage existed, route matching read the real HTTP method only and the `_method` check lived in the middleware's legacy dispatch branch alone, which is why a form could not reach an `:action` route for PUT or DELETE at all.)
 - **Multiple actions per controller without overloading a single method.** `do-get` can mean only one thing per controller. With `:action`, `index`, `show`, `new`, `edit`, etc. are each their own method on the same controller class, as the `resources` function already relies on.
 
 **Before (HTTP-method dispatch):**
@@ -279,7 +323,12 @@ An HTML `<form>` can only reach `do-put` above by POSTing with a hidden `_method
 
 (The `resources` function generates exactly this shape of route table for a full set of CRUD actions — see below.)
 
-**Migration caveat for PUT/DELETE from plain HTML forms:** because `:action`-based route matching uses the request's *real* HTTP method and does not consult `_method` at all, a form that used `_method=PUT`/`_method=DELETE` to reach a legacy `do-put`/`do-delete` cannot reach a `:method :put`/`:method :delete` action route the same way — the request still arrives as a real POST, and no route in the table matches `:post` at that path. To migrate such a form, either send the request with a real PUT/DELETE (e.g. via `fetch`/`XMLHttpRequest`, or a JS-enhanced form submission), or keep a `:method :post` action for that path if you must keep supporting plain, unscripted HTML forms.
+**PUT/DELETE from plain HTML forms migrates cleanly.** A form that used `_method=PUT`/`_method=DELETE` to reach a legacy `do-put`/`do-delete` reaches a `:method :put`/`:method :delete` action route the same way: the request-method override stage rewrites the declared method before route matching, so the route table sees the method the form meant. Nothing has to be sent with a real PUT or DELETE, and no `:method :post` action has to be kept for unscripted forms.
+
+Two things to check while migrating such a form:
+
+- **The action URL must be the member path** (`/users/<id>`), not the collection path, because that is where the `:method :put` route lives and where the `:id` parameter comes from. A form posting to the collection path with `_method=put` matches no route and is a 404 — the override stage cannot help with that, since it only rewrites the method.
+- **The form needs the CSRF token** if verification is on, which it is in a generated project. `(form-tag :url … :method :put)` writes both hidden fields; see [Sending PUT, PATCH and DELETE Requests from HTML Forms](#sending-put-patch-and-delete-requests-from-html-forms).
 
 **Startup warning for remaining legacy routes:** `initialize-routing-tables` emits a single warning (once per routing-table compile, e.g. at application startup — never per HTTP request) listing any routes that still lack `:action` and will fall back to HTTP-method dispatch, to help you find routes that still need migrating.
 
@@ -287,7 +336,7 @@ No removal date has been set for the HTTP-method dispatch mechanism; it will kee
 
 ### RESTful Routing with the `resources` Function
 
-The `resources` function lets you define 7 standard RESTful routes in a single line.
+The `resources` function lets you define the 8 standard RESTful routes of a resource in a single line.
 
 ```common-lisp
 (setf clails/environment:*routing-tables*
@@ -295,7 +344,7 @@ The `resources` function lets you define 7 standard RESTful routes in a single l
     ,@(resources "blogs" "your-app/controllers/blog-controller::<blog-controller>")))
 ```
 
-`(resources "todos" "controller")` generates the following 7 routes:
+`(resources "todos" "controller")` generates the following 8 routes for the 7 standard actions:
 
 | HTTP Method | Path | Action | Purpose |
 |---|---|---|---|
@@ -304,8 +353,23 @@ The `resources` function lets you define 7 standard RESTful routes in a single l
 | POST | /todos | create | Create |
 | GET | /todos/:id | show | Detail |
 | GET | /todos/:id/edit | edit | Edit form |
-| PUT | /todos/:id | update | Update |
+| PUT | /todos/:id | update | Update (replace) |
+| PATCH | /todos/:id | update | Update (partial) |
 | DELETE | /todos/:id | destroy | Delete |
+
+**`update` gets two entries, which is why there are eight.** PUT is a
+replacement and PATCH a partial update, and both are answered by the `update`
+action. CSRF verification has always covered all four state-changing methods
+and the request-method override accepts all three of PUT / PATCH / DELETE in a
+form's hidden field, so a resource without a PATCH route would have left one
+method verified but unreachable. Both entries are named `:update`, so
+`:only '(:update)` keeps both and `:except '(:update)` removes both: the
+selector names the action, not the method it is reached with.
+
+The PATCH entry is listed last so that the first seven keep the positions they
+have always had. The order of the table only decides which route wins when two
+match the *same* method, and no two entries here declare the same method on the
+same path.
 
 `/todos/new` is placed before `/todos/:id`, so "new" will never be matched as an `:id` parameter.
 

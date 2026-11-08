@@ -19,13 +19,16 @@
 </head>
 <body>
     <h1>Todo List</h1>
-    
+
     <h2>Add New Todo</h2>
-    <form action="/todo" method="POST">
+    <!-- FORM-TAG writes the hidden CSRF token field; writing the <form> tag by
+         hand here would make every submission a 403 once CSRF verification is
+         on, which it is in a generated project. -->
+    <%= (form-tag :url "/todo" :method :post) %>
         <input type="text" name="title" placeholder="Enter todo title" required>
         <button type="submit">Add</button>
-    </form>
-    
+    <%= (end-form-tag) %>
+
     <h2>Todo Items</h2>
     <table>
         <thead>
@@ -48,17 +51,25 @@
                 <td><%= (or (clails/model:ref todo :done-at) "-") %></td>
                 <td>
                     <cl:unless test="(clails/model:ref todo :done)">
-                    <form action="/todo/<%= (clails/model:ref todo :id) %>" method="POST" style="display:inline;">
-                        <input type="hidden" name="_method" value="PUT">
-                        <button type="submit">Mark as Done</button>
-                    </form>
+                    <!-- The action is the MEMBER path (/todo/:id), not the
+                         collection path: the id travels in the path, and the
+                         routing table has to carry a /todo/:id entry for this
+                         form to reach anything at all.  :METHOD :PUT makes
+                         FORM-TAG emit both hidden fields this needs -- the
+                         CSRF token and "_method=put" -- so the POST a browser
+                         really sends is rewritten to a PUT before the route is
+                         matched. -->
+                    <%= (form-with :url (format nil "/todo/~A" (clails/model:ref todo :id))
+                                   :method :put
+                                   :attributes '(:style "display:inline;")
+                                   :body "<button type=\"submit\">Mark as Done</button>") %>
                     </cl:unless>
                 </td>
             </tr>
             </cl:loop>
         </tbody>
     </table>
-    
+
     <p style="margin-top: 20px; color: #666;">
         Total: <%= (length (view :todos)) %> items
     </p>

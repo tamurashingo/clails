@@ -11,6 +11,10 @@
   ;; generated and the generated files are read back.
   (:import-from #:clails/project/project
                 #:create-project)
+  ;; `clails generate:view' writes a second view namespace, from a template of
+  ;; its own, so both have to be inspected.
+  (:import-from #:clails/project/generate
+                #:gen/view)
   (:import-from #:clails-test/support/temp-project
                 #:make-test-project-root
                 #:delete-test-project-root)
@@ -21,7 +25,11 @@
                 #:*project-environment*
                 #:*routing-tables*
                 #:*startup-hooks*
-                #:*shutdown-hooks*)
+                #:*shutdown-hooks*
+                ;; How strictly a configuration that cannot work is treated:
+                ;; framework-wide rather than one stage's, and set per
+                ;; environment by the generated configuration (M8-T1, goal B).
+                #:*strict-configuration*)
   ;; The framework-side defaults the templates are expected to override (or to
   ;; leave alone).
   (:import-from #:clails/middleware/session-middleware
@@ -31,7 +39,16 @@
                 #:*session-state*
                 #:*session-idle-timeout*
                 #:*session-sweep-enabled*
-                #:*session-sweep-interval*))
+                #:*session-sweep-interval*)
+  ;; The CSRF stage and the request-method override stage (M8-T1, goal B).
+  (:import-from #:clails/middleware/csrf-middleware
+                #:*enable-csrf-middleware*
+                #:*csrf-form-token*
+                #:*csrf-header-name*
+                #:*csrf-one-time-token*)
+  (:import-from #:clails/middleware/method-override-middleware
+                #:*enable-method-override*
+                #:*method-override-parameter*))
 (in-package #:clails-test/project/templates)
 
 
@@ -43,15 +60,13 @@
 ;;;
 ;;;   * app/config/environment.lisp: sessions are on, the store is named, the
 ;;;     cookie attributes and the idle timeout and its sweeping are written out
-;;;     with their defaults, and the Secure flag is set per environment.
+;;;     with their defaults, CSRF verification is on, the request-method
+;;;     override is explained, and the Secure flag and the strictness of the
+;;;     configuration checks are set per environment.
 ;;;   * app/config/logger.lisp: the log destinations of all three environments
 ;;;     are registered once each, with no name written by mistake.
 ;;;   * README.md / Makefile: the session table is created by the command that
 ;;;     actually exists.
-;;;
-;;; The CSRF stage is deliberately NOT configured by the templates yet: the
-;;; stage is in the stack but off, and switching it on belongs with the e2e
-;;; script that has to start sending tokens.
 
 (defvar *test-project-root* nil)
 (defvar *project-dir* nil)
@@ -95,7 +110,14 @@
         (*session-cookie-secure* :not-set)
         (*session-idle-timeout* :not-set)
         (*session-sweep-enabled* :not-set)
-        (*session-sweep-interval* :not-set))
+        (*session-sweep-interval* :not-set)
+        (*enable-csrf-middleware* :not-set)
+        (*csrf-form-token* :not-set)
+        (*csrf-header-name* :not-set)
+        (*csrf-one-time-token* :not-set)
+        (*enable-method-override* :not-set)
+        (*method-override-parameter* :not-set)
+        (*strict-configuration* :not-set))
     (handler-bind ((warning (lambda (condition)
                               (declare (ignore condition))
                               (when (find-restart 'muffle-warning)
@@ -105,10 +127,14 @@
                                    (format nil "~A/config/environment"
                                            *test-project-name*))))
            (initialize (and package
-                            (find-symbol "INITIALIZE-SESSION-CONFIG" package))))
-      (flet ((secure-for (environment)
+                            (find-symbol "INITIALIZE-ENVIRONMENT-CONFIG" package))))
+      (flet ((per-environment (environment)
+               ;; The two settings the configuration varies by environment,
+               ;; read back after running its dispatcher for that environment.
                (if initialize
-                   (progn (funcall initialize environment) *session-cookie-secure*)
+                   (progn (funcall initialize environment)
+                          (list :secure *session-cookie-secure*
+                                :strict *strict-configuration*))
                    :no-initializer)))
         (list :enabled *enable-session-middleware*
               :store *session-store*
@@ -116,9 +142,15 @@
               :idle-timeout *session-idle-timeout*
               :sweep-enabled *session-sweep-enabled*
               :sweep-interval *session-sweep-interval*
-              :secure-develop (secure-for :develop)
-              :secure-test (secure-for :test)
-              :secure-production (secure-for :production))))))
+              :csrf-enabled *enable-csrf-middleware*
+              :csrf-form-token *csrf-form-token*
+              :csrf-header-name *csrf-header-name*
+              :csrf-one-time *csrf-one-time-token*
+              :method-override *enable-method-override*
+              :method-override-parameter *method-override-parameter*
+              :develop (per-environment :develop)
+              :test (per-environment :test)
+              :production (per-environment :production))))))
 
 (setup
   (setf *test-project-root* (make-test-project-root "clails-test-templates"))
@@ -158,11 +190,11 @@
            (format nil "(defun setup-logger/~A " environment)
            "(defun "))
 
-(defun session-setup-section (environment)
-  "The body of the SETUP-SESSION/<ENVIRONMENT> function of the generated
+(defun environment-setup-section (environment)
+  "The body of the SETUP-ENVIRONMENT/<ENVIRONMENT> function of the generated
    app/config/environment.lisp."
   (section *environment-lisp*
-           (format nil "(defun setup-session/~A " environment)
+           (format nil "(defun setup-environment/~A " environment)
            "(defun "))
 
 (defun registered-logger-names (text)
@@ -250,16 +282,16 @@
 
 (deftest generated-config-sets-secure-per-environment-test
   (testing "production marks the session cookie Secure"
-    (let ((production (session-setup-section "production")))
-      (ok production "setup-session/production exists")
+    (let ((production (environment-setup-section "production")))
+      (ok production "setup-environment/production exists")
       (when production
         (ok (search "(setf *session-cookie-secure* t)" production)
             "and turns the Secure flag on"))))
 
   (testing "development and test leave it off, so a plain-HTTP session still works"
     (dolist (environment '("develop" "test"))
-      (let ((text (session-setup-section environment)))
-        (ok text (format nil "setup-session/~A exists" environment))
+      (let ((text (environment-setup-section environment)))
+        (ok text (format nil "setup-environment/~A exists" environment))
         (when text
           (ok (search "(setf *session-cookie-secure* nil)" text)
               (format nil "~A leaves the Secure flag off" environment))))))
@@ -277,10 +309,113 @@
         "stated as the consequence, not only as a warning"))
 
   (testing "the environment-dependent settings are applied after the environment is known"
-    (ok (search "initialize-session-config" *environment-lisp*)
+    (ok (search "initialize-environment-config" *environment-lisp*)
         "the dispatcher is defined in the configuration")
-    (ok (search "initialize-session-config" *boot*)
+    (ok (search "initialize-environment-config" *boot*)
         "and clails.boot calls it, after CLAILS_ENV is resolved and before the stack is built")))
+
+
+;;; ------------------------------------------------------------------
+;;; app/config/environment.lisp: CSRF, the method override and strict
+;;; (M8-T1, goal B)
+;;; ------------------------------------------------------------------
+
+(deftest generated-config-enables-csrf-test
+  (testing "the generated configuration switches CSRF verification on"
+    (ok (search "(setf *enable-csrf-middleware* t)" *environment-lisp*)
+        "CSRF verification is enabled in a generated project")
+    (ok (search "clails/middleware/csrf-middleware" *environment-lisp*)
+        "and the package the setting comes from is named"))
+
+  (testing "the framework's own default stays 'disabled', so existing projects do not change"
+    (ok (null *enable-csrf-middleware*)
+        "*enable-csrf-middleware* is NIL in the framework"))
+
+  (testing "the names a token may arrive under are written out"
+    (ok (search "(setf *csrf-form-token* \"_csrf_token\")" *environment-lisp*)
+        "the hidden field's name")
+    (ok (search "(setf *csrf-header-name* \"X-CSRF-Token\")" *environment-lisp*)
+        "and the header a fetch/XHR caller may use instead"))
+
+  (testing "the reader is told not to write the hidden token field by hand"
+    (ok (search "FORM-TAG" *environment-lisp*)
+        "the form helper is named")
+    (ok (search "query string" *environment-lisp*)
+        "and the places a token is deliberately NOT read from are stated"))
+
+  (testing "the one-time token setting is written out with its default and its cost"
+    (ok (search "(setf *csrf-one-time-token* nil)" *environment-lisp*)
+        "token reuse is the default")
+    (ok (search "back button" *environment-lisp*)
+        "and what one-time tokens would cost is stated")))
+
+(deftest generated-config-explains-method-override-test
+  (testing "the override setting is annotated, and says it is on by default"
+    (ok (search "*enable-method-override*" *environment-lisp*)
+        "the setting is mentioned")
+    (ok (search "ENABLED BY DEFAULT" *environment-lisp*)
+        "stating that it needs no enabling line")
+    (ok (search "(setf *enable-method-override* nil)" *environment-lisp*)
+        "and showing how to switch it OFF")
+    (ok (eq t *enable-method-override*)
+        "which matches the framework default of T"))
+
+  (testing "the one reason to switch it off is named"
+    (ok (search "HAND-WRITTEN routing table" *environment-lisp*)
+        "a hand-written table with a POST and a PUT/PATCH/DELETE on one path"))
+
+  (testing "the safety preconditions of the rewriting are stated"
+    (ok (search "only a POST is rewritten" *environment-lisp*) "POST only")
+    (ok (search "only into PUT / PATCH / DELETE" *environment-lisp*)
+        "an explicit allow-list")
+    (ok (search "request BODY only" *environment-lisp*) "the body only")
+    (ok (search "unknown value leaves the method alone" *environment-lisp*)
+        "and an unknown value is not honoured"))
+
+  (testing "the field's name is written out"
+    (ok (search "(setf *method-override-parameter* \"_method\")" *environment-lisp*))))
+
+(deftest generated-config-sets-strict-per-environment-test
+  (testing "production refuses to run a configuration that cannot work"
+    (let ((production (environment-setup-section "production")))
+      (ok production "setup-environment/production exists")
+      (when production
+        (ok (search "(setf *strict-configuration* t)" production)
+            "strict is T in production"))))
+
+  (testing "development and test report instead of aborting"
+    (dolist (environment '("develop" "test"))
+      (let ((text (environment-setup-section environment)))
+        (ok text (format nil "setup-environment/~A exists" environment))
+        (when text
+          (ok (search "(setf *strict-configuration* nil)" text)
+              (format nil "strict is NIL in ~A" environment))))))
+
+  (testing "the framework default is T and the template is what relaxes it"
+    (ok (eq t *strict-configuration*)
+        "*strict-configuration* is T in the framework"))
+
+  (testing "what the setting means is explained"
+    (ok (search "refuses to build a stack" *environment-lisp*)
+        "T aborts the startup check")
+    (ok (search "answered with a 403" *environment-lisp*)
+        "or refuses the request")
+    (ok (search "records a warning on the :audit logger" *environment-lisp*)
+        "NIL warns on the audit logger and carries on")
+    (ok (search "SILENTLY" *environment-lisp*)
+        "and the reader is warned that NIL opens the bypass silently")))
+
+(deftest generated-config-explains-opposite-defaults-test
+  ;; The two settings the template overrides point in opposite directions, and
+  ;; the reason is a design decision rather than an accident, so it is written
+  ;; where someone changing either of them will read it.
+  (testing "the opposite default directions of strict and Secure are explained"
+    (ok (search "OPPOSITE directions" *environment-lisp*)
+        "the difference is called out")
+    (ok (search "breaks NOTHING that was working" *environment-lisp*)
+        "a safe default for strict costs nothing")
+    (ok (search "breaks EVERY development environment" *environment-lisp*)
+        "while a safe default for Secure breaks plain-HTTP development")))
 
 
 ;;; ------------------------------------------------------------------
@@ -291,12 +426,13 @@
 (deftest generated-logger-registers-every-destination-once-test
   (testing "development registers each destination exactly once"
     (let ((names (registered-logger-names (logger-setup-section "develop"))))
-      (ok (same-names-p '("root" "clails" "sql" "web-access" "audit" "task") names)
+      (ok (same-names-p '("root" "clails" "sql" "web-access" "audit" "task" "job") names)
           (format nil "development registers ~A" names))))
 
   (testing "test registers each destination exactly once"
     (let ((names (registered-logger-names (logger-setup-section "test"))))
-      (ok (same-names-p (list *test-project-name* "clails" "sql" "web-access" "audit" "task")
+      (ok (same-names-p (list *test-project-name* "clails" "sql" "web-access" "audit"
+                              "task" "job")
                         names)
           (format nil "test registers ~A" names))))
 
@@ -305,7 +441,7 @@
     ;; is looked up through the name hierarchy and lands on :root, so framework
     ;; warnings are kept rather than dropped.
     (let ((names (registered-logger-names (logger-setup-section "production"))))
-      (ok (same-names-p '("root" "sql" "web-access" "audit" "task") names)
+      (ok (same-names-p '("root" "sql" "web-access" "audit" "task" "job") names)
           (format nil "production registers ~A" names))))
 
   (testing "no environment registers the same name twice"
@@ -326,6 +462,26 @@
         (ok (member "audit" names :test #'string=)
             (format nil "~A registers :audit" environment))))))
 
+(deftest generated-logger-registers-job-everywhere-test
+  (testing "the background-job destination is registered in all three environments"
+    ;; clails/logger/core:log.job writes at :info.  Left unregistered, :job fell
+    ;; through to the project default, which meant: mixed in with everything
+    ;; else in development, dropped outright in test (nothing there catches it)
+    ;; and dropped in production as well, whose default is :warn.
+    (dolist (environment '("develop" "test" "production"))
+      (let ((names (registered-logger-names (logger-setup-section environment))))
+        (ok (member "job" names :test #'string=)
+            (format nil "~A registers :job" environment)))))
+
+  (testing "and it is registered at a level that lets an :info record through"
+    (dolist (environment '("develop" "test" "production"))
+      (let ((registration (logger-registration (logger-setup-section environment) "job")))
+        (ok (and registration
+                 (or (search ":level :info" registration)
+                     (search ":level :debug" registration)
+                     (search ":level :trace" registration)))
+            (format nil "~A registers :job at :info or lower" environment))))))
+
 (deftest generated-logger-production-files-test
   (testing "each production destination writes to its own file"
     ;; The regression this pins down: the web-access destination used to be
@@ -338,17 +494,85 @@
         (let ((sql (logger-registration production "sql"))
               (access (logger-registration production "web-access"))
               (audit (logger-registration production "audit"))
-              (task (logger-registration production "task")))
-          (ok (and sql (search "logs/sql.log" sql))
-              ":sql writes to logs/sql.log")
+              (task (logger-registration production "task"))
+              (job (logger-registration production "job")))
           (ok (and access (search "logs/access.log" access))
               ":web-access writes to logs/access.log")
           (ok (and audit (search "logs/audit.log" audit))
               ":audit writes to logs/audit.log")
           (ok (and task (search "logs/task.log" task))
               ":task writes to logs/task.log")
-          (ok (not (search "logs/access.log" sql))
-              "and logs/access.log is not attached to :sql"))))))
+          (ok (and job (search "logs/job.log" job))
+              ":job writes to logs/job.log")
+          (ok (and sql (not (search "logs/access.log" sql)))
+              "and logs/access.log is not attached to :sql")))))
+
+  (testing "production declares no destination for :sql, and says why"
+    ;; The user's decision of 2026-10-19: production does not emit debug
+    ;; records and log.sql writes at :debug only, so SQL never reaches a log
+    ;; here -- which is the policy.  What was wrong was declaring a file that
+    ;; could never be written, so the file appender is gone and the level says
+    ;; plainly that nothing passes.  The registration itself is KEPT, so that
+    ;; the place to change when the policy changes stays visible and :sql does
+    ;; not fall through the hierarchy onto :root.
+    (let ((sql (logger-registration (logger-setup-section "production") "sql")))
+      (ok sql ":sql is still registered")
+      (when sql
+        (ok (search ":level :none" sql)
+            "at :none, i.e. nothing passes")
+        (ok (not (search "make-file-appender" sql))
+            "and with no file appender")
+        (ok (not (search ".log" sql))
+            "so no log file is declared for it"))))
+
+  (testing "every other production destination does have a file"
+    (let ((production (logger-setup-section "production")))
+      (dolist (name '("root" "web-access" "audit" "task" "job"))
+        (let ((registration (logger-registration production name)))
+          (ok (and registration (search "make-file-appender" registration))
+              (format nil ":~A writes to a file" name)))))))
+
+
+;;; ------------------------------------------------------------------
+;;; The generated view namespaces: the form helpers (M8, goal B)
+;;; ------------------------------------------------------------------
+
+(defparameter +form-helper-symbols+
+  '("form-tag" "end-form-tag" "form-with"
+    "form-authenticity-token" "csrf-token-tag" "method-override-tag")
+  "The form helpers a generated view namespace imports, so that a template can
+   call them unqualified.  Writing the hidden CSRF token field by hand is how a
+   page ends up 403-ing, and these are what write it.")
+
+(defun check-view-package-imports-form-helpers (text what)
+  (ok (search "#:clails/view/form-helper" text)
+      (format nil "~A imports clails/view/form-helper" what))
+  (dolist (symbol +form-helper-symbols+)
+    (ok (search (format nil "#:~A" symbol) text)
+        (format nil "~A imports ~A" what symbol))))
+
+(deftest generated-view-packages-import-form-helpers-test
+  (testing "the project's own view namespace imports the form helpers"
+    (check-view-package-imports-form-helpers
+     (read-project-file "app/views/package.lisp")
+     "app/views/package.lisp"))
+
+  (testing "and so does the namespace generate:view writes for a resource"
+    ;; Generated for real rather than read out of the template, so that the
+    ;; delimiter escaping of the template is exercised as well.
+    (let ((clails/environment:*project-dir* *project-dir*)
+          (clails/environment:*project-name* *test-project-name*)
+          (*standard-output* (make-broadcast-stream)))
+      (gen/view "widget"))
+    (check-view-package-imports-form-helpers
+     (read-project-file "app/views/widget/package.lisp")
+     "app/views/widget/package.lisp"))
+
+  (testing "importing them is documented as optional"
+    ;; A template may always call clails/view/form-helper:form-tag fully
+    ;; qualified; the import is a convenience, and saying so keeps a reader
+    ;; from concluding that a template they did not generate cannot use them.
+    (ok (search "fully qualified" (read-project-file "app/views/package.lisp")))))
 
 
 ;;; ------------------------------------------------------------------
@@ -424,16 +648,48 @@
     (ok (eql 300 (getf *generated-settings* :sweep-interval))))
 
   (testing "the Secure flag of the cookie follows the environment"
-    (ok (null (getf *generated-settings* :secure-develop))
+    (ok (null (getf (getf *generated-settings* :develop) :secure))
         "development: off, so a plain-HTTP session works")
-    (ok (null (getf *generated-settings* :secure-test))
+    (ok (null (getf (getf *generated-settings* :test) :secure))
         "test: off as well")
-    (ok (eq t (getf *generated-settings* :secure-production))
+    (ok (eq t (getf (getf *generated-settings* :production) :secure))
         "production: on")))
+
+(deftest generated-config-configures-csrf-and-strict-test
+  (testing "loading the generated configuration really enables CSRF verification"
+    (ok (eq t (getf *generated-settings* :csrf-enabled))
+        "*enable-csrf-middleware* ends up T")
+    (ok (equal "_csrf_token" (getf *generated-settings* :csrf-form-token))
+        "the hidden field keeps the name the form helper renders")
+    (ok (equal "X-CSRF-Token" (getf *generated-settings* :csrf-header-name))
+        "and the header keeps its name")
+    (ok (null (getf *generated-settings* :csrf-one-time))
+        "tokens are reused, not consumed"))
+
+  (testing "a generated project can serve a form-driven update"
+    ;; The override is the framework's default rather than something the
+    ;; template switches on; what matters is that the template does not switch
+    ;; it OFF, and that the field name the form helper writes is the one the
+    ;; stage reads.  :NOT-SET is therefore the expected answer -- it says the
+    ;; template leaves the setting alone, which is different from setting it.
+    (ok (eq :not-set (getf *generated-settings* :method-override))
+        "the template does not assign *enable-method-override*")
+    (ok (eq t *enable-method-override*)
+        "and the framework default it inherits is T")
+    (ok (equal "_method" (getf *generated-settings* :method-override-parameter))
+        "the conventional field name is written out"))
+
+  (testing "strict configuration checking follows the environment"
+    (ok (null (getf (getf *generated-settings* :develop) :strict))
+        "development: report and carry on")
+    (ok (null (getf (getf *generated-settings* :test) :strict))
+        "test: the same, so a failing check cannot abort a test run")
+    (ok (eq t (getf (getf *generated-settings* :production) :strict))
+        "production: refuse to run a configuration that cannot work")))
 
 (defun generated-cookie-state ()
   "The cookie state a generated project runs with in development."
-  (make-clails-cookie-state :secure (getf *generated-settings* :secure-develop)))
+  (make-clails-cookie-state :secure (getf (getf *generated-settings* :develop) :secure)))
 
 (deftest generated-config-session-works-over-plain-http-test
   (testing "a session written on one request is read back on the next"

@@ -96,37 +96,80 @@ JSON などの構造化データを返す REST API 用の Controller です。
     (set-redirect controller "/users")))
 ```
 
-### HTML フォームから PUT・DELETE リクエストを送信する
+### HTML フォームから PUT・PATCH・DELETE リクエストを送信する
 
 HTML の `<form>` タグは `GET` と `POST` メソッドしかサポートしていません。
-PUT や DELETE リクエストを HTML フォームから送信するには、`_method` パラメータを使用します。
+PUT・PATCH・DELETE を意図するフォームは隠しの `_method` 欄でそう宣言し、
+ミドルウェアの段 —— **操作種別の読み替えの段** —— が経路照合の前に、宣言された
+リクエストメソッドを書き換えます。
 
-**PUT リクエストの例：**
+**この欄を自分で書かないでください。** フォームヘルパが書きます。生成された
+プロジェクトの CSRF 検証がすべての状態変更要求に要求する隠しのトークン欄も、
+同時に書きます。
 
 ```html
-<form action="/users/123" method="POST">
-    <input type="hidden" name="_method" value="PUT">
+<%= (form-tag :url "/users/123" :method :put) %>
     <input type="text" name="name" value="John Doe">
     <button type="submit">更新</button>
-</form>
+<%= (end-form-tag) %>
+
+<%= (form-with :url "/users/123"
+               :method :delete
+               :body "<button type=\"submit\">削除</button>") %>
 ```
 
-**DELETE リクエストの例：**
+`:method :put` でヘルパが出力するのは、`_method=put` と `_csrf_token=…` を
+伴う `<form method="POST">` です。手で書いても同じで、いまも使えます。
+省略できないのはトークンの方なので、手書きのフォームには
+`<%= (csrf-token-tag) %>` も必要です。ヘルパの一覧は
+[ビューガイド](view_ja.md#フォームヘルパ)、CSRF の詳細は
+[セッション・認証ガイド](session_ja.md#9-csrf-対策) を参照してください。
 
-```html
-<form action="/users/123" method="POST">
-    <input type="hidden" name="_method" value="DELETE">
-    <button type="submit">削除</button>
-</form>
-```
+**書き換えが経路照合の前に起こるため、2つの振り分け機構のどちらでも
+動きます。**
 
-clails は POST リクエスト内の `_method` パラメータをチェックし、以下のようにルーティングします：
+- **`:action` ベースのルーティング** では、その POST はその道筋の
+  `:method :put` のルート(例えばリソースの `update` アクション)に届きます。
+- **HTTP メソッドディスパッチ** では、同じ POST が `do-put` に届きます。
+  これは `_method` が従来から行ってきたことです。`_method` が `"DELETE"` なら
+  `do-delete`、欄が無い POST なら `do-post` に届きます。
 
-- `_method` が `"PUT"` の場合 → `do-put` メソッドを呼び出し
-- `_method` が `"DELETE"` の場合 → `do-delete` メソッドを呼び出し
-- `_method` が指定されていない場合 → `do-post` メソッドを呼び出し
+#### 読み替えの安全上の前提
 
-これにより、HTML フォームから REST API のような操作が可能になります。
+これらは実装の詳細ではなく性質であり、どれを回避しても穴が開きます。
+
+- **POST だけを書き換えます。** GET には一切触りません。
+- **`PUT`・`PATCH`・`DELETE` にだけ** 書き換えます — 許可値の明示的な一覧
+  (これが全部)で、実行時に増えることはありません。`GET`・`HEAD`・`OPTIONS`
+  は偽装できません。それらは CSRF 検証の対象外なので、偽装できればトークン
+  無しで処理させる手段になってしまいます。
+- **値は要求の本文からのみ読み**、問い合わせ文字列からは読みません。
+  問い合わせ文字列に操作種別を書けると、ただのリンク(や画像タグ)が削除に
+  化けます。
+- **未知の値では操作種別を変えません。** `_method=banana` はエラーではなく
+  POST のままです。
+- **この段は CSRF 検証の内側で動く** ため、偽装された操作種別がトークンの
+  検査より前に honour されることはありません。読み替えの段を CSRF の段より
+  外側に置いたスタックは `_method=GET` ＋ トークン無しの抜け道そのもので、
+  構成の整合検査が捕らえる2つの構成のうちの1つです
+  ([構成の整合検査](session_ja.md#11-構成の整合検査strict))。
+
+#### 既存の経路表で変わること
+
+この段は **既定で有効** で(`*enable-method-override*` が `T`)、ほとんどの
+プロジェクトでは何も変わりません。例外は1つです。
+
+> **同じ道筋に POST の経路と PUT / PATCH / DELETE の経路を両方書いている
+> 手書きの経路表は挙動が変わります。** `_method=put` を伴う POST は、以前は
+> 経路照合が実際のリクエストメソッドを見ていたため **POST の経路** に届いて
+> いましたが、いまは **PUT の経路** に届きます。これは意図した効果 —— 用紙が
+> 更新の経路に到達できるようにするもの —— ですが、その形の経路表で従来の
+> 挙動に依存していた場合は、2つの経路の道筋を分けるか、段を無効にして
+> ください:
+> `(setf clails/middleware/method-override-middleware:*enable-method-override* nil)`。
+
+`resources` 関数で作った経路表は影響を受けません。同じ道筋に同じメソッドを
+宣言する項目が2つ存在しないためです。
 
 ---
 
@@ -232,7 +275,7 @@ clails には、ルートがどの Controller メソッドを呼ぶかを決め�
 両者は現在どちらも動作しますが、**新しいコードでは `:action` ベースのルーティングを使うことを推奨**し、既存の HTTP メソッドディスパッチのルートは徐々に移行してください。
 
 - **パス → メソッドの対応関係が一箇所にまとまる。** HTTP メソッドディスパッチでは、あるリクエストで実際にどの Controller メソッドが呼ばれるかは、ルーティングテーブル（どの Controller がそのパスを処理するか）とミドルウェアの HTTP メソッド用 `cond`（`do-get`/`do-post`/`do-put`/`do-delete` のどれを呼ぶか、および `_method` による上書き）という2箇所に分かれて決まります。`:action` ベースのルーティングでは、1つのルートエントリの `:path`、`:method`、`:action` だけがその対応関係の唯一の定義場所になります。
-- **正しいディスパッチ先に到達するために `_method` の偽装が不要。** `path-controller` は `:action` ルートをリクエストの実際の HTTP メソッドと直接照合し、`_method` パラメータは一切参照しません。このチェックが存在するのは、ミドルウェアの従来（レガシー）フォールバック分岐だけです。そのため、Controller に新しいアクションを追加するときに `_method` のケースを追加で配線する必要がありません。
+- **アクションごとに `_method` のケースを配線する必要がない。** `path-controller` は `:action` ルートを、リクエスト環境にあるリクエストメソッドと照合します。`_method` 欄は専用の段(操作種別の読み替えの段)で *経路照合より前に* 1度だけ honour されます。そのため Controller に新しいアクションを追加するときに `_method` のケースをどこかに足す必要はありません。`:method :put` を宣言したフォームは `:method :put` のルートに届き、何も宣言しないフォームは `:method :post` のルートに届きます。(読み替えの段が存在するまでは、経路照合は実際の HTTP メソッドだけを見ており、`_method` のチェックはミドルウェアの従来のディスパッチ分岐にしかありませんでした。だからこそ、フォームは PUT や DELETE の `:action` ルートにまったく到達できませんでした。)
 - **1つのメソッドに複数の意味を持たせずに、Controller ごとに複数のアクションを定義できる。** `do-get` は Controller ごとに1つの意味しか持てません。`:action` を使えば、`resources` 関数がすでに前提としているように、`index`、`show`、`new`、`edit` などをそれぞれ同じ Controller クラス上の別々のメソッドとして定義できます。
 
 **移行前（HTTP メソッドディスパッチ）:**
@@ -279,7 +322,12 @@ HTML の `<form>` は PUT をネイティブに送信できないため、上記
 
 （`resources` 関数は、CRUD の一式についてまさにこの形のルートテーブルを生成します。詳細は後述します。）
 
-**プレーンな HTML フォームからの PUT/DELETE 移行時の注意点:** `:action` ベースのルートマッチングはリクエストの*実際の* HTTP メソッドを使い、`_method` は一切参照しません。そのため、`_method=PUT`/`_method=DELETE` を使って従来の `do-put`/`do-delete` に到達していたフォームは、同じ方法では `:method :put`/`:method :delete` のアクションルートに到達できません — リクエストは実際には POST のまま届き、そのパスに対して `:post` にマッチするルートが存在しないためです。このようなフォームを移行するには、実際に PUT/DELETE を送信する（例えば `fetch`/`XMLHttpRequest`、または JavaScript で拡張したフォーム送信を使う）か、スクリプトなしの素の HTML フォームをサポートし続ける必要がある場合は、そのパス用に `:method :post` のアクションを残しておいてください。
+**プレーンな HTML フォームからの PUT/DELETE も問題なく移行できます。** `_method=PUT`/`_method=DELETE` で従来の `do-put`/`do-delete` に到達していたフォームは、同じ方法で `:method :put`/`:method :delete` のアクションルートに到達します。操作種別の読み替えの段が経路照合の前に宣言されたメソッドを書き換えるため、経路表は用紙が意図したメソッドを見ます。実際に PUT/DELETE を送信する必要はなく、スクリプトなしのフォームのために `:method :post` のアクションを残す必要もありません。
+
+移行時に確認すべき点が2つあります。
+
+- **送信先の URL は集合の道筋ではなく個体の道筋**(`/users/<id>`)でなければなりません。`:method :put` のルートがあるのはそこで、`:id` パラメータが得られるのもそこだからです。集合の道筋に `_method=put` で送信するフォームはどのルートにもマッチせず 404 になります —— 読み替えの段はメソッドしか書き換えないので、これは直せません。
+- **検証が有効なら用紙にはトークンが必要です。** 生成されたプロジェクトでは有効です。`(form-tag :url … :method :put)` が隠し欄を両方書きます。[HTML フォームから PUT・PATCH・DELETE リクエストを送信する](#html-フォームから-putpatchdelete-リクエストを送信する) を参照してください。
 
 **起動時の警告:** `initialize-routing-tables` は、ルーティングテーブルのコンパイル1回につき1回だけ（たとえばアプリケーション起動時に1回、HTTP リクエストごとではありません）、`:action` が指定されておらず HTTP メソッドディスパッチにフォールバックするルートを一覧にした警告を1つ出力します。まだ移行が必要なルートを見つける助けになります。
 
@@ -287,7 +335,7 @@ HTTP メソッドディスパッチ機構の削除時期は現時点では決ま
 
 ### `resources` 関数による RESTful ルーティング
 
-`resources` 関数を使うと、RESTful な7つの標準ルートを1行で定義できます。
+`resources` 関数を使うと、リソースの RESTful な標準ルート8件を1行で定義できます。
 
 ```common-lisp
 (setf clails/environment:*routing-tables*
@@ -295,7 +343,7 @@ HTTP メソッドディスパッチ機構の削除時期は現時点では決ま
     ,@(resources "blogs" "your-app/controllers/blog-controller::<blog-controller>")))
 ```
 
-`(resources "todos" "controller")` は以下の7ルートを生成します。
+`(resources "todos" "controller")` は、7 つの標準アクションに対して以下の8ルートを生成します。
 
 | HTTP メソッド | パス | アクション | 用途 |
 |---|---|---|---|
@@ -304,8 +352,22 @@ HTTP メソッドディスパッチ機構の削除時期は現時点では決ま
 | POST | /todos | create | 作成実行 |
 | GET | /todos/:id | show | 詳細表示 |
 | GET | /todos/:id/edit | edit | 編集フォーム表示 |
-| PUT | /todos/:id | update | 更新実行 |
+| PUT | /todos/:id | update | 更新実行(全置換) |
+| PATCH | /todos/:id | update | 更新実行(部分更新) |
 | DELETE | /todos/:id | destroy | 削除実行 |
+
+**8件になるのは `update` に項目が2つあるためです。** PUT は置換、PATCH は
+部分更新で、どちらも `update` アクションが応えます。CSRF 検証は以前から状態
+変更の4操作すべてを対象にしており、操作種別の読み替えも用紙の隠し欄で
+PUT / PATCH / DELETE の3つを受け付けるので、PATCH の経路が無いリソースでは
+「検証されるのに到達できない操作種別」が1つ残ってしまいます。両方の項目が
+`:update` という名前なので、`:only '(:update)` は両方を残し、
+`:except '(:update)` は両方を外します。選択子が名指しするのはアクションで、
+到達に使うメソッドではありません。
+
+PATCH の項目を末尾に置いているのは、先行する7件が従来の位置を保つためです。
+表の順序は「同じメソッドで2件マッチしたときにどちらが勝つか」だけを決め、
+ここには同じ道筋に同じメソッドを宣言する項目は2つありません。
 
 `/todos/new` は `/todos/:id` より前に配置されるため、"new" が `:id` パラメータとしてマッチすることはありません。
 

@@ -1,4 +1,4 @@
-(defpackage #:clails/test/logger/package-hierarchy
+(defpackage #:clails-test/logger/package-hierarchy
   (:use #:cl
         #:rove)
   (:import-from #:clails/logger
@@ -9,7 +9,7 @@
                 #:log-package.info
                 #:make-console-appender
                 #:<text-formatter>))
-(in-package #:clails/test/logger/package-hierarchy)
+(in-package #:clails-test/logger/package-hierarchy)
 
 (deftest package-to-logger-name-tests
   (testing "Convert keyword to logger name"
@@ -176,7 +176,9 @@
     (let ((output (with-output-to-string (*standard-output*)
                     (let ((appender (make-console-appender
                                      :formatter (make-instance '<text-formatter>))))
-                      (register-logger :clails/test/logger/package-hierarchy
+                      ;; LOG-PACKAGE.INFO logs to *PACKAGE*, so the logger has
+                      ;; to be registered under this package's own name.
+                      (register-logger :clails-test/logger/package-hierarchy
                                        :appender appender
                                        :level :debug)
                       (log-package.info "Package info message")))))
@@ -188,8 +190,10 @@
     (let ((output (with-output-to-string (*standard-output*)
                     (let ((appender (make-console-appender
                                      :formatter (make-instance '<text-formatter>))))
-                      ;; Only register parent
-                      (register-logger :clails/test :appender appender :level :debug)
+                      ;; Only register an ANCESTOR of this package's name
+                      ;; (clails-test/logger/package-hierarchy), so that the
+                      ;; hierarchy walk is what finds it.
+                      (register-logger :clails-test :appender appender :level :debug)
                       (log-package.debug "Package debug message")))))
       (ok (str:contains? "Package debug message" output)
           "log-package.debug finds parent logger"))))
