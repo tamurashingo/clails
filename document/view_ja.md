@@ -463,30 +463,138 @@ View (`app/views/users/show.html`):
 
 ## 5. フォームの作成
 
+### フォームヘルパ
+
+`clails new` で生成したプロジェクトでは **CSRF 検証が有効** なので、
+POST / PUT / PATCH / DELETE はすべてセッションのトークンを隠し欄で伴わなければ
+なりません。また PUT・PATCH・DELETE を意図するフォームは、2つめの隠し欄で
+そう宣言しなければなりません。`clails/view/form-helper` のヘルパがその両方を
+書きます。手で書くと、ページが 403 や 404 になります。
+
+#### ヘルパへの到達方法
+
+2通りあり、どちらでもかまいません。
+
+1. **ビューの名前空間に取り込む。** 生成される `package.lisp` —— つまり
+   `app/views/package.lisp` と、`clails generate:view` が書く各
+   `app/views/<リソース>/package.lisp` —— はこちらです。
+
+   ```common-lisp
+   (:import-from #:clails/view/form-helper
+                 #:form-tag
+                 #:end-form-tag
+                 #:form-with
+                 #:form-authenticity-token
+                 #:csrf-token-tag
+                 #:method-override-tag)
+   ```
+
+2. **何も取り込まず**、テンプレートにパッケージ名を書く:
+   `<%= (clails/view/form-helper:form-tag :url "/users") %>`。
+
+#### 各ヘルパの働き
+
+| 呼び出し | 結果 |
+|---|---|
+| `(form-tag &key url method multipart attributes)` | `<form>` の開始タグと必要な隠し欄。`url` が `NIL`(既定)なら `action` を書かない(＝現在の URL に送信)。`method` の既定は `:post` で、`:get :post :put :patch :delete` のいずれか。`multipart` が `T` なら `enctype="multipart/form-data"` を付ける(トークンは最上位の項目として送られる)。`attributes` は `<form>` に足す属性のプロパティリスト(例: `(:class "edit" :id "user-form")`)。値が `NIL` の属性は出力されず、`T` なら真偽属性として書かれる |
+| `(end-form-tag)` | `"</form>"`。フォームの両端が対になって読めるよう、リテラルではなく関数にしてあります |
+| `(form-with &key url method multipart attributes body)` | `form-tag`・`body`・`end-form-tag` を1つの式で。`body` は文字列、文字列のリスト(順に連結)、`NIL`(空のフォーム)。送信ボタンだけの削除フォームなどに便利です |
+| `(form-authenticity-token)` | トークンそのものの文字列。ヘッダに入れたい JavaScript 側のために |
+| `(csrf-token-tag)` | 隠しのトークン欄だけ |
+| `(method-override-tag :put)` | 隠しの `_method` 欄だけ。不要な `:get`・`:post` では `""` |
+
+トークンを求めること自体が、このセッションにまだトークンが無ければ
+**トークンを作ります**。また1リクエスト内の呼び出しはすべて同じ文字列を返す
+ので、1ページ上の複数のフォームは同じトークンを持ちます。
+
+#### 動く条件
+
+これらはテンプレート用のヘルパです。理由は2つあり、それぞれ別です。
+セッションは描画中のコントローラから得られ、その束縛はテンプレートの実行中
+だけ存在します。トークンは CSRF の段が1リクエストの間だけ束縛する動的変数
+から得られます。テンプレートではどちらも成り立ちます(描画はスタックの最も
+内側の段で起こり、CSRF の段はその外側にあるため)。それ以外では:
+
+- **CSRF 検証が無効のとき**: `(csrf-token-tag)` は `""`、
+  `(form-authenticity-token)` は `NIL` を返します。検証を有効にしていない
+  プロジェクトでテンプレートが壊れないようにするためです。
+- **テンプレートの外から呼んだとき**: どのヘルパかを名指しした
+  `view-context-error`。
+- **テンプレートの中だが、`*enable-csrf-middleware*` が `T` なのに CSRF の
+  段が無いスタックで描画されたとき**: そのことを述べる `form-helper-error`
+  (下位ライブラリ内部の `unbound-variable` が外に出てくるのではありません)。
+
+#### GET のフォームにはトークンを入れません(意図的)
+
+`form-tag` は `:method :get` のときトークン欄を出しません。GET のフォームの
+項目は URL の問い合わせ文字列として付くため、トークンがブラウザの履歴、次の
+ページから辿ったリンクの `Referer` ヘッダ、そして経路上のすべてのアクセス
+ログに残ってしまいます。そもそも CSRF の段は GET を検証しないので、失うものは
+ありません。
+
+同じ理由で、`_method` 欄はフォームの **本文** に書かれ、送信先 URL の
+問い合わせ文字列には決して入りません。読み替えの段が本文だけを読むのは、
+問い合わせ文字列に操作種別を書けると、ただのリンク(や画像タグ)が削除に
+化けるからです。
+
+#### テンプレートからリクエストに到達する
+
+描画中のコントローラも束縛されており、次のヘルパがそれを読みます。
+
+| 呼び出し | 返すもの |
+|---|---|
+| `(current-controller)` | 描画中のアクションのコントローラ |
+| `(current-request)` | そのリクエストオブジェクト |
+| `(current-env)` | そのリクエスト環境のプロパティリスト |
+| `(current-param name)` | リクエストパラメータ1つ |
+| `(current-session)` | そのセッションのハッシュテーブル |
+
+いずれも `clails/view/view-helper` から公開されており、描画中でないときは
+`NIL` を返すのではなく、どのヘルパかを名指しした `view-context-error` を
+発します。
+
+> **`(current-session)` の中身をそのまま表示してはいけません。** あのハッシュ
+> テーブルには、アプリケーションのデータと並んで枠組みの予約項目 ——
+> `clails.` で始まるキー、**その1つが CSRF トークン**
+> (`clails.csrf-token`)—— が入っています。テーブルを走査して描画すると
+> トークンがページに漏れます。アプリケーションが書いたキーを名指しで読んで
+> ください。
+
+#### もう1つ変わったこと
+
+**`set-view` も `set-redirect` も呼ばないアクションは、200 ＋ 空の本体を
+返すようになりました。** 以前は失敗していました。親切になった反面、そのような
+アクションに送信するフォームは *成功したように見えます*。送信して 200 と空の
+ページが返ったら、フォームではなくアクションを確認してください。
+
 ### 基本的なフォーム
 
 ```html
 <h1>Create New User</h1>
 
-<form action="/users" method="POST">
+<%= (form-tag :url "/users" :method :post) %>
   <div>
     <label for="name">Name:</label>
     <input type="text" id="name" name="name" required>
   </div>
-  
+
   <div>
     <label for="email">Email:</label>
     <input type="email" id="email" name="email" required>
   </div>
-  
+
   <div>
     <label for="age">Age:</label>
     <input type="number" id="age" name="age">
   </div>
-  
+
   <button type="submit">Create User</button>
-</form>
+<%= (end-form-tag) %>
 ```
+
+手で書けば同じフォームは `<form action="/users" method="POST">` でトークン欄が
+ありませんが、**CSRF 検証が有効なプロジェクトはそれに 403 を返します**。
+生成されたプロジェクトでは有効なので、ヘルパを使ってください。
 
 ### 編集フォーム（既存データの表示）
 
@@ -494,9 +602,7 @@ View (`app/views/users/show.html`):
 <h1>Edit User</h1>
 
 <% (let ((user (view :user))) %>
-  <form action="/users/<%= (ref user :id) %>" method="POST">
-    <input type="hidden" name="_method" value="PUT">
-    
+  <%= (form-tag :url (format nil "/users/~A" (ref user :id)) :method :put) %>
     <div>
       <label for="name">Name:</label>
       <input type="text" id="name" name="name" 
@@ -516,11 +622,23 @@ View (`app/views/users/show.html`):
     </div>
     
     <button type="submit">Update User</button>
-  </form>
+  <%= (end-form-tag) %>
 <% ) %>
 
 <a href="/users/<%= (ref (view :user) :id) %>">Cancel</a>
 ```
+
+`:method :put` を渡すことで、ヘルパは隠し欄を **2つ** 書きます。CSRF トークン
+と `_method=put` です。ブラウザが送るのは依然として POST で、読み替えの段が
+経路照合の前にそれを書き換えるため、この用紙はリソースの `update` の経路に
+到達します。
+
+**`<input type="hidden" name="_method" value="PUT">` を手で書いても動きます**
+—— 同じ欄を同じ段が読みます —— が、その場合は隣に
+`<%= (csrf-token-tag) %>` も必要で、送信先 URL は集合の道筋ではなく個体の
+道筋(`/users/<id>`)でなければなりません。ヘルパはその両方を正しく扱います。
+なお値はフォームの **本文** から読まれるので、送信先 URL の問い合わせ文字列に
+`_method` を書いても意図的に何も起きません。
 
 ### バリデーションエラーの表示
 
@@ -563,9 +681,9 @@ View:
   </div>
 <% ) %>
 
-<form action="/users" method="POST">
+<%= (form-tag :url "/users" :method :post) %>
   <!-- フォームフィールド -->
-</form>
+<%= (end-form-tag) %>
 ```
 
 ---
@@ -812,7 +930,16 @@ View テンプレートのファイルパスから、評価されるパッケー
   (:use #:cl)
   (:import-from #:clails/view/view-helper
                 #:*view-context*
-                #:view))
+                #:view)
+  ;; フォームヘルパ。CSRF トークンと隠しの "_method" 欄を書きます
+  ;; (「フォームヘルパ」の節を参照)
+  (:import-from #:clails/view/form-helper
+                #:form-tag
+                #:end-form-tag
+                #:form-with
+                #:form-authenticity-token
+                #:csrf-token-tag
+                #:method-override-tag))
 
 (in-package #:your-app/views/todo/package)
 ```

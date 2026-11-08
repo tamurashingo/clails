@@ -28,7 +28,17 @@
     (set-redirect controller "/todo")))
 
 (defmethod do-put ((controller <todo-controller>))
-  "Update todo item to mark as done."
+  "Update todo item to mark as done.
+
+   Reached by the form in todo/list.html, which POSTs to the MEMBER path
+   /todo/<id> with a hidden \"_method=put\" field: the request-method override
+   stage rewrites the method before the route is matched, and the route
+   /todo/:id -- appended to app/config/environment.lisp from
+   test/e2e/templates/todo-routes.lisp, since generate:scaffold writes only the
+   collection route -- is what puts \"id\" into the parameters.  Without BOTH
+   halves this method is unreachable: the override alone leaves a PUT at
+   /todo/<id> with no matching route (a 404), and the route alone leaves the
+   request a POST (do-post)."
   (let* ((id-str (param controller "id"))
          (id (parse-integer id-str))
          (todo (find-by-id id)))

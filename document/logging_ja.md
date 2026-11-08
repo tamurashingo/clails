@@ -292,6 +292,39 @@ HTTP リクエスト/レスポンスの記録に使用します。
 - Logger 名: `:task`
 - ログレベル: `:info`
 
+#### 背景処理(ジョブ)ログ
+
+背景処理(`clails/job`)のイベント記録に使用します。
+
+```common-lisp
+(log.job "Job enqueued"
+         :job-name :send-email
+         :job-id 1)
+
+(log.job "Job failed"
+         :job-name :send-email
+         :job-id 1
+         :attempts 3
+         :status :failed)
+```
+
+- Logger 名: `:job`
+- ログレベル: `:info`
+
+> **この2つへの到達について。** 本稿の執筆時点で `log.task` と `log.job` は
+> `clails/logger/core` から公開されていますが、公開パッケージ
+> `clails/logger` からは **再公開されていません**。アプリケーションからは
+> `clails/logger/core:log.task` / `clails/logger/core:log.job` と書く必要が
+> あります。他の用途別マクロ(`log.sql`、`log.web-access`、`log.audit`)は
+> `clails/logger` から到達できます。
+
+> **`:job` の宛先は登録しておく必要があります。** 自分の登録を持たない
+> ロガーは名前の階層をたどって全体の既定に落ちます。`log.job` は `:info` で
+> 書くので、既定が `:warn` の環境では黙って捨てられ、全体の既定も未登録の
+> 環境では完全に消えます。`clails new` で生成したプロジェクトは3環境すべてで
+> `:job` を登録します。それ以前に生成したプロジェクトには無いので追加して
+> ください([既存プロジェクトの移行手順](session_ja.md#12-既存プロジェクトの移行手順))。
+
 ---
 
 ## 6. コンテキストの追加
@@ -432,6 +465,13 @@ HTTP リクエスト/レスポンスの記録に使用します。
                    :level :info
                    :appender (make-file-appender
                               :filepath "/var/log/myapp/task.log"
+                              :formatter (make-instance '<text-formatter>)))
+  
+  ;; 背景処理ログ: 定型作業と切り分けられるよう専用ファイルにする
+  (register-logger :job
+                   :level :info
+                   :appender (make-file-appender
+                              :filepath "/var/log/myapp/job.log"
                               :formatter (make-instance '<text-formatter>))))
 
 ;; アプリケーション起動時

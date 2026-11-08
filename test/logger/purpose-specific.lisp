@@ -1,4 +1,4 @@
-(defpackage #:clails/test/logger/purpose-specific
+(defpackage #:clails-test/logger/purpose-specific
   (:use #:cl
         #:rove)
   (:import-from #:clails/logger
@@ -9,7 +9,7 @@
                 #:log.audit
                 #:make-console-appender
                 #:<text-formatter>))
-(in-package #:clails/test/logger/purpose-specific)
+(in-package #:clails-test/logger/purpose-specific)
 
 (deftest purpose-specific-logging-tests
   (testing "SQL logging"

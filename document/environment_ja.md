@@ -22,7 +22,7 @@ clails アプリケーションは、環境変数を通じて動作をカスタ�
 3. [Middleware の設定](#3-middleware-の設定)
    - Middleware スタック
    - Middleware の追加
-   - 組み込み Middleware
+   - 組み込み Middleware(セッション・CSRF・操作種別の読み替え・トランザクション・振り分け・静的ファイル)
    - Middleware の実行順序
    - Middleware の使用例
 4. [環境変数の設定方法](#4-環境変数の設定方法)
@@ -709,6 +709,66 @@ URL パスと Controller の対応を定義するルーティングテーブル�
 (clails/environment:add-shutdown-hook "myapp/finalizer:save-statistics")
 ```
 
+### 構成の整合検査関連
+
+#### `*strict-configuration*`
+
+**動きえない構成** を clails が見つけたときの扱いの厳しさです。
+
+**パッケージ**: `clails/environment`
+
+**型**: `boolean`
+
+**デフォルト値**: `T`
+
+| 値 | 検査が失敗したとき |
+|---|---|
+| `T`(フレームワーク既定) | **中止。** 検査がエラーを発し、組み立て中だったものが中断されます。要求が必ず失敗する構成では枠組みは立ち上がりません。リクエスト単位の検査は **403** を返します |
+| `NIL` | **警告して続行。** 同じ検査が `:audit` の口に警告を記録し、処理は続きます。開発・試験でふつうに望まれる挙動です |
+
+**現在検査される構成** —— 誤りが明白な構成だけに意図的に限定しているので、
+`T` が安全な既定になり、関係する段をどちらも有効にしていない既存プロジェクト
+が引っかかることはありません。
+
+1. **セッション無効のまま CSRF の段を有効にした構成。** ミドルウェアスタックの
+   組み立て中に1度だけ検査します。トークンはセッションの中にあるため、この
+   構成では状態変更要求を1件も処理できません。
+2. **段の配置が崩れた構成** —— 操作種別の読み替えの段が CSRF の段より
+   *外側* にある構成。CSRF の段が通した要求に残すマーカーを見て、
+   リクエストごとに検査します。`NIL` のときは **読み替えなしで** 処理し、
+   警告は **プロセスごとに1回だけ** 出ます(ログを溢れさせないため。同時に
+   見逃しやすい理由でもあります)。
+
+**この変数が `clails/environment` にあり、個々のミドルウェアのパッケージに
+ないのは**、1つの段の話ではないからです。段ごとの設定
+(`*enable-session-middleware*`、`*enable-csrf-middleware*`)は従来どおり
+その段のパッケージにあります。
+
+**clails は実行中の環境からこれを決めません。** この値だけを読みます。
+開発と試験で `NIL`、本番で `T` を入れるのは生成されたプロジェクトの
+`app/config/environment.lisp` で、判断が枠組みの中に隠れずプロジェクト側に
+見えるようにしています。
+
+```lisp
+(defun setup-environment/develop ()
+  (setf *session-cookie-secure* nil)
+  (setf *strict-configuration* nil))
+
+(defun setup-environment/production ()
+  (setf *session-cookie-secure* t)
+  (setf *strict-configuration* t))
+```
+
+どちらも
+`(<プロジェクト>/config/environment:initialize-environment-config)` が適用し、
+これを `clails.boot` が `CLAILS_ENV` の解決後、ミドルウェアスタックの組み立て
+前に呼び出します。
+
+**`clails task` と `clails console` はミドルウェアスタックを組み立てない**
+ため、どちらの検査も走らず、この設定の影響を受けません。
+
+**設定場所**: `app/config/environment.lisp`
+
 ---
 
 ## 3. Middleware の設定
@@ -728,9 +788,10 @@ Lack middleware のリストを保持します。リクエストはこのスタ�
 **デフォルト値**: 
 ```lisp
 (list
-  *lack-middleware-clails-csrf-body-guard*  ; CSRF を有効にするまでパススルー
-  *lack-middleware-clails-session*          ; セッションを有効にするまでパススルー
-  *lack-middleware-clails-csrf*             ; CSRF を有効にするまでパススルー
+  *lack-middleware-clails-csrf-body-guard*    ; CSRF を有効にするまでパススルー
+  *lack-middleware-clails-session*            ; セッションを有効にするまでパススルー
+  *lack-middleware-clails-csrf*               ; CSRF を有効にするまでパススルー
+  *lack-middleware-clails-method-override*    ; 既定で有効
   *lack-middleware-transaction*
   *lack-middleware-clails-controller*
   #'(lambda (app)
@@ -819,6 +880,86 @@ Cookie セッションを管理する middleware です。リクエストに触�
 
 **注意**: `clails new` は有効化行・ストア・放置時間・定期掃除の設定を `app/config/environment.lisp` に書き出すので、生成されたプロジェクトでは最初からセッションが使えます。フレームワーク自身のデフォルトは「無効」なので、既存プロジェクトはこれらの行を足すまで影響を受けません。Cookie の環境ごとの `Secure` を含む全設定項目は **[セッション・認証ガイド](session_ja.md)** で説明しています。
 
+#### `*lack-middleware-clails-csrf*`
+
+CSRF 検証の段です。照合するトークンがセッションの中にあるため **セッションの
+段より内側** に、アクションに届く前に要求を拒否しなければならないため
+**振り分けの段より外側** に置かれます。
+
+**パッケージ**: `clails/middleware/csrf-middleware`
+
+**機能**:
+- 状態を変える要求(POST / PUT / PATCH / DELETE)をセッション内のトークンと
+  照合し、欠落や不一致なら 403 を返します。GET と HEAD は検証しません
+- 拒否を操作種別・道筋・接続元アドレスとともに `:audit` の口に記録します
+- トークンは本文の最上位の項目(`_csrf_token`)か `X-CSRF-Token` ヘッダから
+  受け付けます。問い合わせ文字列と JSON の入れ子からは **読みません**
+- 照合は長さに依存せず、途中で打ち切らない比較で行います
+- 通した要求にマーカーを残し、下記の読み替えの段が「本当にこの段の内側で
+  動いているか」を判定できるようにします
+
+**有効化/無効化**:
+```lisp
+;; CSRF 検証を有効にする(生成されたプロジェクトには既にこの行があります)
+(setf clails/middleware/csrf-middleware:*enable-csrf-middleware* t)
+
+;; 無効にする(フレームワーク既定)。段は単なるパススルーになります
+(setf clails/middleware/csrf-middleware:*enable-csrf-middleware* nil)
+```
+
+**注意**: セッションの段も有効でなければなりません。セッション無効のまま
+この段を有効にした構成は、スタックの組み立て時に拒否されます(第2節の
+`*strict-configuration*`)。このリリースには **経路単位の免除がありません。**
+全設定項目・使い切り方式・免除が無いことの帰結は
+**[セッション・認証ガイド](session_ja.md#9-csrf-対策)** で説明しています。
+
+#### `*lack-middleware-clails-csrf-body-guard*`
+
+最も外側の段で、独立した関心事ではなく上の段の相棒です。CSRF の段が解釈
+できない要求本文(壊れた JSON、最上位が配列の JSON、宣言された
+`Content-Type` と食い違う本文)を同じ 403 に変換し、解析エラーがミドルウェア
+スタック全体の外へ抜けるのを防ぎます。CSRF 検証が無効のあいだはパススルー
+です。
+
+**パッケージ**: `clails/middleware/csrf-middleware`
+
+#### `*lack-middleware-clails-method-override*`
+
+操作種別の読み替えの段です。HTML のフォームは GET と POST でしか送信でき
+ないため、PUT・PATCH・DELETE を意図するフォームは隠しの `_method` 欄でそう
+宣言し、この段が **経路照合の前に** 宣言されたリクエストメソッドを書き換え
+ます。これが、この欄を新方式(`:action` ベースのルーティング)でも従来の
+`do-put` / `do-delete` 振り分けでも使えるようにしているものです。
+
+**パッケージ**: `clails/middleware/method-override-middleware`
+
+**位置 —— これは好みではなく安全上の要件です**: CSRF の段より **内側**、
+振り分けの段より **外側**。CSRF の段より外側に置くと、安全な操作種別に
+書き換えられた POST が未検証で通ってしまいます(`_method=GET` ＋ トークン
+無しの抜け道)。内側なら、トークンは要求が実際に到着したメソッドに対して
+検査され、そのあとで初めてメソッドが書き換えられます。
+
+**機能**:
+- 書き換えるのは POST だけで、書き換え先は `PUT`・`PATCH`・`DELETE` だけ
+  (許可値の一覧はこれが全部で、実行時に増えません)
+- 値は要求の本文からのみ読み、問い合わせ文字列からは読みません
+- 未知の値では操作種別を変えません
+- CSRF の段が残すマーカーを探して、本当にその内側で動いているかを
+  リクエストごとに検査します。`*strict-configuration*` が真なら 403 で拒否し、
+  偽ならプロセスごとに1回だけ `:audit` の口に警告を出して、読み替えなしで
+  処理します
+
+**有効化/無効化**:
+```lisp
+;; フレームワーク既定: 有効
+(setf clails/middleware/method-override-middleware:*enable-method-override* t)
+
+;; 無効。POST は POST のままで、用紙から更新・削除の経路に到達できなくなり
+;; ます。無効にする理由は1つだけ: 同じ道筋に POST の経路と PUT/PATCH/DELETE
+;; の経路を両方書いている手書きの経路表。
+(setf clails/middleware/method-override-middleware:*enable-method-override* nil)
+```
+
 #### `*lack-middleware-transaction*`
 
 データベーストランザクションを自動管理する middleware です。
@@ -892,22 +1033,34 @@ Middleware は `*clails-middleware-stack*` の順序で実行されます。
 ```
 リクエスト
   ↓
-*lack-middleware-clails-csrf-body-guard*
+*lack-middleware-clails-csrf-body-guard*    (CSRF の段が解釈できない本文 → 403)
   ↓
-*lack-middleware-clails-session*
+*lack-middleware-clails-session*            (セッションと Cookie)
   ↓
-*lack-middleware-clails-csrf*
+*lack-middleware-clails-csrf*               (トークンの検証、ダメなら 403)
+  ↓
+*lack-middleware-clails-method-override*    (検証の後に "_method" を honour)
   ↓
 *lack-middleware-transaction*
   ↓
-*lack-middleware-clails-controller*
+*lack-middleware-clails-controller*         (経路解決・振り分け・描画)
   ↓
 *lack-middleware-static*
   ↓
 レスポンス
 ```
 
-有効化されていない段はリクエストをそのまま内側へ渡すので、セッションだけを使っていて他は既定のままのプロジェクトでは、実際の順序は セッション → トランザクション → 振り分け → 静的ファイル になります。
+この並びのうち3つの位置は意味を持っています。
+
+- **セッションの段が CSRF の段より外側** であること。トークンがセッションの
+  中にあるためです。
+- **CSRF の段が振り分けの段より外側** であること。アクションに届く前に要求を
+  拒否しなければならないためです。
+- **読み替えの段がその2つの間にある** こと。トークンの検証より前に偽装された
+  操作種別を honour するのは `_method=GET` の抜け道であり、経路照合の後に
+  honour するのでは経路に影響できず遅すぎます。
+
+有効化されていない段はリクエストをそのまま内側へ渡すので、セッションだけを使っていて他は既定のままのプロジェクトでは、実際の順序は セッション → 読み替え → トランザクション → 振り分け → 静的ファイル になります。`clails new` で生成したプロジェクトはセッションの段と CSRF の段を有効にし、読み替えの段は既定で有効なので、最初のリクエストからすべてが動いています。
 
 ### Middleware の使用例
 

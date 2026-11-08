@@ -22,6 +22,7 @@ This guide explains environment variables and global variables available to appl
 3. [Middleware Configuration](#3-middleware-configuration)
    - Middleware Stack
    - Adding Middleware
+   - The framework's own stages (session, CSRF, request-method override, transaction, routing, static)
    - Middleware Execution Order
    - Middleware Usage Examples
 4. [Setting Environment Variables](#4-setting-environment-variables)
@@ -640,6 +641,66 @@ behavior as `add-startup-hook` above.
       (disconnect-external-services)))
 ```
 
+### Configuration-check-related
+
+#### `*strict-configuration*`
+
+How strictly a configuration that **cannot work** is treated.
+
+**Package**: `clails/environment`
+
+**Type**: `boolean`
+
+**Default value**: `T`
+
+| Value | On a failing check |
+|---|---|
+| `T` (the framework default) | **Abort.** The check signals an error, which aborts whatever was being set up — the framework refuses to come up in a configuration in which requests are bound to fail. The per-request check answers **403** |
+| `NIL` | **Warn and carry on.** The same check records a warning on the `:audit` logger and the work continues, which is usually what a development or test environment wants |
+
+**What is checked today** — deliberately only configurations that are
+unambiguously broken, so that `T` is a safe default and an existing project
+that enables neither of the stages involved never trips one:
+
+1. **The CSRF stage enabled while the session middleware is disabled.** Checked
+   once, while the middleware stack is being built. The token lives in the
+   session, so this configuration cannot serve a single state-changing request.
+2. **A broken stage order** — the request-method override stage running
+   *outside* the CSRF stage. Checked per request, by looking for the marker the
+   CSRF stage leaves on a request it has let through. With `NIL` the request is
+   served **without** the override, and the warning is emitted **once per
+   process** so that it cannot flood the log — which also makes it easy to
+   miss.
+
+**This variable lives in `clails/environment` rather than in the package of any
+one middleware**, because it is not about one stage. A stage's own settings
+(`*enable-session-middleware*`, `*enable-csrf-middleware*`) still live in that
+stage's package.
+
+**clails never decides this from the environment it is running in.** It only
+reads this value. A generated project's `app/config/environment.lisp` is what
+puts `NIL` in development and test and `T` in production, so that the decision
+is visible in the project rather than hidden in the framework:
+
+```lisp
+(defun setup-environment/develop ()
+  (setf *session-cookie-secure* nil)
+  (setf *strict-configuration* nil))
+
+(defun setup-environment/production ()
+  (setf *session-cookie-secure* t)
+  (setf *strict-configuration* t))
+```
+
+Both are applied by `(<project>/config/environment:initialize-environment-config)`,
+which `clails.boot` calls once `CLAILS_ENV` has been resolved and before the
+middleware stack is built.
+
+**`clails task` and `clails console` build no middleware stack**, so neither
+check runs there and this setting has no effect on them.
+
+**Configuration location**: `app/config/environment.lisp`
+
 ---
 
 ## 3. Middleware Configuration
@@ -659,9 +720,10 @@ Holds a list of Lack middlewares. Requests are processed in the order of this st
 **Default value**: 
 ```lisp
 (list
-  *lack-middleware-clails-csrf-body-guard*  ; passthrough until CSRF is enabled
-  *lack-middleware-clails-session*          ; passthrough until sessions are enabled
-  *lack-middleware-clails-csrf*             ; passthrough until CSRF is enabled
+  *lack-middleware-clails-csrf-body-guard*    ; passthrough until CSRF is enabled
+  *lack-middleware-clails-session*            ; passthrough until sessions are enabled
+  *lack-middleware-clails-csrf*               ; passthrough until CSRF is enabled
+  *lack-middleware-clails-method-override*    ; on by default
   *lack-middleware-transaction*
   *lack-middleware-clails-controller*
   #'(lambda (app)
@@ -767,6 +829,92 @@ an existing project is unaffected until those lines are added. Every setting,
 including the per-environment `Secure` flag of the cookie, is described in the
 **[Session & Authentication Guide](session.md)**.
 
+#### `*lack-middleware-clails-csrf*`
+
+The CSRF verification stage. It sits **inside** the session stage, because the
+token it compares against lives in the session, and **outside** the routing
+stage, because a request has to be refused before it can reach an action.
+
+**Package**: `clails/middleware/csrf-middleware`
+
+**Features**:
+- Verifies every state-changing request (POST / PUT / PATCH / DELETE) against
+  the token kept in the session, and answers a 403 when it is missing or wrong.
+  GET and HEAD are not verified
+- Records the rejection on the `:audit` logger, with the method, the path and
+  the client address
+- Accepts the token either as a top-level body parameter (`_csrf_token`) or in
+  the `X-CSRF-Token` request header; **not** from the query string and **not**
+  from inside a JSON body
+- Compares the two tokens with a length-independent comparison that does not
+  exit early
+- Marks a request it has let through, so that the override stage below can tell
+  whether it really ran inside this one
+
+**Enable/disable toggle**:
+```lisp
+;; Enable CSRF verification (a generated project already has this line)
+(setf clails/middleware/csrf-middleware:*enable-csrf-middleware* t)
+
+;; Disable it (the framework default) -- the stage becomes a passthrough
+(setf clails/middleware/csrf-middleware:*enable-csrf-middleware* nil)
+```
+
+**Note**: the session stage has to be enabled as well; a configuration that
+enables this one without it is refused while the stack is built (see
+`*strict-configuration*` in section 2). There is **no per-route exemption** in
+this release. Every setting, the one-time-token option and the consequences of
+having no exemptions are described in the
+**[Session & Authentication Guide](session.md#9-csrf-protection)**.
+
+#### `*lack-middleware-clails-csrf-body-guard*`
+
+The outermost stage, and a companion to the one above rather than a stage of
+its own concern: it turns a request body the CSRF stage cannot make sense of
+(broken JSON, a JSON array at the top level, a body that disagrees with its
+declared `Content-Type`) into the same 403, instead of letting the parse error
+escape the whole middleware stack. It is a passthrough while CSRF verification
+is disabled.
+
+**Package**: `clails/middleware/csrf-middleware`
+
+#### `*lack-middleware-clails-method-override*`
+
+The request-method override stage. An HTML form can only be sent with GET or
+POST, so a form that means PUT, PATCH or DELETE says so in a hidden `_method`
+field, and this stage rewrites the declared request method **before the route
+is matched** — which is what makes the field work with `:action`-based routing
+as well as with the older `do-put` / `do-delete` dispatch.
+
+**Package**: `clails/middleware/method-override-middleware`
+
+**Position — this is a safety requirement, not a preference**: **inside** the
+CSRF stage and **outside** the routing stage. Outside the CSRF stage, a POST
+rewritten to a safe method would be let through unverified: the `_method=GET`
+plus no token bypass. Inside it, the token is checked against the method the
+request really arrived with, and only then is the method rewritten.
+
+**Features**:
+- Rewrites a POST only, and only into `PUT`, `PATCH` or `DELETE` (the full
+  allow-list; nothing extends it at run time)
+- Reads the value from the request body only, never from the query string
+- Leaves the method alone for an unknown value
+- Checks, per request, that it really is running inside the CSRF stage, by
+  looking for the marker that stage leaves. With `*strict-configuration*` the
+  request is refused with a 403; otherwise one warning per process goes to the
+  `:audit` logger and the request is served without the override
+
+**Enable/disable toggle**:
+```lisp
+;; The framework default: on
+(setf clails/middleware/method-override-middleware:*enable-method-override* t)
+
+;; Off -- a POST stays a POST, and a form can no longer reach an update or
+;; destroy route.  The one reason to do this: a hand-written routing table that
+;; declares both a POST route and a PUT/PATCH/DELETE route on the same path.
+(setf clails/middleware/method-override-middleware:*enable-method-override* nil)
+```
+
 #### `*lack-middleware-transaction*`
 
 Middleware that automatically manages database transactions.
@@ -841,24 +989,38 @@ Middleware is executed in the order of `*clails-middleware-stack*`.
 ```
 Request
   ↓
-*lack-middleware-clails-csrf-body-guard*
+*lack-middleware-clails-csrf-body-guard*    (a body the CSRF stage cannot parse -> 403)
   ↓
-*lack-middleware-clails-session*
+*lack-middleware-clails-session*            (the session, and the cookie)
   ↓
-*lack-middleware-clails-csrf*
+*lack-middleware-clails-csrf*               (verify the token, or 403)
+  ↓
+*lack-middleware-clails-method-override*    (honour "_method", after verification)
   ↓
 *lack-middleware-transaction*
   ↓
-*lack-middleware-clails-controller*
+*lack-middleware-clails-controller*         (routing, dispatch, rendering)
   ↓
 *lack-middleware-static*
   ↓
 Response
 ```
 
+Three of those positions are load-bearing:
+
+- **the session stage is outside the CSRF stage**, because the token lives in
+  the session;
+- **the CSRF stage is outside the routing stage**, because a request has to be
+  refused before it can reach an action;
+- **the override stage is between them**, because honouring a forged method
+  before the token is verified is the `_method=GET` bypass, and honouring it
+  after the route has been matched is too late to affect routing.
+
 A stage that has not been enabled passes the request straight on, so the
 effective order for a project that uses sessions but configures nothing else is
-session → transaction → routing → static.
+session → override → transaction → routing → static. A project generated by
+`clails new` enables the session stage and the CSRF stage, and the override
+stage is on by default, so all of them are live from the first request.
 
 ### Middleware Usage Examples
 

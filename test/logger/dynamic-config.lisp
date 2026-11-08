@@ -1,4 +1,4 @@
-(defpackage #:clails/test/logger/dynamic-config
+(defpackage #:clails-test/logger/dynamic-config
   (:use #:cl
         #:rove)
   (:import-from #:clails/logger
@@ -12,7 +12,7 @@
                 #:make-console-appender
                 #:<text-formatter>
                 #:<json-formatter>))
-(in-package #:clails/test/logger/dynamic-config)
+(in-package #:clails-test/logger/dynamic-config)
 
 (deftest dynamic-configuration-tests
   (testing "Set logger level"
@@ -90,7 +90,10 @@
   (testing "Check log level with package name"
     (clear-loggers)
     (let ((appender (make-console-appender :formatter (make-instance '<text-formatter>))))
-      (register-logger :clails/test/logger/dynamic-config :appender appender :level :warn)
+      ;; The logger name must be THIS package's name: the assertions below pass
+      ;; *PACKAGE* as the designator, and the lookup normalises a package name
+      ;; to a logger name verbatim.
+      (register-logger :clails-test/logger/dynamic-config :appender appender :level :warn)
 
       (ok (not (log-level-enabled-p :info *package*)) "INFO is not enabled when level is WARN")
       (ok (log-level-enabled-p :warn *package*) "WARN is enabled when level is WARN")

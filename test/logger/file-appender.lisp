@@ -1,4 +1,4 @@
-(defpackage #:clails/test/logger/file-appender
+(defpackage #:clails-test/logger/file-appender
   (:use #:cl
         #:rove)
   (:import-from #:clails/logger
@@ -9,7 +9,7 @@
                 #:close-appender
                 #:<text-formatter>
                 #:<json-formatter>))
-(in-package #:clails/test/logger/file-appender)
+(in-package #:clails-test/logger/file-appender)
 
 (defvar *test-log-dir* nil)
 

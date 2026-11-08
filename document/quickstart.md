@@ -283,6 +283,15 @@ Open `app/views/todo/package.lisp` and declare the methods used in the View.
   (:import-from #:clails/view/view-helper
                 #:*view-context*
                 #:view)
+  ;; Written by `clails generate:view'.  The form helpers put the CSRF token
+  ;; (and the hidden "_method" field) into a form; see the View Guide.
+  (:import-from #:clails/view/form-helper
+                #:form-tag
+                #:end-form-tag
+                #:form-with
+                #:form-authenticity-token
+                #:csrf-token-tag
+                #:method-override-tag)
   (:import-from #:todoapp/models/todo
                 #:format-done-at))
 
@@ -315,10 +324,10 @@ Open `app/views/todo/list.html` and modify it to display and manipulate TODO ite
     <h1>Todo List</h1>
     
     <h2>Add New Todo</h2>
-    <form action="/todo" method="POST">
+    <%= (form-tag :url "/todo" :method :post) %>
         <input type="text" name="title" placeholder="Enter todo title" required>
         <button type="submit">Add</button>
-    </form>
+    <%= (end-form-tag) %>
     
     <h2>Todo Items</h2>
     <table>
@@ -342,11 +351,11 @@ Open `app/views/todo/list.html` and modify it to display and manipulate TODO ite
                 <td><%= (or (format-done-at todo) "-") %></td>
                 <td>
                     <cl:unless test="(clails/model:ref todo :done)">
-                    <form action="/todo" method="POST" style="display:inline;">
-                        <input type="hidden" name="_method" value="PUT">
+                    <%= (form-tag :url "/todo" :method :put
+                                  :attributes '(:style "display:inline;")) %>
                         <input type="hidden" name="id" value="<%= (clails/model:ref todo :id) %>">
                         <button type="submit">Mark as Done</button>
-                    </form>
+                    <%= (end-form-tag) %>
                     </cl:unless>
                 </td>
             </tr>
@@ -369,17 +378,38 @@ This view implements:
 
 **How to Implement PUT in HTML Forms:**
 
-HTML `<form>` tags only support `GET` and `POST` methods natively.
-To send PUT or DELETE requests, use the following approach:
+HTML `<form>` tags only support `GET` and `POST` methods natively. A form that
+means PUT, PATCH or DELETE says so in a hidden `_method` field, and clails
+rewrites the request method before the route is matched. `(form-tag … :method
+:put)` above is what writes that field — together with the hidden CSRF token
+field, which a generated project needs on every POST.
+
+Writing the fields by hand is the same thing and **still works with the current
+mechanism**:
 
 ```html
 <form action="/todo/123" method="POST">
     <input type="hidden" name="_method" value="PUT">
+    <%= (csrf-token-tag) %>
     <button type="submit">Mark as Done</button>
 </form>
 ```
 
-clails checks for the `_method` parameter in POST requests. When the value is `"PUT"`, it routes to the `do-put` method, and when it's `"DELETE"`, it routes to the `do-delete` method. This allows HTML forms to send PUT and DELETE requests.
+Note the `(csrf-token-tag)` line: without the token the request is answered with
+a **403**, because a generated project verifies every state-changing request.
+That is the one thing a hand-written form cannot leave out.
+
+With `_method` set to `"PUT"` the request reaches `do-put` (and `"DELETE"`
+reaches `do-delete`) in a route that uses HTTP-method dispatch, as this
+tutorial's `/todo` route does. In a route that specifies `:action` and
+`:method`, the same POST reaches the `:method :put` route of that path — the
+rewriting happens before route matching, so both mechanisms see the method the
+form meant. The value is read from the form's **body** only, never from the
+URL's query string, and only `PUT`, `PATCH` and `DELETE` are accepted.
+
+For the whole story — the form helpers, the token, and what happens when the
+token is missing — see the [View Guide](view.md#form-helpers) and the
+[Session & Authentication Guide](session.md#9-csrf-protection).
 
 ---
 

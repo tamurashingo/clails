@@ -285,6 +285,15 @@ clails db:migrate
   (:import-from #:clails/view/view-helper
                 #:*view-context*
                 #:view)
+  ;; `clails generate:view' が書きます。フォームヘルパは CSRF トークン(と
+  ;; 隠しの "_method" 欄)をフォームに入れます。ビューガイドを参照。
+  (:import-from #:clails/view/form-helper
+                #:form-tag
+                #:end-form-tag
+                #:form-with
+                #:form-authenticity-token
+                #:csrf-token-tag
+                #:method-override-tag)
   (:import-from #:todoapp/models/todo
                 #:format-done-at))
 
@@ -317,10 +326,10 @@ clails db:migrate
     <h1>Todo List</h1>
     
     <h2>Add New Todo</h2>
-    <form action="/todo" method="POST">
+    <%= (form-tag :url "/todo" :method :post) %>
         <input type="text" name="title" placeholder="Enter todo title" required>
         <button type="submit">Add</button>
-    </form>
+    <%= (end-form-tag) %>
     
     <h2>Todo Items</h2>
     <table>
@@ -344,11 +353,11 @@ clails db:migrate
                 <td><%= (or (format-done-at todo) "-") %></td>
                 <td>
                     <cl:unless test="(clails/model:ref todo :done)">
-                    <form action="/todo" method="POST" style="display:inline;">
-                        <input type="hidden" name="_method" value="PUT">
+                    <%= (form-tag :url "/todo" :method :put
+                                  :attributes '(:style "display:inline;")) %>
                         <input type="hidden" name="id" value="<%= (clails/model:ref todo :id) %>">
                         <button type="submit">Mark as Done</button>
-                    </form>
+                    <%= (end-form-tag) %>
                     </cl:unless>
                 </td>
             </tr>
@@ -374,16 +383,36 @@ clails db:migrate
 **HTML フォームで PUT を実現する方法:**
 
 HTML の `<form>` タグは `GET` と `POST` メソッドしかサポートしていません。
-そのため、PUT や DELETE リクエストを送信するには、以下のように実装します：
+PUT・PATCH・DELETE を意図するフォームは隠しの `_method` 欄でそう宣言し、
+clails が経路照合の前にリクエストメソッドを書き換えます。上の
+`(form-tag … :method :put)` がその欄を書いています —— 生成されたプロジェクト
+がすべての POST に必要とする隠しの CSRF トークン欄と一緒に。
+
+手で書くのも同じことで、**いまの機構でもそのまま使えます**。
 
 ```html
 <form action="/todo/123" method="POST">
     <input type="hidden" name="_method" value="PUT">
+    <%= (csrf-token-tag) %>
     <button type="submit">Mark as Done</button>
 </form>
 ```
 
-clails は POST リクエスト内の `_method` パラメータをチェックし、値が `"PUT"` の場合は `do-put` メソッドに、`"DELETE"` の場合は `do-delete` メソッドにルーティングします。これにより、HTML フォームから PUT や DELETE リクエストを実現できます。
+`(csrf-token-tag)` の行に注目してください。生成されたプロジェクトは状態を
+変える要求をすべて検証するため、トークンが無いと **403** が返ります。手書きの
+フォームで省略できない唯一のものがこれです。
+
+`_method` が `"PUT"` なら、このチュートリアルの `/todo` のように HTTP メソッド
+ディスパッチを使うルートでは `do-put` に届きます(`"DELETE"` なら
+`do-delete`)。`:action` と `:method` を指定したルートでは、同じ POST が
+その道筋の `:method :put` のルートに届きます —— 書き換えが経路照合の前に
+起こるため、どちらの機構も用紙が意図したメソッドを見ます。値はフォームの
+**本文** からのみ読まれ、URL の問い合わせ文字列からは読まれません。また
+受け付けるのは `PUT`・`PATCH`・`DELETE` だけです。
+
+フォームヘルパ・トークン・トークンが無いときの挙動の全体像は
+[ビューガイド](view_ja.md#フォームヘルパ) と
+[セッション・認証ガイド](session_ja.md#9-csrf-対策) を参照してください。
 
 ---
 

@@ -65,6 +65,19 @@
               :formatter (make-instance '<text-formatter>))
    :level :info)
 
+  ;; background job logger
+  ;;
+  ;; clails/logger/core:log.job writes at :info, so :info is the lowest level
+  ;; that lets a job record through.  Registered in every environment: without a
+  ;; registration of its own, :job falls through the name hierarchy onto the
+  ;; project default, where it either mixes in with everything else or is
+  ;; dropped outright.
+  (register-logger
+   :job
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :info)
+
   nil)
 
 
@@ -113,6 +126,13 @@
               :formatter (make-instance '<text-formatter>))
    :level :info)
 
+  ;; background job logger (see the comment in setup-logger/develop)
+  (register-logger
+   :job
+   :appender (make-console-appender
+              :formatter (make-instance '<text-formatter>))
+   :level :info)
+
   nil)
 
 
@@ -144,12 +164,21 @@
   ;; :error level the other two environments use.
 
   ;; SQL logger
+  ;;
+  ;; Declared with NO destination and at :none on purpose.  Production does not
+  ;; emit debug records, and clails/logger:log.sql writes at :debug and only at
+  ;; :debug -- so SQL never reaches a log here, which is the policy and not a
+  ;; bug.  What WAS a problem is declaring a file that is guaranteed to stay
+  ;; empty, so the file appender is gone and the level says plainly that
+  ;; nothing passes.
+  ;;
+  ;; The registration itself is kept rather than deleted, for two reasons: it
+  ;; is the single place to change when the policy changes, and leaving :sql
+  ;; unregistered would instead route SQL records through the name hierarchy
+  ;; onto :root, where the intent would no longer be readable.
   (register-logger
    :sql
-   :appender (make-file-appender
-              :filepath "logs/sql.log"
-              :formatter (make-instance '<json-formatter>))
-   :level :info)
+   :level :none)
 
   ;; web-access logger
   (register-logger
@@ -172,6 +201,19 @@
    :task
    :appender (make-file-appender
               :filepath "logs/task.log"
+              :formatter (make-instance '<json-formatter>))
+   :level :info)
+
+  ;; background job logger
+  ;;
+  ;; Its own file rather than sharing logs/task.log: a scheduled task and a
+  ;; queued job fail, retry and are retained differently, and one destination
+  ;; per logger is what keeps "which file does this record go to" answerable
+  ;; from this file alone.
+  (register-logger
+   :job
+   :appender (make-file-appender
+              :filepath "logs/job.log"
               :formatter (make-instance '<json-formatter>))
    :level :info)
 
