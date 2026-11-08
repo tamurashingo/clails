@@ -83,9 +83,20 @@
          (package (if view-pkg
                       (find-package view-pkg)
                       controller-package))
+         ;; The fallback is deliberately kept: when an action passed no data,
+         ;; (VIEW :controller) has always worked and templates may rely on it.
+         ;; It is NOT extended into an unconditional merge -- the controller
+         ;; reaches the template through RENDER's :CONTROLLER argument
+         ;; instead, which cannot collide with a key the action chose.  See
+         ;; the commentary in src/view/view-helper.lisp.
          (data (or (view-data controller)
                    (list :controller controller))))
-    (render template-name data :package package)))
+    ;; :CONTROLLER is what makes CURRENT-REQUEST / CURRENT-SESSION and the
+    ;; form helpers of CLAILS/VIEW/FORM-HELPER work from inside the template.
+    ;; This is the one call site that has a controller to give, and the
+    ;; rendering it starts happens inside the CSRF verification stage, which
+    ;; is what lets a template ask for the session's token at all.
+    (render template-name data :package package :controller controller)))
 
 
 (defun view/html-template (controller content)

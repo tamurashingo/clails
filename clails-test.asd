@@ -120,6 +120,15 @@
                #:clails-test/view/parser
                #:clails-test/view/compiler
                #:clails-test/view/renderer
+               ;; M7: what a template can reach -- the controller / request /
+               ;; session binding the renderer establishes around a template
+               ;; (M7-T1) -- the form helpers that write the CSRF token field
+               ;; and the hidden request-method override field (M7-T2, M7-T3),
+               ;; and the same rendered forms posted back through a real
+               ;; session -> CSRF -> override -> routing stack.
+               #:clails-test/view/view-context
+               #:clails-test/view/form-helper
+               #:clails-test/view/form-helper-roundtrip
                #:clails-test/datetime/all
                #:clails-test/datetime/conversions
                #:clails-test/model/native-query
