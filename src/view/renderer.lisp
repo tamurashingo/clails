@@ -9,7 +9,8 @@
                 #:get-cached-template
                 #:cache-template)
   (:import-from #:clails/view/view-helper
-                #:*view-context*)
+                #:*view-context*
+                #:*view-controller*)
   (:export #:render))
 
 (in-package #:clails/view/renderer)
@@ -18,7 +19,8 @@
                                    (start-expr "<%=")
                                    (start-script "<%")
                                    (tag-end "%>")
-                                   (package *package*))
+                                   (package *package*)
+                                   (controller nil))
   "Render template with given data.
    
    Parameters:
@@ -28,6 +30,13 @@
    - start-script: Opening delimiter for scriptlets (default: \"<%\")
    - tag-end: Closing delimiter (default: \"%>\")
    - package: Package to use when evaluating template code
+   - controller: The controller whose action is being rendered, reachable
+     from the template through CLAILS/VIEW/VIEW-HELPER's CURRENT-REQUEST /
+     CURRENT-SESSION / CURRENT-PARAM and through the form helpers of
+     CLAILS/VIEW/FORM-HELPER.  NIL (the default) means \"no request\":
+     those helpers then signal
+     CLAILS/VIEW/VIEW-HELPER:VIEW-CONTEXT-ERROR rather than reading a
+     controller left over from somewhere else.
    
    Returns: Rendered HTML as string"
   
@@ -39,8 +48,19 @@
                                                      tag-end
                                                      package))))
     
-    ;; Execute template with data
-    (let ((*view-context* data))
+    ;; Execute template with data.
+    ;;
+    ;; These two bindings are everything a template can see besides its own
+    ;; lexical scope: the data plist an action passed (read with VIEW) and the
+    ;; controller the action belongs to (read with the CURRENT-* helpers).
+    ;; They are established together, here, so that a template rendered by
+    ;; this function can never see one without the other -- and CONTROLLER is
+    ;; bound whether or not DATA is empty, which is why the helpers work for
+    ;; an action that passed no data at all.  See the commentary in
+    ;; src/view/view-helper.lisp for why the controller is a binding of its
+    ;; own rather than a key in DATA.
+    (let ((*view-context* data)
+          (*view-controller* controller))
       (with-output-to-string (stream)
         (funcall compiled-fn stream)))))
 

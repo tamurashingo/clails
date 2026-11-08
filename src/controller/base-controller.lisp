@@ -129,8 +129,17 @@
 
 
 (defclass <web-controller> (<base-controller>)
-  ((view :accessor view
-         :documentation "View template pathname")
+  (;; INITFORM NIL, and it matters: RESOLVE-VIEW reads this slot on every
+   ;; request ((IF (VIEW CONTROLLER) ...)), and without an initform an action
+   ;; that calls neither SET-VIEW nor SET-REDIRECT left it UNBOUND -- so the
+   ;; read signalled UNBOUND-SLOT and the whole request died, instead of the
+   ;; "no view" branch that is already written right there answering with an
+   ;; empty body.  SET-REDIRECT sets it to NIL explicitly for the same
+   ;; reason, so NIL is the value the rest of the layer already treats as
+   ;; "nothing to render".
+   (view :initform nil
+         :accessor view
+         :documentation "View template pathname, or NIL when the action renders nothing")
    (view-data :initform nil
               :accessor view-data
               :documentation "Data to be passed to view template")
